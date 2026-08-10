@@ -74,12 +74,19 @@ function AuthPage() {
     setSocialBusy(provider);
     try {
       window.sessionStorage.setItem("kontenta-auth-redirect", next);
-      const result = await lovable.auth.signInWithOAuth(provider, {
-        redirect_uri: `${window.location.origin}/auth/callback`,
-      });
-      if (result.error) throw result.error;
-      if (result.redirected) return;
-      toast.success(`Signed in with ${provider === "google" ? "Google" : "Apple"}`);
+     const { data, error } = await supabase.auth.signInWithOAuth({
+      provider,
+      options: {
+      redirectTo: `${window.location.origin}/auth/callback`,
+      },
+     });
+
+     if (error) throw error;
+
+     return data;
+    //  if (result.error) throw result.error;
+    //  if (result.redirected) return;
+    //  toast.success(`Signed in with ${provider === "google" ? "Google" : "Apple"}`);
       window.sessionStorage.removeItem("kontenta-auth-redirect");
       navigate({ to: next, replace: true });
 

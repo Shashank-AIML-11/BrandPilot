@@ -79,13 +79,13 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
     meta: [
       { charSet: "utf-8" },
       { name: "viewport", content: "width=device-width, initial-scale=1" },
-      { title: "Kontenta — AI marketing content calendar" },
+      { title: "LOVIZA — AI marketing content calendar" },
       {
         name: "description",
         content:
-          "Kontenta auto-generates a month of blogs, infographics and video content from your brand profile and schedules it across every channel.",
+          "LOVIZA auto-generates a month of blogs, infographics and video content from your brand profile and schedules it across every channel.",
       },
-      { name: "author", content: "Kontenta" },
+      { name: "author", content: "LOVIZA" },
       { property: "og:type", content: "website" },
       { name: "twitter:card", content: "summary_large_image" },
     ],

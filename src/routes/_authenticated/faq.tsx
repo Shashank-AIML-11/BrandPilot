@@ -9,9 +9,9 @@ import {
 export const Route = createFileRoute("/_authenticated/faq")({
   head: () => ({
     meta: [
-      { title: "FAQ — Kontenta" },
-      { name: "description", content: "How Kontenta generates, schedules and posts your content." },
-      { property: "og:title", content: "FAQ — Kontenta" },
+      { title: "FAQ — LOVIZA" },
+      { name: "description", content: "How LOVIZA generates, schedules and posts your content." },
+      { property: "og:title", content: "FAQ — LOVIZA" },
       { property: "og:description", content: "Answers about generation, scheduling and posting." },
     ],
   }),
@@ -20,7 +20,7 @@ export const Route = createFileRoute("/_authenticated/faq")({
 
 const FAQS = [
   {
-    q: "How does Kontenta decide what to write?",
+    q: "How does LOVIZA decide what to write?",
     a: "Every generation reads your Brand Profile: website, description, products and services, ICP, value propositions, tone of voice and focus keywords. The richer that page, the more specific the output.",
   },
   {
@@ -29,7 +29,7 @@ const FAQS = [
   },
   {
     q: "How do I generate a full month?",
-    a: "Open the Content Calendar, pick the month and press Generate Content. Kontenta works week by week and fills the calendar as it goes. Regenerating a month replaces the content for those dates.",
+    a: "Open the Content Calendar, pick the month and press Generate Content. LOVIZA works week by week and fills the calendar as it goes. Regenerating a month replaces the content for those dates.",
   },
   {
     q: "Can I turn off individual days or pieces?",
@@ -59,7 +59,7 @@ function FaqPage() {
       <div>
         <h1 className="text-2xl font-bold">FAQ</h1>
         <p className="mt-1 text-sm text-muted-foreground">
-          Everything about generating, scheduling and publishing with Kontenta.
+          Everything about generating, scheduling and publishing with LOVIZA.
         </p>
       </div>
       <div className="surface px-6">

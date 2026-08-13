@@ -20,9 +20,9 @@ import {
 export const Route = createFileRoute("/_authenticated/admin")({
   head: () => ({
     meta: [
-      { title: "Admin Portal — Kontenta" },
+      { title: "Admin Portal — LOVIZA" },
       { name: "description", content: "Subscriber KPIs and role-based access control." },
-      { property: "og:title", content: "Admin Portal — Kontenta" },
+      { property: "og:title", content: "Admin Portal — LOVIZA" },
       { property: "og:description", content: "SaaS performance KPIs and access management." },
     ],
   }),

@@ -12,10 +12,10 @@ import { Badge } from "@/components/ui/badge";
 export const Route = createFileRoute("/_authenticated/settings")({
   head: () => ({
     meta: [
-      { title: "Settings — Kontenta" },
-      { name: "description", content: "Update your Kontenta account details and password." },
-      { property: "og:title", content: "Settings — Kontenta" },
-      { property: "og:description", content: "Update your Kontenta account details and password." },
+      { title: "Settings — LOVIZA" },
+      { name: "description", content: "Update your LOVIZA account details and password." },
+      { property: "og:title", content: "Settings — LOVIZA" },
+      { property: "og:description", content: "Update your LOVIZA account details and password." },
     ],
   }),
   component: SettingsPage,

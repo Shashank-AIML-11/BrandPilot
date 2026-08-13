@@ -35,12 +35,12 @@ import {
 export const Route = createFileRoute("/_authenticated/calendar")({
   head: () => ({
     meta: [
-      { title: "Content Calendar — Kontenta" },
+      { title: "Content Calendar — LOVIZA" },
       {
         name: "description",
         content: "A month of blogs, infographics and videos scheduled day by day across channels.",
       },
-      { property: "og:title", content: "Content Calendar — Kontenta" },
+      { property: "og:title", content: "Content Calendar — LOVIZA" },
       {
         property: "og:description",
         content: "Open any day to review, enable or disable scheduled content.",

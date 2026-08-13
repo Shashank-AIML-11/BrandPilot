@@ -7,50 +7,70 @@ export interface Plan {
   tagline: string;
   highlight?: boolean;
   features: string[];
+  brandProfiles: number;
+  monthlyContent: {
+    blog: number;
+    infographic: number;
+    video: number;
+  };
+  channelLimit: number | null;
+  autoPost: boolean;
 }
 
 export const PLANS: Plan[] = [
   {
     id: "starter",
     name: "Starter",
-    priceMonthly: 29,
-    tagline: "For solo founders testing the water.",
+    priceMonthly: 14,
+    tagline: "For a single brand getting started with consistent content.",
     features: [
       "1 brand profile",
-      "1 blog + 2 infographics daily",
+      "2 blogs + 4 infographics + 3 videos per month",
       "Content calendar & manual posting",
       "2 social channels",
       "Email support",
     ],
+    brandProfiles: 1,
+    monthlyContent: { blog: 2, infographic: 4, video: 3 },
+    channelLimit: 2,
+    autoPost: false,
   },
   {
     id: "growth",
     name: "Growth",
-    priceMonthly: 89,
-    tagline: "The full daily engine for growing teams.",
+    priceMonthly: 25,
+    tagline: "For growing teams that need scheduling and performance insights.",
     highlight: true,
     features: [
-      "3 brand profiles",
-      "1 blog + 4 infographics + 2 videos daily",
-      "Auto-schedule & auto-post triggers",
+      "2 brand profiles",
+      "2 blogs + 4 infographics + 4 videos per month",
+      "Auto-schedule & auto-posting",
       "All social channels + Google Drive sync",
       "Performance analytics",
       "Priority support",
     ],
+    brandProfiles: 2,
+    monthlyContent: { blog: 2, infographic: 4, video: 4 },
+    channelLimit: null,
+    autoPost: true,
   },
   {
     id: "scale",
     name: "Scale",
-    priceMonthly: 249,
-    tagline: "Agencies running many brands at once.",
+    priceMonthly: 230,
+    tagline: "For agencies managing a portfolio of brands.",
     features: [
-      "Unlimited brand profiles",
-      "Unlimited daily generation",
-      "Role-based team access (viewer / editor / admin)",
-      "Advanced analytics & exports",
-      "Bulk month regeneration",
-      "Dedicated success manager",
+      "20 brand profiles",
+      "2 blogs + 4 infographics + 5 videos per brand, per month",
+      "Auto-schedule & auto-posting",
+      "All social channels + Google Drive sync",
+      "Advanced analytics",
+      "Dedicated support manager",
     ],
+    brandProfiles: 20,
+    monthlyContent: { blog: 2, infographic: 4, video: 5 },
+    channelLimit: null,
+    autoPost: true,
   },
 ];
 

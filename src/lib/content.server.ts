@@ -28,6 +28,31 @@ export interface GeneratedDay {
   videos?: GeneratedPiece[];
 }
 
+export interface DailyContentQuota {
+  blog: number;
+  infographic: number;
+  video: number;
+}
+
+/** Evenly distribute a plan's monthly allowance over the available dates. */
+export function distributeMonthlyContent(
+  dates: string[],
+  totals: DailyContentQuota,
+): Record<string, DailyContentQuota> {
+  const schedule = Object.fromEntries(
+    dates.map((date) => [date, { blog: 0, infographic: 0, video: 0 }]),
+  ) as Record<string, DailyContentQuota>;
+
+  (Object.keys(totals) as Array<keyof DailyContentQuota>).forEach((type) => {
+    const count = Math.min(totals[type], dates.length);
+    for (let index = 0; index < count; index += 1) {
+      const dateIndex = Math.floor(((index + 0.5) * dates.length) / count);
+      schedule[dates[dateIndex]!]![type] += 1;
+    }
+  });
+  return schedule;
+}
+
 export const DEFAULT_PLATFORMS = ["LinkedIn", "Instagram", "Facebook", "X"];
 
 /** Where each content type is allowed to be published. */
@@ -144,16 +169,24 @@ export function weekPrompt(
   brand: BrandRow,
   dates: string[],
   strategy?: StrategyDirective | null,
+  quotas?: Record<string, DailyContentQuota>,
 ): string {
+  const requestedContent = dates
+    .map((date) => {
+      const quota = quotas?.[date] ?? { blog: 1, infographic: 4, video: 2 };
+      return `- ${date}: ${quota.blog} blog(s), ${quota.infographic} infographic(s), ${quota.video} video(s)`;
+    })
+    .join("\n");
   return `${brandContext(brand)}${strategyContext(strategy)}
 
 
-Create the daily content plan for these dates: ${dates.join(", ")}.
+Create content only for these requested quantities. Do not add any extra pieces:
+${requestedContent}
 
-For EACH date produce exactly:
-- 1 "blog": { "title", "summary", "body", "caption", "hashtags", "time" }
-- 4 "infographics": each { "title", "summary", "caption", "hashtags", "image_prompt", "time" }
-- 2 "videos": each { "title", "summary", "script", "caption", "hashtags", "image_prompt", "time" }
+For each requested blog use: { "title", "summary", "body", "caption", "hashtags", "time" }.
+For each requested infographic use: { "title", "summary", "caption", "hashtags", "image_prompt", "time" }.
+For each requested video use: { "title", "summary", "script", "caption", "hashtags", "image_prompt", "time" }.
+When a requested quantity is zero, omit that field or return an empty array.
 
 Rules:
 - Every title must reference the brand's own product, service, audience or keyword — no generic titles, no buzzword soup.
@@ -174,6 +207,7 @@ interface RowInput {
   userId: string;
   date: string;
   platforms: string[];
+  autopost?: boolean;
 }
 
 function clean(value: unknown, fallback = ""): string {
@@ -185,7 +219,11 @@ function timeOf(piece: GeneratedPiece, fallback: string): string {
   return /^\d{2}:\d{2}$/.test(t) ? t : fallback;
 }
 
-export function rowsForDay(day: GeneratedDay, input: RowInput) {
+export function rowsForDay(
+  day: GeneratedDay,
+  input: RowInput,
+  quota: DailyContentQuota = { blog: 1, infographic: 4, video: 2 },
+) {
   const rows: Record<string, unknown>[] = [];
   // Every row must carry the same keys: PostgREST fills missing keys in a bulk
   // insert with NULL instead of the column default, which breaks NOT NULL columns.
@@ -199,9 +237,10 @@ export function rowsForDay(day: GeneratedDay, input: RowInput) {
     hashtags: "",
     image_prompt: "",
     video_script: "",
+    autopost: input.autopost ?? false,
   };
 
-  if (day.blog) {
+  if (day.blog && quota.blog > 0) {
     rows.push({
       ...base,
       type: "blog",
@@ -217,7 +256,7 @@ export function rowsForDay(day: GeneratedDay, input: RowInput) {
 
 
   const infoTimes = ["10:00", "12:30", "15:00", "18:30"];
-  (day.infographics ?? []).slice(0, 4).forEach((piece, i) => {
+  (day.infographics ?? []).slice(0, quota.infographic).forEach((piece, i) => {
     rows.push({
       ...base,
       type: "infographic",
@@ -232,7 +271,7 @@ export function rowsForDay(day: GeneratedDay, input: RowInput) {
   });
 
   const videoTimes = ["11:00", "17:00"];
-  (day.videos ?? []).slice(0, 2).forEach((piece, i) => {
+  (day.videos ?? []).slice(0, quota.video).forEach((piece, i) => {
     rows.push({
       ...base,
       type: "video",

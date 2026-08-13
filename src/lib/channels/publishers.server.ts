@@ -25,7 +25,9 @@ export interface PublishResult {
   manual?: boolean;
 }
 
-const LINKEDIN_VERSION = "202409";
+// LinkedIn retires versioned REST APIs regularly. Keep this configurable so a
+// deployment can move to a newly supported version without a code release.
+const LINKEDIN_VERSION = process.env.LINKEDIN_VERSION || "202606";
 
 function textFor(item: PublishItem, limit = 3000): string {
   const parts = [item.title, item.caption || item.summary || "", item.hashtags || ""].filter(
@@ -90,24 +92,26 @@ async function publishLinkedIn(
     }
   }
 
-  const post = (await jsonOrThrow(
-    "LinkedIn",
-    await fetch("https://api.linkedin.com/rest/posts", {
-      method: "POST",
-      headers,
-      body: JSON.stringify({
-        author,
-        commentary: textFor(item),
-        visibility: "PUBLIC",
-        distribution: { feedDistribution: "MAIN_FEED" },
-        lifecycleState: "PUBLISHED",
-        isReshareDisabledByAuthor: false,
-        ...(imageUrn ? { content: { media: { id: imageUrn, title: item.title.slice(0, 200) } } } : {}),
-      }),
+  const postResponse = await fetch("https://api.linkedin.com/rest/posts", {
+    method: "POST",
+    headers,
+    body: JSON.stringify({
+      author,
+      commentary: textFor(item),
+      visibility: "PUBLIC",
+      distribution: { feedDistribution: "MAIN_FEED" },
+      lifecycleState: "PUBLISHED",
+      isReshareDisabledByAuthor: false,
+      ...(imageUrn
+        ? { content: { media: { id: imageUrn, title: item.title.slice(0, 200) } } }
+        : {}),
     }),
-  )) as unknown as { id?: string };
+  });
+  const post = (await jsonOrThrow("LinkedIn", postResponse)) as unknown as { id?: string };
 
-  const id = post.id ?? "";
+  // The Posts API normally returns its identifier in this response header,
+  // rather than in its JSON body.
+  const id = postResponse.headers.get("x-restli-id") ?? post.id ?? "";
   return {
     channel: "LinkedIn",
     ok: true,

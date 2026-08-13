@@ -17,7 +17,7 @@ export const Route = createFileRoute("/auth/callback")({
 });
 
 function safePath(value: string | null) {
-  return value && value.startsWith("/") && !value.startsWith("//") ? value : "/calendar";
+  return value && value.startsWith("/") && !value.startsWith("//") ? value : "/brand-profile";
 }
 
 function AuthCallback() {

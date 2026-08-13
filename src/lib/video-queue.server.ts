@@ -13,8 +13,14 @@ type AdminClient = SupabaseClient<Database>;
 const ACTIVE_LIMIT = 2;
 const IMAGE_BATCH_LIMIT = 6;
 
-export async function processVideoQueue(admin: AdminClient) {
-  const { data: active, error: activeError } = await admin
+export async function processVideoQueue(admin: AdminClient, userId?: string) {
+  const videoGenerationEnabled = process.env["VIDEO_GENERATION_ENABLED"] === "true";
+  let started = 0;
+  let stored = 0;
+  let failed = 0;
+
+  if (videoGenerationEnabled) {
+    let activeQuery = admin
     .from("content_items")
     .select("id, user_id, video_job_id")
     .eq("type", "video")
@@ -22,11 +28,11 @@ export async function processVideoQueue(admin: AdminClient) {
     .is("video_url", null)
     .order("updated_at", { ascending: true })
     .limit(12);
-  if (activeError) throw new Error(activeError.message);
+    if (userId) activeQuery = activeQuery.eq("user_id", userId);
+    const { data: active, error: activeError } = await activeQuery;
+    if (activeError) throw new Error(activeError.message);
 
-  let stored = 0;
-  let failed = 0;
-  for (const item of active ?? []) {
+    for (const item of active ?? []) {
     if (!item.video_job_id) continue;
     try {
       const job = await getVideoJob(item.video_job_id);
@@ -67,17 +73,16 @@ export async function processVideoQueue(admin: AdminClient) {
       if (updateError) console.error(updateError);
       failed += 1;
     }
-  }
+    }
 
   // Reserve video capacity before doing the slower image batch. This ensures
   // newly generated videos begin rendering immediately instead of waiting for
   // every infographic request in this worker cycle to finish first.
-  const activeCount = (active ?? []).length - stored - failed;
-  const available = Math.max(0, ACTIVE_LIMIT - activeCount);
-  let started = 0;
+    const activeCount = (active ?? []).length - stored - failed;
+    const available = Math.max(0, ACTIVE_LIMIT - activeCount);
 
-  if (available > 0) {
-    const { data: pending, error: pendingError } = await admin
+    if (available > 0) {
+    let pendingQuery = admin
       .from("content_items")
       .select("id, user_id, title, summary, video_script, image_prompt")
       .eq("type", "video")
@@ -86,6 +91,8 @@ export async function processVideoQueue(admin: AdminClient) {
       .order("scheduled_date", { ascending: true })
       .order("scheduled_time", { ascending: true })
       .limit(available);
+    if (userId) pendingQuery = pendingQuery.eq("user_id", userId);
+    const { data: pending, error: pendingError } = await pendingQuery;
     if (pendingError) throw new Error(pendingError.message);
 
     for (const item of pending ?? []) {
@@ -117,11 +124,13 @@ export async function processVideoQueue(admin: AdminClient) {
         console.error(error);
       }
     }
+    }
   }
 
-  // Render missing infographics and video thumbnails in the durable worker too.
+  // Render missing infographics and video thumbnails even while videos are
+  // paused. Opening a calendar item must never trigger this work.
   // This makes asset creation continue after the user closes the calendar.
-  const { data: pendingImages, error: pendingImagesError } = await admin
+  let pendingImagesQuery = admin
     .from("content_items")
     .select("id, user_id, type, title, summary, image_prompt")
     .neq("type", "blog")
@@ -129,6 +138,8 @@ export async function processVideoQueue(admin: AdminClient) {
     .order("scheduled_date", { ascending: true })
     .order("scheduled_time", { ascending: true })
     .limit(IMAGE_BATCH_LIMIT);
+  if (userId) pendingImagesQuery = pendingImagesQuery.eq("user_id", userId);
+  const { data: pendingImages, error: pendingImagesError } = await pendingImagesQuery;
   if (pendingImagesError) throw new Error(pendingImagesError.message);
 
   const imageResults = await Promise.allSettled(
@@ -158,5 +169,5 @@ export async function processVideoQueue(admin: AdminClient) {
   });
   const imagesStored = imageResults.filter((result) => result.status === "fulfilled").length;
 
-  return { started, stored, failed, imagesStored };
+  return { started, stored, failed, imagesStored, paused: !videoGenerationEnabled };
 }

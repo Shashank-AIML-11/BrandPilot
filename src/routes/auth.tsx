@@ -32,7 +32,7 @@ export const Route = createFileRoute("/auth")({
 });
 
 function safePath(value: string | undefined) {
-  return value && value.startsWith("/") && !value.startsWith("//") ? value : "/calendar";
+  return value && value.startsWith("/") && !value.startsWith("//") ? value : "/brand-profile";
 }
 
 function AuthPage() {
@@ -77,7 +77,10 @@ function AuthPage() {
      const { data, error } = await supabase.auth.signInWithOAuth({
       provider,
       options: {
-      redirectTo: `${window.location.origin}/auth/callback`,
+        // auth.callback.tsx is a TanStack dot-route, so its public URL is
+        // /callback (not /auth/callback). An invalid callback falls back to
+        // Supabase's Site URL, which is why OAuth was leaving this app.
+        redirectTo: `${window.location.origin}/callback`,
       },
      });
 

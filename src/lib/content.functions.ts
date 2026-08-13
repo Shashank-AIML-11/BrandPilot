@@ -19,6 +19,8 @@ export const generateWeek = createServerFn({ method: "POST" })
   .handler(async ({ data, context }) => {
     const { chatJSON } = await import("@/lib/ai.server");
     const helpers = await import("@/lib/content.server");
+    const { getGenerationEntitlement } = await import("@/lib/generation-entitlements");
+    const entitlement = await getGenerationEntitlement(context.supabase, context.userId);
 
     const { data: brand } = await context.supabase
       .from("brand_profiles")
@@ -30,20 +32,31 @@ export const generateWeek = createServerFn({ method: "POST" })
       throw new Error("Complete your Brand Profile before generating content.");
     }
 
-    const platforms = helpers.activePlatforms(brand as never);
+    const platforms = helpers.activePlatforms(brand as never).slice(
+      0,
+      entitlement.plan.channelLimit ?? undefined,
+    );
+    const quotaSchedule = helpers.distributeMonthlyContent(
+      data.dates,
+      entitlement.plan.monthlyContent,
+    );
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
     const { latestStrategy } = await import("@/lib/strategy-queue.server");
     const strategy = await latestStrategy(supabaseAdmin, context.userId);
     const result = await chatJSON<{ days?: Array<Record<string, unknown>> }>(
       helpers.SYSTEM_PROMPT,
-      helpers.weekPrompt(brand as never, data.dates, strategy),
+      helpers.weekPrompt(brand as never, data.dates, strategy, quotaSchedule),
     );
 
 
     const days = (result.days ?? []) as Array<{ date?: string }>;
     const rows = data.dates.flatMap((date, index) => {
       const day = days.find((d) => d.date === date) ?? days[index] ?? {};
-      return helpers.rowsForDay(day, { userId: context.userId, date, platforms });
+      return helpers.rowsForDay(
+        day,
+        { userId: context.userId, date, platforms, autopost: entitlement.plan.autoPost },
+        quotaSchedule[date]!,
+      );
     });
 
     if (!rows.length) throw new Error("The generator returned no content. Please try again.");
@@ -147,6 +160,10 @@ export const startItemVideo = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((input: unknown) => z.object({ id: z.string().uuid() }).parse(input))
   .handler(async ({ data, context }) => {
+    if (process.env["VIDEO_GENERATION_ENABLED"] !== "true") {
+      throw new Error("Video generation is temporarily paused.");
+    }
+
     const { createVideoJob } = await import("@/lib/ai.server");
     const { videoPromptFor } = await import("@/lib/content.server");
 
@@ -184,6 +201,10 @@ export const pollItemVideo = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((input: unknown) => z.object({ id: z.string().uuid() }).parse(input))
   .handler(async ({ data, context }) => {
+    if (process.env["VIDEO_GENERATION_ENABLED"] !== "true") {
+      return { status: "paused" as const, path: null, progress: 0 };
+    }
+
     const { getVideoJob, downloadVideoBytes } = await import("@/lib/ai.server");
 
     const { data: item, error: readError } = await context.supabase
@@ -271,10 +292,10 @@ export const generateItemVoiceover = createServerFn({ method: "POST" })
 /** Starts/resumes the durable video worker after a month has been generated. */
 export const processVideoQueueNow = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .handler(async () => {
+  .handler(async ({ context }) => {
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
     const { processVideoQueue } = await import("@/lib/video-queue.server");
-    return processVideoQueue(supabaseAdmin);
+    return processVideoQueue(supabaseAdmin, context.userId);
   });
 
 /**
@@ -291,6 +312,8 @@ export const queueMonthGeneration = createServerFn({ method: "POST" })
   .inputValidator((input: unknown) => monthInput.parse(input))
 
   .handler(async ({ data, context }) => {
+    const { getGenerationEntitlement } = await import("@/lib/generation-entitlements");
+    const entitlement = await getGenerationEntitlement(context.supabase, context.userId);
     const { data: brand } = await context.supabase
       .from("brand_profiles")
       .select("business_name")
@@ -301,7 +324,23 @@ export const queueMonthGeneration = createServerFn({ method: "POST" })
     }
 
     const today = new Date().toISOString().slice(0, 10);
-    const futureDates = data.dates.filter((d) => d >= today);
+    const currentMonth = today.slice(0, 7);
+    if (data.month !== currentMonth) {
+      throw new Error("Content can only be generated from today through the end of the current month.");
+    }
+    const monthEnd = new Date(`${currentMonth}-01T00:00:00.000Z`);
+    monthEnd.setUTCMonth(monthEnd.getUTCMonth() + 1);
+    monthEnd.setUTCDate(0);
+    const lastDate = monthEnd.toISOString().slice(0, 10);
+    // Do not trust a client-provided subset: a month run always covers today
+    // through the final day of this month.
+    const futureDates: string[] = [];
+    for (let date = today; date <= lastDate; ) {
+      futureDates.push(date);
+      const next = new Date(`${date}T00:00:00.000Z`);
+      next.setUTCDate(next.getUTCDate() + 1);
+      date = next.toISOString().slice(0, 10);
+    }
 
     // Anything already published stays untouched, even if it is dated today.
     const { data: posted } = await context.supabase
@@ -318,6 +357,13 @@ export const queueMonthGeneration = createServerFn({ method: "POST" })
     }
 
 
+    const { distributeMonthlyContent } = await import("@/lib/content.server");
+    const contentPlan = distributeMonthlyContent(dates, entitlement.plan.monthlyContent);
+    const scheduledDates = dates.filter((date) => {
+      const quota = contentPlan[date]!;
+      return quota.blog + quota.infographic + quota.video > 0;
+    });
+
     await context.supabase
       .from("content_generation_jobs")
       .delete()
@@ -327,26 +373,44 @@ export const queueMonthGeneration = createServerFn({ method: "POST" })
     const { error } = await context.supabase.from("content_generation_jobs").insert({
       user_id: context.userId,
       month: data.month,
-      pending_dates: dates,
-      days_total: dates.length,
+      pending_dates: scheduledDates,
+      days_total: scheduledDates.length,
       days_done: 0,
       status: "pending",
+      content_plan: contentPlan,
     } as never);
 
     if (error) throw new Error(error.message);
 
-    // Kick the durable worker straight away so the first days land immediately
-    // instead of waiting for the next scheduled cycle.
+    // Drain the small plan-sized queue immediately. The scheduled worker still
+    // retries anything that fails or is added while this request is in flight.
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
     const { processGenerationQueue } = await import("@/lib/content-queue.server");
     const { processVideoQueue } = await import("@/lib/video-queue.server");
+    let generated = 0;
+    let imagesStored = 0;
     try {
-      await processGenerationQueue(supabaseAdmin);
-      await processVideoQueue(supabaseAdmin);
+      for (let pass = 0; pass < 5; pass += 1) {
+        const result = await processGenerationQueue(supabaseAdmin);
+        generated += result.generated;
+        if (!result.generated) break;
+      }
+      for (let pass = 0; pass < 5; pass += 1) {
+        const result = await processVideoQueue(supabaseAdmin, context.userId);
+        imagesStored += result.imagesStored;
+        if (!result.imagesStored) break;
+      }
     } catch (kickError) {
       console.error(kickError);
     }
 
-    return { queued: dates.length, skipped: data.dates.length - dates.length, from: dates[0] };
+    return {
+      queued: scheduledDates.length,
+      skipped: futureDates.length - dates.length,
+      from: scheduledDates[0],
+      plan: entitlement.plan.name,
+      content: entitlement.plan.monthlyContent,
+      generated,
+      imagesStored,
+    };
   });
-

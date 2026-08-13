@@ -142,8 +142,14 @@ function BrandProfilePage() {
       queryClient.setQueryData(["brand-profile"], saved);
       queryClient.invalidateQueries({ queryKey: ["brand-profile"] });
     },
-    onError: (e) => toast.error(e instanceof Error ? e.message : "Could not save"),
-  });
+  //  onError: (e) => toast.error(e instanceof Error ? e.message : "Could not save"),
+      onError: (e) => {
+      console.error("Brand profile save error:", e);
+      toast.error(e instanceof Error ? e.message : JSON.stringify(e));
+      },
+
+
+});
 
   const set = (key: keyof FormState, value: string) => setForm((f) => ({ ...f, [key]: value }));
 

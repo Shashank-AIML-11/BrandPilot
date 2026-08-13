@@ -3,7 +3,7 @@ import { useQuery } from "@tanstack/react-query";
 import { format } from "date-fns";
 import { Check, Loader2 } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
-import { planById, PLANS } from "@/lib/plans";
+import { planById } from "@/lib/plans";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 
@@ -25,15 +25,12 @@ function PlanPage() {
     queryFn: async () => {
       const { data: userData } = await supabase.auth.getUser();
       const id = userData.user!.id;
-      const [{ data: profile }, { data: subs }] = await Promise.all([
-        supabase.from("profiles").select("plan").eq("id", id).maybeSingle(),
-        supabase
+      const { data: subs } = await supabase
           .from("subscriptions")
           .select("*")
           .eq("user_id", id)
-          .order("created_at", { ascending: false }),
-      ]);
-      return { profile, subs: subs ?? [] };
+          .order("created_at", { ascending: false });
+      return { subs: subs ?? [] };
     },
   });
 
@@ -45,7 +42,10 @@ function PlanPage() {
     );
   }
 
-  const current = planById(data?.profile?.plan) ?? PLANS[0]!;
+  const latestSubscription = data?.subs[0];
+  const current = ["pending", "active"].includes(latestSubscription?.status ?? "")
+    ? planById(latestSubscription?.plan)
+    : undefined;
 
   return (
     <div className="mx-auto max-w-3xl space-y-6">
@@ -60,21 +60,29 @@ function PlanPage() {
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
             <p className="text-xs uppercase tracking-wide text-muted-foreground">Current plan</p>
-            <h2 className="mt-1 font-display text-2xl font-bold">{current.name}</h2>
+            <h2 className="mt-1 font-display text-2xl font-bold">{current?.name ?? "No active plan"}</h2>
           </div>
-          <p className="font-display text-2xl font-bold">
-            ${current.priceMonthly}
-            <span className="text-sm font-normal text-muted-foreground">/mo</span>
-          </p>
+          {current && (
+            <p className="font-display text-2xl font-bold">
+              ${current.priceMonthly}
+              <span className="text-sm font-normal text-muted-foreground">/mo</span>
+            </p>
+          )}
         </div>
-        <ul className="mt-5 grid gap-2 sm:grid-cols-2">
-          {current.features.map((f) => (
+        {current ? (
+          <ul className="mt-5 grid gap-2 sm:grid-cols-2">
+            {current.features.map((f) => (
             <li key={f} className="flex gap-2 text-sm text-muted-foreground">
               <Check className="mt-0.5 h-4 w-4 shrink-0 text-primary" />
               {f}
             </li>
-          ))}
-        </ul>
+            ))}
+          </ul>
+        ) : (
+          <p className="mt-3 text-sm text-muted-foreground">
+            Subscribe to a plan before generating any content.
+          </p>
+        )}
         <Button className="mt-6" asChild>
           <Link to="/pricing">Change plan</Link>
         </Button>

@@ -1,7 +1,14 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Database } from "@/integrations/supabase/types";
 import { chatJSON } from "@/lib/ai.server";
-import { SYSTEM_PROMPT, activePlatforms, rowsForDay, weekPrompt } from "@/lib/content.server";
+import {
+  SYSTEM_PROMPT,
+  activePlatforms,
+  rowsForDay,
+  weekPrompt,
+  type DailyContentQuota,
+} from "@/lib/content.server";
+import { getGenerationEntitlement } from "@/lib/generation-entitlements";
 
 type AdminClient = SupabaseClient<Database>;
 
@@ -40,18 +47,30 @@ export async function processGenerationQueue(admin: AdminClient) {
       throw new Error("Complete your Brand Profile before generating content.");
     }
 
-    const platforms = activePlatforms(brand as never);
+    const entitlement = await getGenerationEntitlement(admin, job.user_id);
+    const platforms = activePlatforms(brand as never).slice(
+      0,
+      entitlement.plan.channelLimit ?? undefined,
+    );
+    const contentPlan = (job.content_plan ?? {}) as Record<string, DailyContentQuota>;
+    const quotas = Object.fromEntries(
+      pending.map((date) => [date, contentPlan[date] ?? { blog: 0, infographic: 0, video: 0 }]),
+    ) as Record<string, DailyContentQuota>;
     const { latestStrategy } = await import("@/lib/strategy-queue.server");
     const strategy = await latestStrategy(admin, job.user_id);
     const result = await chatJSON<{ days?: Array<Record<string, unknown>> }>(
       SYSTEM_PROMPT,
-      weekPrompt(brand as never, pending, strategy),
+      weekPrompt(brand as never, pending, strategy, quotas),
     );
 
     const days = (result.days ?? []) as Array<{ date?: string }>;
     const rows = pending.flatMap((date, index) => {
       const day = days.find((d) => d.date === date) ?? days[index] ?? {};
-      return rowsForDay(day as never, { userId: job.user_id, date, platforms });
+      return rowsForDay(
+        day as never,
+        { userId: job.user_id, date, platforms, autopost: entitlement.plan.autoPost },
+        quotas[date]!,
+      );
     });
     if (!rows.length) throw new Error("The generator returned no content for this batch.");
 

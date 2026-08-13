@@ -184,6 +184,9 @@ Return JSON shaped exactly as:
 
       if (rebuildDates.length) {
         const month = tomorrow.slice(0, 7);
+        const { getGenerationEntitlement } = await import("@/lib/generation-entitlements");
+        const { distributeMonthlyContent } = await import("@/lib/content.server");
+        const entitlement = await getGenerationEntitlement(admin, userId);
         await admin
           .from("content_generation_jobs")
           .delete()
@@ -196,6 +199,7 @@ Return JSON shaped exactly as:
           days_total: rebuildDates.length,
           days_done: 0,
           status: "pending",
+          content_plan: distributeMonthlyContent(rebuildDates, entitlement.plan.monthlyContent),
         } as never);
       }
 

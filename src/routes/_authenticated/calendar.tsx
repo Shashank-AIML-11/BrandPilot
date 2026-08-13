@@ -189,7 +189,7 @@ function CalendarPage() {
         <div>
           <h1 className="text-2xl font-bold">Content Calendar</h1>
           <p className="mt-1 text-sm text-muted-foreground">
-            1 blog · 4 infographics · 2 videos every day, generated from your brand profile.
+            Plan-based blogs, infographics and videos, generated from your brand profile.
           </p>
         </div>
         <div className="flex items-center gap-2">
@@ -254,13 +254,12 @@ function CalendarPage() {
               const failed = list.some(
                 (item) => item.type === "video" && item.video_status === "failed",
               );
+              const videoPaused = list.some(
+                (item) => item.type === "video" && !item.video_url && item.video_status === "none",
+              );
               const ready =
                 list.length > 0 &&
-                list.every(
-                  (item) =>
-                    (item.type === "blog" || Boolean(item.image_url)) &&
-                    (item.type !== "video" || Boolean(item.video_url)),
-                );
+                list.every((item) => item.type === "blog" || Boolean(item.image_url));
               return (
                 <button
                   key={key}
@@ -305,7 +304,13 @@ function CalendarPage() {
                               : "text-primary"
                         }`}
                       >
-                        {failed ? "Rendering issue" : ready ? "Ready" : "Rendering"}
+                        {failed
+                          ? "Rendering issue"
+                          : !ready
+                            ? "Rendering"
+                            : videoPaused
+                              ? "Ready · video paused"
+                              : "Ready"}
                       </p>
                     </div>
                   )}

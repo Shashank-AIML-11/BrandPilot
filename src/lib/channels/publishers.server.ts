@@ -412,7 +412,7 @@ async function publishWebsite(
 
   const key = await crypto.subtle.importKey(
     "raw",
-    new TextEncoder().encode(conn.accessToken || "LOVIZA"),
+    new TextEncoder().encode(conn.accessToken || "LOVIZA123"),
     { name: "HMAC", hash: "SHA-256" },
     false,
     ["sign"],
@@ -426,7 +426,7 @@ async function publishWebsite(
 
   const res = await fetch(endpoint, {
     method: "POST",
-    headers: { "content-type": "application/json", "x-LOVIZA-signature": signature },
+    headers: { "content-type": "application/json", "x-LOVIZA123-signature": signature },
     body,
   });
   if (!res.ok) throw new Error(`Website endpoint returned ${res.status}: ${await res.text()}`);

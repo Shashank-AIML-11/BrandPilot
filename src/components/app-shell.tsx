@@ -93,7 +93,7 @@ export function AppShell({ children }: { children: ReactNode }) {
             <Menu className="h-5 w-5" />
           </Button>
           <Link to="/calendar" className="font-display text-lg font-bold tracking-tight">
-            LOVIZA<span className="text-primary">.</span>
+            LOVIZA123<span className="text-primary">.</span>
           </Link>
         </div>
 

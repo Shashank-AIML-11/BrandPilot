@@ -13,12 +13,12 @@ import { Textarea } from "@/components/ui/textarea";
 export const Route = createFileRoute("/_authenticated/brand-profile")({
   head: () => ({
     meta: [
-      { title: "Brand Profile — LOVIZA" },
+      { title: "Brand Profile — LOVIZA123" },
       {
         name: "description",
         content: "Store your website, products, ICP, propositions, tone and social handles once.",
       },
-      { property: "og:title", content: "Brand Profile — LOVIZA" },
+      { property: "og:title", content: "Brand Profile — LOVIZA123" },
       {
         property: "og:description",
         content: "The single source of truth every generated asset is built from.",
@@ -312,7 +312,7 @@ function BrandProfilePage() {
             onChange={(e) => set("google_drive_folder", e.target.value)}
           />
           <p className="text-xs text-muted-foreground">
-            Generated assets are stored in LOVIZA; paste a Drive folder here to keep your source
+            Generated assets are stored in LOVIZA123; paste a Drive folder here to keep your source
             brand assets alongside them.
           </p>
         </div>

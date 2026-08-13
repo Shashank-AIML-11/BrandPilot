@@ -22,12 +22,12 @@ import { supabase } from "@/integrations/supabase/client";
 export const Route = createFileRoute("/_authenticated/analytics")({
   head: () => ({
     meta: [
-      { title: "Analytics — LOVIZA" },
+      { title: "Analytics — LOVIZA123" },
       {
         name: "description",
         content: "Impressions, clicks and engagement across every generated content type.",
       },
-      { property: "og:title", content: "Analytics — LOVIZA" },
+      { property: "og:title", content: "Analytics — LOVIZA123" },
       {
         property: "og:description",
         content: "See which content types and channels are performing this month.",

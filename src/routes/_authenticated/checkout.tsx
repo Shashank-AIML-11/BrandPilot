@@ -12,10 +12,10 @@ import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 export const Route = createFileRoute("/_authenticated/checkout")({
   head: () => ({
     meta: [
-      { title: "Checkout — LOVIZA" },
-      { name: "description", content: "Confirm your LOVIZA plan and payment method." },
-      { property: "og:title", content: "Checkout — LOVIZA" },
-      { property: "og:description", content: "Confirm your LOVIZA plan and payment method." },
+      { title: "Checkout — LOVIZA123" },
+      { name: "description", content: "Confirm your LOVIZA123 plan and payment method." },
+      { property: "og:title", content: "Checkout — LOVIZA123" },
+      { property: "og:description", content: "Confirm your LOVIZA123 plan and payment method." },
     ],
   }),
   validateSearch: (search: Record<string, unknown>) => ({

@@ -7,10 +7,10 @@ export const Route = createFileRoute("/auth/callback")({
   ssr: false,
   head: () => ({
     meta: [
-      { title: "Signing you in — LOVIZA" },
-      { name: "description", content: "Completing your LOVIZA sign-in." },
-      { property: "og:title", content: "Signing you in — LOVIZA" },
-      { property: "og:description", content: "Completing your LOVIZA sign-in." },
+      { title: "Signing you in — LOVIZA123" },
+      { name: "description", content: "Completing your LOVIZA123 sign-in." },
+      { property: "og:title", content: "Signing you in — LOVIZA123" },
+      { property: "og:description", content: "Completing your LOVIZA123 sign-in." },
     ],
   }),
   component: AuthCallback,
@@ -25,12 +25,12 @@ function AuthCallback() {
 
   useEffect(() => {
     let done = false;
-    const target = safePath(window.sessionStorage.getItem("LOVIZA-auth-redirect"));
+    const target = safePath(window.sessionStorage.getItem("LOVIZA123-auth-redirect"));
 
     const finish = () => {
       if (done) return;
       done = true;
-      window.sessionStorage.removeItem("LOVIZA-auth-redirect");
+      window.sessionStorage.removeItem("LOVIZA123-auth-redirect");
       navigate({ to: target, replace: true });
     };
 

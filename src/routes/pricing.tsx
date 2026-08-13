@@ -8,13 +8,13 @@ import { Button } from "@/components/ui/button";
 export const Route = createFileRoute("/pricing")({
   head: () => ({
     meta: [
-      { title: "Pricing — LOVIZA123" },
+      { title: "Pricing — LOVIZA" },
       {
         name: "description",
         content:
-          "Three simple LOVIZA123 plans: Starter, Growth and Scale. Daily AI marketing content for every brand you run.",
+          "Three simple LOVIZA plans: Starter, Growth and Scale. Daily AI marketing content for every brand you run.",
       },
-      { property: "og:title", content: "Pricing — LOVIZA123" },
+      { property: "og:title", content: "Pricing — LOVIZA" },
       {
         property: "og:description",
         content: "Starter, Growth and Scale plans for AI-generated marketing content.",
@@ -34,7 +34,7 @@ function PricingPage() {
     <div className="min-h-screen bg-background">
       <header className="mx-auto flex max-w-6xl items-center justify-between px-6 py-6">
         <Link to="/" className="font-display text-lg font-bold">
-          LOVIZA123<span className="text-primary">.</span>
+          LOVIZA<span className="text-primary">.</span>
         </Link>
         <Button variant="outline" asChild>
           <Link to={session ? "/calendar" : "/auth"}>{session ? "Open app" : "Sign in"}</Link>

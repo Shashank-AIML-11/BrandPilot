@@ -10,10 +10,10 @@ import { Badge } from "@/components/ui/badge";
 export const Route = createFileRoute("/_authenticated/plan")({
   head: () => ({
     meta: [
-      { title: "Your plan — LOVIZA123" },
-      { name: "description", content: "Review your LOVIZA123 subscription and billing history." },
-      { property: "og:title", content: "Your plan — LOVIZA123" },
-      { property: "og:description", content: "Review your LOVIZA123 subscription and billing." },
+      { title: "Your plan — LOVIZA" },
+      { name: "description", content: "Review your LOVIZA subscription and billing history." },
+      { property: "og:title", content: "Your plan — LOVIZA" },
+      { property: "og:description", content: "Review your LOVIZA subscription and billing." },
     ],
   }),
   component: PlanPage,

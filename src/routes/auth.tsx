@@ -20,9 +20,9 @@ export const Route = createFileRoute("/auth")({
   },
   head: () => ({
     meta: [
-      { title: "Sign in — LOVIZA123" },
-      { name: "description", content: "Sign in to your LOVIZA123 content calendar workspace." },
-      { property: "og:title", content: "Sign in — LOVIZA123" },
+      { title: "Sign in — LOVIZA" },
+      { name: "description", content: "Sign in to your LOVIZA content calendar workspace." },
+      { property: "og:title", content: "Sign in — LOVIZA" },
       { property: "og:description", content: "Access your AI-generated marketing content calendar." },
     ],
   }),
@@ -52,7 +52,7 @@ function AuthPage() {
 
     const enterApp = () => {
       if (!active) return;
-      window.sessionStorage.removeItem("LOVIZA123-auth-redirect");
+      window.sessionStorage.removeItem("LOVIZA-auth-redirect");
       navigate({ to: next, replace: true });
     };
 
@@ -73,7 +73,7 @@ function AuthPage() {
   async function handleSocialSignIn(provider: "google" | "apple") {
     setSocialBusy(provider);
     try {
-      window.sessionStorage.setItem("LOVIZA123-auth-redirect", next);
+      window.sessionStorage.setItem("LOVIZA-auth-redirect", next);
      const { data, error } = await supabase.auth.signInWithOAuth({
       provider,
       options: {
@@ -90,7 +90,7 @@ function AuthPage() {
     //  if (result.error) throw result.error;
     //  if (result.redirected) return;
     //  toast.success(`Signed in with ${provider === "google" ? "Google" : "Apple"}`);
-      window.sessionStorage.removeItem("LOVIZA123-auth-redirect");
+      window.sessionStorage.removeItem("LOVIZA-auth-redirect");
       navigate({ to: next, replace: true });
 
     } catch (err) {
@@ -145,7 +145,7 @@ function AuthPage() {
     <div className="grid min-h-screen lg:grid-cols-2">
       <div className="grid-noise hidden flex-col justify-between p-12 lg:flex">
         <Link to="/" className="font-display text-lg font-bold">
-          LOVIZA123<span className="text-primary">.</span>
+          LOVIZA<span className="text-primary">.</span>
         </Link>
         <div>
           <h2 className="max-w-sm text-4xl font-bold leading-tight">
@@ -158,13 +158,13 @@ function AuthPage() {
             channel you run.
           </p>
         </div>
-        <p className="text-xs text-muted-foreground">© {new Date().getFullYear()} LOVIZA123</p>
+        <p className="text-xs text-muted-foreground">© {new Date().getFullYear()} LOVIZA</p>
       </div>
 
       <div className="flex items-center justify-center px-6 py-16">
         <div className="w-full max-w-sm">
           <Link to="/" className="font-display text-lg font-bold lg:hidden">
-            LOVIZA123<span className="text-primary">.</span>
+            LOVIZA<span className="text-primary">.</span>
           </Link>
           <h1 className="mt-6 text-2xl font-bold">
             {mode === "signin" && "Sign in"}
@@ -285,7 +285,7 @@ function AuthPage() {
           </form>
 
           <p className="mt-6 text-center text-sm text-muted-foreground">
-            {mode === "signup" ? "Already have an account?" : "New to LOVIZA123?"}{" "}
+            {mode === "signup" ? "Already have an account?" : "New to LOVIZA?"}{" "}
             <button
               type="button"
               className="text-primary hover:underline"

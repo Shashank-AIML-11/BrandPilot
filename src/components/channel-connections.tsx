@@ -144,7 +144,7 @@ export function ChannelConnections() {
           <p className="font-medium">Website</p>
           <p className="text-xs text-muted-foreground">
             Blogs are POSTed as JSON to this endpoint, signed with your secret in the{" "}
-            <code>x-LOVIZA123-signature</code> header.
+            <code>x-LOVIZA-signature</code> header.
           </p>
         </div>
         <div className="grid gap-3 sm:grid-cols-2">
@@ -174,7 +174,7 @@ export function ChannelConnections() {
       </div>
 
       <p className="text-xs text-muted-foreground">
-        Quora and Medium have no public posting API — publishing there is recorded in LOVIZA123 so
+        Quora and Medium have no public posting API — publishing there is recorded in LOVIZA so
         your calendar stays accurate, and you post the prepared content manually.
       </p>
     </section>

@@ -115,7 +115,6 @@ export type Database = {
       }
       content_generation_jobs: {
         Row: {
-          content_plan: Json
           created_at: string
           days_done: number
           days_total: number
@@ -128,7 +127,6 @@ export type Database = {
           user_id: string
         }
         Insert: {
-          content_plan?: Json
           created_at?: string
           days_done?: number
           days_total?: number
@@ -141,7 +139,6 @@ export type Database = {
           user_id: string
         }
         Update: {
-          content_plan?: Json
           created_at?: string
           days_done?: number
           days_total?: number
@@ -367,33 +364,57 @@ export type Database = {
       subscriptions: {
         Row: {
           billing_period: string
+          cancelled_at: string | null
           created_at: string
+          currency: string
+          current_period_end: string | null
+          failure_reason: string | null
           id: string
+          last_payment_id: string | null
           payment_method: string
           plan: string
           price_cents: number
+          razorpay_customer_id: string | null
+          razorpay_plan_id: string | null
+          razorpay_subscription_id: string | null
           status: string
           updated_at: string
           user_id: string
         }
         Insert: {
           billing_period?: string
+          cancelled_at?: string | null
           created_at?: string
+          currency?: string
+          current_period_end?: string | null
+          failure_reason?: string | null
           id?: string
+          last_payment_id?: string | null
           payment_method?: string
           plan: string
           price_cents?: number
+          razorpay_customer_id?: string | null
+          razorpay_plan_id?: string | null
+          razorpay_subscription_id?: string | null
           status?: string
           updated_at?: string
           user_id: string
         }
         Update: {
           billing_period?: string
+          cancelled_at?: string | null
           created_at?: string
+          currency?: string
+          current_period_end?: string | null
+          failure_reason?: string | null
           id?: string
+          last_payment_id?: string | null
           payment_method?: string
           plan?: string
           price_cents?: number
+          razorpay_customer_id?: string | null
+          razorpay_plan_id?: string | null
+          razorpay_subscription_id?: string | null
           status?: string
           updated_at?: string
           user_id?: string

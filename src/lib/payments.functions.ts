@@ -11,7 +11,7 @@ const createInput = z.object({
  * Creates (or reuses) a Razorpay customer + subscription for the
  * current user, records a "created" row in public.subscriptions, and
  * returns what the client needs to open Razorpay Checkout. The
- * subscription only becomes "active" once Razorpay confirms payment â€”
+ * subscription only becomes "active" once Razorpay confirms payment —
  * that transition happens in the webhook, never here.
  */
 export const createRazorpaySubscription = createServerFn({ method: "POST" })
@@ -27,14 +27,31 @@ export const createRazorpaySubscription = createServerFn({ method: "POST" })
       .eq("id", context.userId)
       .maybeSingle();
     if (profileError) throw new Error(profileError.message);
-    if (!profile?.email) throw new Error("Your account is missing an email address.");
+
+    // The profiles table is populated by a DB trigger on signup, which
+    // can occasionally land a blank email (e.g. a race during OAuth
+    // redirect setup) and never self-heals afterwards. The JWT's
+    // `email` claim is authoritative and always current, so fall back
+    // to it — and opportunistically repair the stale profiles row so
+    // this doesn't need to run again for this user.
+    const claimsEmail =
+      typeof context.claims === "object" && context.claims && "email" in context.claims
+        ? (context.claims as { email?: unknown }).email
+        : undefined;
+    const email = profile?.email || (typeof claimsEmail === "string" ? claimsEmail : "");
+    if (!email) throw new Error("Your account is missing an email address.");
+
+    if (!profile?.email && email) {
+      const { supabaseAdmin: admin } = await import("@/integrations/supabase/client.server");
+      await admin.from("profiles").update({ email } as never).eq("id", context.userId);
+    }
 
     const razorpay = await import("@/lib/payments/razorpay.server");
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
 
     const customer = await razorpay.ensureCustomer({
-      email: profile.email,
-      name: profile.full_name,
+      email,
+      name: profile?.full_name,
     });
 
     const subscription = await razorpay.createSubscription({
@@ -67,8 +84,8 @@ export const createRazorpaySubscription = createServerFn({ method: "POST" })
       subscriptionId: subscription.id,
       keyId: razorpay.publicKeyId(),
       planName: plan.name,
-      customerEmail: profile.email,
-      customerName: profile.full_name ?? undefined,
+      customerEmail: email,
+      customerName: profile?.full_name ?? undefined,
     };
   });
 

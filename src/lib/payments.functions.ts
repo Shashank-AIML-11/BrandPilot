@@ -11,7 +11,7 @@ const createInput = z.object({
  * Creates (or reuses) a Razorpay customer + subscription for the
  * current user, records a "created" row in public.subscriptions, and
  * returns what the client needs to open Razorpay Checkout. The
- * subscription only becomes "active" once Razorpay confirms payment —
+ * subscription only becomes "active" once Razorpay confirms payment â€”
  * that transition happens in the webhook, never here.
  */
 export const createRazorpaySubscription = createServerFn({ method: "POST" })
@@ -32,7 +32,7 @@ export const createRazorpaySubscription = createServerFn({ method: "POST" })
     // can occasionally land a blank email (e.g. a race during OAuth
     // redirect setup) and never self-heals afterwards. The JWT's
     // `email` claim is authoritative and always current, so fall back
-    // to it — and opportunistically repair the stale profiles row so
+    // to it â€” and opportunistically repair the stale profiles row so
     // this doesn't need to run again for this user.
     const claimsEmail =
       typeof context.claims === "object" && context.claims && "email" in context.claims

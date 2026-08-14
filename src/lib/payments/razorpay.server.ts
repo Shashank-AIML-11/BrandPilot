@@ -88,7 +88,7 @@ export async function ensureCustomer(params: {
     body: JSON.stringify({
       name: params.name || params.email,
       email: params.email,
-      fail_existing: 0,
+      fail_existing: "0",
     }),
   });
 }

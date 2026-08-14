@@ -1,18 +1,18 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { CalendarDays, Sparkles, BarChart3, ShieldCheck, ArrowRight } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { PLANS } from "@/lib/plans";
+import { formatINR, PLANS } from "@/lib/plans";
 
 export const Route = createFileRoute("/")({
   head: () => ({
     meta: [
-      { title: "LOVIZA — A month of marketing content, generated in minutes" },
+      { title: "Kontenta — A month of marketing content, generated in minutes" },
       {
         name: "description",
         content:
-          "Store your brand once. LOVIZA generates daily blogs, infographics and video scripts, drops them into a calendar and schedules them across every channel.",
+          "Store your brand once. Kontenta generates daily blogs, infographics and video scripts, drops them into a calendar and schedules them across every channel.",
       },
-      { property: "og:title", content: "LOVIZA — AI marketing content on autopilot" },
+      { property: "og:title", content: "Kontenta — AI marketing content on autopilot" },
       {
         property: "og:description",
         content:
@@ -51,7 +51,7 @@ function Landing() {
     <div className="min-h-screen bg-background">
       <header className="mx-auto flex max-w-6xl items-center justify-between px-6 py-6">
         <span className="font-display text-lg font-bold tracking-tight">
-          LOVIZA<span className="text-primary">.</span>
+          Kontenta<span className="text-primary">.</span>
         </span>
         <nav className="flex items-center gap-2">
           <Button variant="ghost" asChild>
@@ -74,7 +74,7 @@ function Landing() {
             filled before Monday.
           </h1>
           <p className="mx-auto mt-6 max-w-xl text-base text-muted-foreground">
-            LOVIZA reads your brand profile and writes the blogs, designs the infographics and
+            Kontenta reads your brand profile and writes the blogs, designs the infographics and
             scripts the videos — then schedules all of it, day by day, across every channel you use.
           </p>
           <div className="mt-8 flex flex-wrap justify-center gap-3">
@@ -111,7 +111,7 @@ function Landing() {
               <h3 className="text-lg font-semibold">{plan.name}</h3>
               <p className="mt-1 text-sm text-muted-foreground">{plan.tagline}</p>
               <p className="mt-5 font-display text-4xl font-bold">
-                ${plan.priceMonthly}
+                {formatINR(plan.priceMonthly)}
                 <span className="text-sm font-normal text-muted-foreground">/mo</span>
               </p>
               <Button className="mt-5 w-full" variant={plan.highlight ? "default" : "outline"} asChild>
@@ -123,7 +123,7 @@ function Landing() {
       </section>
 
       <footer className="border-t border-border py-8 text-center text-xs text-muted-foreground">
-        © {new Date().getFullYear()} LOVIZA. Built for marketers who ship daily.
+        © {new Date().getFullYear()} Kontenta. Built for marketers who ship daily.
       </footer>
     </div>
   );

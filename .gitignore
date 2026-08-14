@@ -39,3 +39,4 @@ dist/
 
 supabase/.temp/
 
+.env.example

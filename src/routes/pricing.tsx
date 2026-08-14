@@ -2,19 +2,19 @@ import { createFileRoute, Link } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
 import { Check } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
-import { PLANS } from "@/lib/plans";
+import { formatINR, PLANS } from "@/lib/plans";
 import { Button } from "@/components/ui/button";
 
 export const Route = createFileRoute("/pricing")({
   head: () => ({
     meta: [
-      { title: "Pricing — LOVIZA" },
+      { title: "Pricing — Kontenta" },
       {
         name: "description",
         content:
-          "Three simple LOVIZA plans: Starter, Growth and Scale. Daily AI marketing content for every brand you run.",
+          "Three simple Kontenta plans: Starter, Growth and Scale. Daily AI marketing content for every brand you run.",
       },
-      { property: "og:title", content: "Pricing — LOVIZA" },
+      { property: "og:title", content: "Pricing — Kontenta" },
       {
         property: "og:description",
         content: "Starter, Growth and Scale plans for AI-generated marketing content.",
@@ -34,7 +34,7 @@ function PricingPage() {
     <div className="min-h-screen bg-background">
       <header className="mx-auto flex max-w-6xl items-center justify-between px-6 py-6">
         <Link to="/" className="font-display text-lg font-bold">
-          LOVIZA<span className="text-primary">.</span>
+          Kontenta<span className="text-primary">.</span>
         </Link>
         <Button variant="outline" asChild>
           <Link to={session ? "/calendar" : "/auth"}>{session ? "Open app" : "Sign in"}</Link>
@@ -66,7 +66,7 @@ function PricingPage() {
               <h2 className="text-lg font-semibold">{plan.name}</h2>
               <p className="mt-1 text-sm text-muted-foreground">{plan.tagline}</p>
               <p className="mt-6 font-display text-4xl font-bold">
-                ${plan.priceMonthly}
+                {formatINR(plan.priceMonthly)}
                 <span className="text-sm font-normal text-muted-foreground">/month</span>
               </p>
               <ul className="mt-6 flex-1 space-y-3 text-sm">

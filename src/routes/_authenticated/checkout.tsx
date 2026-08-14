@@ -3,8 +3,9 @@ import { createFileRoute, useNavigate, useSearch } from "@tanstack/react-router"
 import { useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { Check, Loader2, Lock } from "lucide-react";
-import { supabase } from "@/integrations/supabase/client";
-import { PAYMENT_METHODS, PLANS, planById, type PlanId } from "@/lib/plans";
+import { formatINR, PLANS, planById, type PlanId } from "@/lib/plans";
+import { createRazorpaySubscription, confirmRazorpayPayment } from "@/lib/payments.functions";
+import { loadRazorpayScript } from "@/lib/payments/load-razorpay-script";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
@@ -13,9 +14,9 @@ export const Route = createFileRoute("/_authenticated/checkout")({
   head: () => ({
     meta: [
       { title: "Checkout — LOVIZA" },
-      { name: "description", content: "Confirm your LOVIZA plan and payment method." },
+      { name: "description", content: "Confirm your LOVIZA plan and complete payment." },
       { property: "og:title", content: "Checkout — LOVIZA" },
-      { property: "og:description", content: "Confirm your LOVIZA plan and payment method." },
+      { property: "og:description", content: "Confirm your LOVIZA plan and complete payment." },
     ],
   }),
   validateSearch: (search: Record<string, unknown>) => ({
@@ -30,7 +31,6 @@ function CheckoutPage() {
   const queryClient = useQueryClient();
 
   const [planId, setPlanId] = useState<PlanId>(planById(planParam)?.id ?? "growth");
-  const [method, setMethod] = useState(PAYMENT_METHODS[0]!.id);
   const [busy, setBusy] = useState(false);
 
   const plan = planById(planId)!;
@@ -39,31 +39,52 @@ function CheckoutPage() {
     e.preventDefault();
     setBusy(true);
     try {
-      const { data: userData } = await supabase.auth.getUser();
-      const userId = userData.user!.id;
+      await loadRazorpayScript();
 
-      const { error: subError } = await supabase.from("subscriptions").insert({
-        user_id: userId,
-        plan: plan.id,
-        price_cents: plan.priceMonthly * 100,
-        billing_period: "monthly",
-        payment_method: method,
-        status: "pending",
+      const { subscriptionId, keyId, planName, customerEmail, customerName } =
+        await createRazorpaySubscription({ data: { planId } });
+
+      const checkout = new window.Razorpay({
+        key: keyId,
+        subscription_id: subscriptionId,
+        name: "LOVIZA",
+        description: `${planName} plan · monthly`,
+        prefill: { name: customerName, email: customerEmail },
+        theme: { color: "#6d28d9" },
+        handler: async (response) => {
+          try {
+            await confirmRazorpayPayment({
+              data: {
+                razorpayPaymentId: response.razorpay_payment_id,
+                razorpaySubscriptionId: response.razorpay_subscription_id,
+                razorpaySignature: response.razorpay_signature,
+              },
+            });
+            queryClient.invalidateQueries();
+            toast.success(`${planName} plan activated. Welcome aboard!`);
+            navigate({ to: "/plan" });
+          } catch (err) {
+            // Payment succeeded on Razorpay's side even if this
+            // confirmation call fails — the webhook will still
+            // activate the subscription shortly. Let the user know
+            // rather than implying the payment itself failed.
+            toast.info(
+              "Payment received — finishing setup. This can take a few seconds; refresh the plan page shortly.",
+            );
+            console.error("[checkout] confirm failed", err);
+            navigate({ to: "/plan" });
+          } finally {
+            setBusy(false);
+          }
+        },
+        modal: {
+          ondismiss: () => setBusy(false),
+        },
       });
-      if (subError) throw subError;
 
-      const { error: profileError } = await supabase
-        .from("profiles")
-        .update({ plan: plan.id })
-        .eq("id", userId);
-      if (profileError) throw profileError;
-
-      queryClient.invalidateQueries();
-      toast.success(`${plan.name} plan selected. Payment collection goes live once the gateway is connected.`);
-      navigate({ to: "/plan" });
+      checkout.open();
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Could not complete subscription");
-    } finally {
+      toast.error(err instanceof Error ? err.message : "Could not start checkout");
       setBusy(false);
     }
   }
@@ -73,7 +94,7 @@ function CheckoutPage() {
       <div>
         <h1 className="text-2xl font-bold">Complete your subscription</h1>
         <p className="mt-1 text-sm text-muted-foreground">
-          Choose your plan and preferred payment method, then submit.
+          Choose your plan, then complete payment securely via Razorpay.
         </p>
       </div>
 
@@ -95,7 +116,7 @@ function CheckoutPage() {
                   <div className="flex-1">
                     <div className="flex items-center justify-between">
                       <span className="font-medium">{p.name}</span>
-                      <span className="font-display font-semibold">${p.priceMonthly}/mo</span>
+                      <span className="font-display font-semibold">{formatINR(p.priceMonthly)}/mo</span>
                     </div>
                     <p className="mt-1 text-sm text-muted-foreground">{p.tagline}</p>
                   </div>
@@ -105,25 +126,15 @@ function CheckoutPage() {
           </section>
 
           <section className="surface p-5">
-            <h2 className="text-sm font-semibold">Payment method</h2>
-            <RadioGroup value={method} onValueChange={setMethod} className="mt-4 grid gap-3 sm:grid-cols-2">
-              {PAYMENT_METHODS.map((m) => (
-                <label
-                  key={m.id}
-                  className="flex cursor-pointer items-start gap-3 rounded-xl border border-border p-4 transition-colors hover:bg-accent has-[:checked]:border-primary"
-                >
-                  <RadioGroupItem value={m.id} className="mt-1" />
-                  <div>
-                    <p className="text-sm font-medium">{m.label}</p>
-                    <p className="text-xs text-muted-foreground">{m.hint}</p>
-                  </div>
-                </label>
-              ))}
-            </RadioGroup>
+            <h2 className="text-sm font-semibold">Payment</h2>
+            <p className="mt-2 text-sm text-muted-foreground">
+              Card, UPI, netbanking, and wallets are all available in the next step — Razorpay's
+              secure checkout lets you pick your preferred method there.
+            </p>
             <p className="mt-4 flex items-center gap-2 text-xs text-muted-foreground">
               <Lock className="h-3.5 w-3.5" />
-              The payment gateway is not connected yet — submitting records your plan and marks the
-              subscription as pending.
+              Payments are processed securely by Razorpay. Your card details never touch our
+              servers.
             </p>
           </section>
         </div>
@@ -132,15 +143,15 @@ function CheckoutPage() {
           <h2 className="text-sm font-semibold">Order summary</h2>
           <div className="mt-4 flex items-center justify-between text-sm">
             <span className="text-muted-foreground">{plan.name} · monthly</span>
-            <span className="font-medium">${plan.priceMonthly}.00</span>
+            <span className="font-medium">{formatINR(plan.priceMonthly)}</span>
           </div>
           <div className="mt-2 flex items-center justify-between text-sm">
             <span className="text-muted-foreground">Taxes</span>
-            <span className="text-muted-foreground">Calculated at gateway</span>
+            <span className="text-muted-foreground">Calculated at checkout</span>
           </div>
           <div className="mt-4 flex items-center justify-between border-t border-border pt-4 font-display text-lg font-semibold">
             <span>Total due</span>
-            <span>${plan.priceMonthly}.00</span>
+            <span>{formatINR(plan.priceMonthly)}</span>
           </div>
           <ul className="mt-5 space-y-2 text-sm">
             {plan.features.slice(0, 4).map((f) => (
@@ -155,7 +166,7 @@ function CheckoutPage() {
           </Label>
           <Button id="submit" type="submit" className="mt-6 w-full" disabled={busy}>
             {busy && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-            Submit
+            Continue to payment
           </Button>
         </aside>
       </div>

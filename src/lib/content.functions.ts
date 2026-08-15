@@ -358,8 +358,14 @@ export const queueMonthGeneration = createServerFn({ method: "POST" })
 
 
     const { distributeMonthlyContent } = await import("@/lib/content.server");
-    const contentPlan = distributeMonthlyContent(dates, entitlement.plan.monthlyContent);
-    const scheduledDates = dates.filter((date) => {
+//  const contentPlan = distributeMonthlyContent(dates, entitlement.plan.monthlyContent);
+
+  // TESTING MODE: infographic and video generation are held while we
+  // validate the blog pipeline end-to-end. Revert by removing this override.
+    const monthlyTotals = { ...entitlement.plan.monthlyContent, infographic: 0, video: 0 };
+    const contentPlan = distributeMonthlyContent(dates, monthlyTotals);  
+  
+  const scheduledDates = dates.filter((date) => {
       const quota = contentPlan[date]!;
       return quota.blog + quota.infographic + quota.video > 0;
     });

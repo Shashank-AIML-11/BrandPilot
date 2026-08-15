@@ -59,6 +59,7 @@ function CalendarPage() {
   const [openDay, setOpenDay] = useState<string | null>(null);
   const [detail, setDetail] = useState<ContentItem | null>(null);
   const [queueing, setQueueing] = useState(false);
+  const [posting, setPosting] = useState(false);
 
 
   const monthKey = format(cursor, "yyyy-MM");

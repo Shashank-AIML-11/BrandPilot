@@ -39,7 +39,7 @@ export async function getGenerationEntitlement(
 
   const plan = planById(subscription?.plan);
   if (!plan || !["pending", "active"].includes(subscription?.status ?? "")) {
-    throw new Error("Choose a subscription plan before generating content.");
+    throw new Error("Upgrade Plan");
   }
   return { plan, isRoot: false };
 }

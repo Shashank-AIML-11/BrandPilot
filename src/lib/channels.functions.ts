@@ -117,3 +117,76 @@ export const publishContentItem = createServerFn({ method: "POST" })
     const { publishItemToChannels } = await import("@/lib/channels/publish.server");
     return publishItemToChannels(context.userId, data.itemId, data.channels);
   });
+
+export const publishAllContent = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .handler(async ({ context }) => {
+    const { getGenerationEntitlement } = await import("@/lib/generation-entitlements");
+    await getGenerationEntitlement(context.supabase, context.userId);
+
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    const { CHANNELS_BY_TYPE } = await import("@/lib/content.server");
+
+    // Only text blogs are posted for now — infographic/video posting is on
+    // hold while we validate the blog pipeline end-to-end.
+    const today = new Date().toISOString().slice(0, 10);
+    const { data: items, error: itemsError } = await supabaseAdmin
+      .from("content_items")
+      .select("id, scheduled_date")
+      .eq("user_id", context.userId)
+      .eq("type", "blog")
+      .eq("enabled", true)
+      .neq("status", "posted")
+      .lte("scheduled_date", today)
+      .order("scheduled_date", { ascending: true });
+    if (itemsError) throw new Error(itemsError.message);
+
+    const pending = (items ?? []) as Array<{ id: string; scheduled_date: string }>;
+    if (pending.length === 0) {
+      return { posted: 0, itemResults: [] as Array<{ itemId: string; results: unknown[] }> };
+    }
+
+    const { data: connectionsRaw } = await supabaseAdmin
+      .from("channel_connections")
+      .select("channel, status")
+      .eq("user_id", context.userId)
+      .eq("status", "connected");
+    const connections = new Set(
+      (connectionsRaw ?? []).map((c) => (c as unknown as { channel: string }).channel),
+    );
+
+    const { data: brand } = await supabaseAdmin
+      .from("brand_profiles")
+      .select("social_handles")
+      .eq("user_id", context.userId)
+      .maybeSingle();
+    const handles = (brand?.social_handles as Record<string, string> | null) ?? {};
+    const hasManualHandle = (channel: string) => Boolean((handles[channel] ?? "").trim());
+
+    const blogChannels = CHANNELS_BY_TYPE["blog"] ?? [];
+    const targets = blogChannels.filter((channel) =>
+      channel === "Quora" || channel === "Medium"
+        ? hasManualHandle(channel)
+        : connections.has(channel),
+    );
+
+    if (targets.length === 0) {
+      throw new Error(
+        "No connected channels for blogs yet — connect LinkedIn or your Website in Brand Profile first.",
+      );
+    }
+
+    const { publishItemToChannels } = await import("@/lib/channels/publish.server");
+    const itemResults: Array<{ itemId: string; results: unknown[] }> = [];
+    let posted = 0;
+    for (const item of pending) {
+      const { results } = await publishItemToChannels(context.userId, item.id, targets);
+      itemResults.push({ itemId: item.id, results });
+      if (results.some((r) => r.ok)) posted += 1;
+    }
+
+    return { posted, itemResults };
+  });
+
+
+

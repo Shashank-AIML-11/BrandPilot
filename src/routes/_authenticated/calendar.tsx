@@ -14,13 +14,14 @@ import {
   endOfWeek,
 } from "date-fns";
 import { toast } from "sonner";
-import { ChevronLeft, ChevronRight, Loader2, Sparkles } from "lucide-react";
+import { ChevronLeft, ChevronRight, Loader2, Send, Sparkles } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { prefetchMediaUrls } from "@/lib/media";
 import {
   queueMonthGeneration,
   processVideoQueueNow,
 } from "@/lib/content.functions";
+import { publishAllContent } from "@/lib/channels.functions";
 
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";

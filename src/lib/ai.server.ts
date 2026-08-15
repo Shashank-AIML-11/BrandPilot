@@ -1,5 +1,3 @@
-const GATEWAY = "https://ai.gateway.lovable.dev/v1";
-
 /** Last-line defence: appended to every visual prompt regardless of caller. */
 const SAFETY_GUARD =
   " Content safety (mandatory, overrides all other instructions): safe-for-work, brand-safe, general-audience only. No nudity, partial nudity, lingerie, swimwear, sexualised, suggestive or fetish content; people fully and modestly clothed. No profanity, slurs, abuse, hate or harassment. No violence, gore, weapons, drugs, alcohol abuse or self-harm. No minors in any suggestive context. No shocking, disturbing or offensive imagery or text.";
@@ -8,18 +6,25 @@ function guard(prompt: string): string {
   return `${prompt}${SAFETY_GUARD}`;
 }
 
-function key() {
-  const k = process.env["LOVABLE_API_KEY"];
-  if (!k) throw new Error("AI is not configured (missing gateway key).");
+function groqKey() {
+  const k = process.env["GROQ_API_KEY"];
+  if (!k) throw new Error("AI is not configured (missing GROQ_API_KEY).");
   return k;
 }
 
+/**
+ * Text generation via Groq — free-tier hosting for open-weight models.
+ * Swap the `model` string to try alternatives, e.g.:
+ *   "llama-3.3-70b-versatile"  (Meta Llama 3.3, default — best quality)
+ *   "qwen/qwen3-32b"           (Qwen)
+ *   "gemma2-9b-it"             (Google Gemma2)
+ */
 export async function chatJSON<T>(system: string, prompt: string): Promise<T> {
-  const res = await fetch(`${GATEWAY}/chat/completions`, {
+  const res = await fetch("https://api.groq.com/openai/v1/chat/completions", {
     method: "POST",
-    headers: { Authorization: `Bearer ${key()}`, "Content-Type": "application/json" },
+    headers: { Authorization: `Bearer ${groqKey()}`, "Content-Type": "application/json" },
     body: JSON.stringify({
-      model: "google/gemini-3.6-flash",
+      model: "llama-3.3-70b-versatile",
       messages: [
         { role: "system", content: system },
         { role: "user", content: prompt },
@@ -31,7 +36,6 @@ export async function chatJSON<T>(system: string, prompt: string): Promise<T> {
   if (!res.ok) {
     const text = await res.text();
     if (res.status === 429) throw new Error("AI rate limit reached. Please retry in a minute.");
-    if (res.status === 402) throw new Error("AI credits exhausted. Add credits to continue.");
     throw new Error(`AI request failed [${res.status}]: ${text}`);
   }
 
@@ -47,38 +51,22 @@ export async function chatJSON<T>(system: string, prompt: string): Promise<T> {
   return JSON.parse(cleaned.slice(start, end + 1)) as T;
 }
 
-/** Returns raw PNG bytes for a generated image. */
+/**
+ * Image generation via Pollinations.ai — free, no API key, backed by the
+ * open-source FLUX model. Change `model=flux` to `model=turbo` for faster,
+ * lower-quality results if needed.
+ */
 export async function generateImageBytes(prompt: string): Promise<Uint8Array> {
-  const res = await fetch(`${GATEWAY}/images/generations`, {
-    method: "POST",
-    headers: { Authorization: `Bearer ${key()}`, "Content-Type": "application/json" },
-    body: JSON.stringify({
-      model: "openai/gpt-image-2",
-      prompt: guard(prompt),
-      quality: "high",
-      size: "1024x1024",
-    }),
-  });
+  const encoded = encodeURIComponent(guard(prompt));
+  const seed = Math.floor(Math.random() * 1_000_000);
+  const url = `https://image.pollinations.ai/prompt/${encoded}?width=1024&height=1024&model=flux&nologo=true&seed=${seed}`;
 
+  const res = await fetch(url);
   if (!res.ok) {
-    const text = await res.text();
-    if (res.status === 429) throw new Error("Image rate limit reached. Please retry shortly.");
-    if (res.status === 402) throw new Error("AI credits exhausted. Add credits to continue.");
+    const text = await res.text().catch(() => "");
     throw new Error(`Image generation failed [${res.status}]: ${text}`);
   }
-
-  const json = (await res.json()) as { data?: Array<{ b64_json?: string; url?: string }> };
-  const b64 = json.data?.[0]?.b64_json;
-  if (b64) {
-    const binary = atob(b64);
-    const bytes = new Uint8Array(binary.length);
-    for (let i = 0; i < binary.length; i += 1) bytes[i] = binary.charCodeAt(i);
-    return bytes;
-  }
-  const url = json.data?.[0]?.url;
-  if (!url) throw new Error("Image generation returned no image.");
-  const img = await fetch(url);
-  return new Uint8Array(await img.arrayBuffer());
+  return new Uint8Array(await res.arrayBuffer());
 }
 
 export interface VideoJob {
@@ -88,66 +76,25 @@ export interface VideoJob {
   error?: { code?: string; message?: string } | null;
 }
 
-async function videoError(res: Response, label: string): Promise<never> {
-  const text = await res.text();
-  if (res.status === 429)
-    throw new Error("Too many videos are generating right now. Please retry in a minute.");
-  if (res.status === 402) throw new Error("AI credits exhausted. Add credits to continue.");
-  throw new Error(`${label} failed [${res.status}]: ${text}`);
+// Video (and voice-over) are not wired to a provider yet — Lovable Gateway
+// has been fully removed, and no free equivalent exists for video generation.
+// This is fine while video generation stays paused; revisit with a real
+// (likely paid, e.g. fal.ai or Replicate) provider once blogs/images are solid.
+const VIDEO_NOT_CONFIGURED =
+  "Video generation isn't configured yet (Lovable Gateway removed, no replacement set up).";
+
+export async function createVideoJob(_prompt: string): Promise<VideoJob> {
+  throw new Error(VIDEO_NOT_CONFIGURED);
 }
 
-/** Starts an async AI video generation job and returns the job. */
-export async function createVideoJob(prompt: string): Promise<VideoJob> {
-  const res = await fetch(`${GATEWAY}/videos`, {
-    method: "POST",
-    headers: { Authorization: `Bearer ${key()}`, "Content-Type": "application/json" },
-    body: JSON.stringify({
-      model: "google/veo-3.1-lite",
-      prompt: guard(prompt),
-      seconds: "8",
-      size: "1280x720",
-    }),
-  });
-  if (!res.ok) await videoError(res, "Video generation");
-  return (await res.json()) as VideoJob;
+export async function getVideoJob(_id: string): Promise<VideoJob> {
+  throw new Error(VIDEO_NOT_CONFIGURED);
 }
 
-export async function getVideoJob(id: string): Promise<VideoJob> {
-  const res = await fetch(`${GATEWAY}/videos/${id}`, {
-    headers: { Authorization: `Bearer ${key()}` },
-  });
-  if (!res.ok) await videoError(res, "Video status check");
-  return (await res.json()) as VideoJob;
+export async function downloadVideoBytes(_id: string): Promise<Uint8Array> {
+  throw new Error(VIDEO_NOT_CONFIGURED);
 }
 
-/** Downloads the finished MP4 bytes (the gateway link is short-lived). */
-export async function downloadVideoBytes(id: string): Promise<Uint8Array> {
-  const res = await fetch(`${GATEWAY}/videos/${id}/content`, {
-    headers: { Authorization: `Bearer ${key()}` },
-  });
-  if (!res.ok) await videoError(res, "Video download");
-  return new Uint8Array(await res.arrayBuffer());
-}
-
-/** Returns raw MP3 bytes of spoken narration. */
-export async function generateSpeechBytes(text: string): Promise<Uint8Array> {
-  const res = await fetch(`${GATEWAY}/audio/speech`, {
-    method: "POST",
-    headers: { Authorization: `Bearer ${key()}`, "Content-Type": "application/json" },
-    body: JSON.stringify({
-      model: "openai/gpt-4o-mini-tts",
-      input: text,
-      voice: "alloy",
-      response_format: "mp3",
-    }),
-  });
-
-  if (!res.ok) {
-    const detail = await res.text();
-    if (res.status === 429) throw new Error("Voice-over rate limit reached. Please retry shortly.");
-    if (res.status === 402) throw new Error("AI credits exhausted. Add credits to continue.");
-    throw new Error(`Voice-over generation failed [${res.status}]: ${detail}`);
-  }
-
-  return new Uint8Array(await res.arrayBuffer());
+export async function generateSpeechBytes(_text: string): Promise<Uint8Array> {
+  throw new Error(VIDEO_NOT_CONFIGURED);
 }

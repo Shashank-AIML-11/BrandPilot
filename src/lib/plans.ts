@@ -9,7 +9,7 @@ export interface PlanMonthlyContent {
 export interface Plan {
   id: PlanId;
   name: string;
-  priceMonthly: number; // USD, display only — actual charge comes from the Razorpay Plan ID
+  priceMonthly: number; // USD, display only â€” actual charge comes from the Razorpay Plan ID
   tagline: string;
   highlight?: boolean;
   features: string[];
@@ -88,7 +88,7 @@ export const PLANS: Plan[] = [
       "Advanced analytics",
       "Dedicated support manager",
     ],
-    // Per-brand quota — see the multi-brand-profile note below before this is
+    // Per-brand quota â€” see the multi-brand-profile note below before this is
     // actually enforced per brand rather than per user.
     monthlyContent: { blog: 4, infographic: 4, video: 4 },
     brandProfileLimit: 20,

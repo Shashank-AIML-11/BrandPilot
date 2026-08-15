@@ -77,7 +77,7 @@ interface RazorpayCustomer {
 /** Finds an existing Razorpay customer by email, or creates one. */
 export async function ensureCustomer(params: {
   email: string;
-  name?: string | null;
+  name?: string | null | undefined;
 }): Promise<RazorpayCustomer> {
   // Razorpay customers can be created with a fail_existing:0 flag,
   // which returns the existing customer instead of erroring if one

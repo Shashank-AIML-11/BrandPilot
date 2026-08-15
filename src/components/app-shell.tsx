@@ -9,6 +9,7 @@ import {
   Settings,
   CreditCard,
   HelpCircle,
+  LifeBuoy,
   LogOut,
   Menu,
 } from "lucide-react";

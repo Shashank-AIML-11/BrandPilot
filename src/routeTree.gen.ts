@@ -23,6 +23,7 @@ import { Route as AuthenticatedBrandProfileRouteImport } from './routes/_authent
 import { Route as AuthenticatedCalendarRouteImport } from './routes/_authenticated/calendar'
 import { Route as AuthenticatedCheckoutRouteImport } from './routes/_authenticated/checkout'
 import { Route as AuthenticatedFaqRouteImport } from './routes/_authenticated/faq'
+import { Route as AuthenticatedHelpRouteImport } from './routes/_authenticated/help'
 import { Route as AuthenticatedPlanRouteImport } from './routes/_authenticated/plan'
 import { Route as AuthenticatedSettingsRouteImport } from './routes/_authenticated/settings'
 import { Route as AuthCallbackRouteImport } from './routes/auth.callback'
@@ -104,6 +105,11 @@ const AuthenticatedFaqRoute = AuthenticatedFaqRouteImport.update({
   path: '/faq',
   getParentRoute: () => AuthenticatedRouteRoute,
 } as any)
+const AuthenticatedHelpRoute = AuthenticatedHelpRouteImport.update({
+  id: '/help',
+  path: '/help',
+  getParentRoute: () => AuthenticatedRouteRoute,
+} as any)
 const AuthenticatedPlanRoute = AuthenticatedPlanRouteImport.update({
   id: '/plan',
   path: '/plan',
@@ -162,6 +168,7 @@ export interface FileRoutesByFullPath {
   '/calendar': typeof AuthenticatedCalendarRoute
   '/checkout': typeof AuthenticatedCheckoutRoute
   '/faq': typeof AuthenticatedFaqRoute
+  '/help': typeof AuthenticatedHelpRoute
   '/plan': typeof AuthenticatedPlanRoute
   '/settings': typeof AuthenticatedSettingsRoute
   '/auth/callback': typeof AuthCallbackRoute
@@ -185,6 +192,7 @@ export interface FileRoutesByTo {
   '/calendar': typeof AuthenticatedCalendarRoute
   '/checkout': typeof AuthenticatedCheckoutRoute
   '/faq': typeof AuthenticatedFaqRoute
+  '/help': typeof AuthenticatedHelpRoute
   '/plan': typeof AuthenticatedPlanRoute
   '/settings': typeof AuthenticatedSettingsRoute
   '/auth/callback': typeof AuthCallbackRoute
@@ -210,6 +218,7 @@ export interface FileRoutesById {
   '/_authenticated/calendar': typeof AuthenticatedCalendarRoute
   '/_authenticated/checkout': typeof AuthenticatedCheckoutRoute
   '/_authenticated/faq': typeof AuthenticatedFaqRoute
+  '/_authenticated/help': typeof AuthenticatedHelpRoute
   '/_authenticated/plan': typeof AuthenticatedPlanRoute
   '/_authenticated/settings': typeof AuthenticatedSettingsRoute
   '/auth/callback': typeof AuthCallbackRoute
@@ -235,6 +244,7 @@ export interface FileRouteTypes {
     | '/calendar'
     | '/checkout'
     | '/faq'
+    | '/help'
     | '/plan'
     | '/settings'
     | '/auth/callback'
@@ -258,6 +268,7 @@ export interface FileRouteTypes {
     | '/calendar'
     | '/checkout'
     | '/faq'
+    | '/help'
     | '/plan'
     | '/settings'
     | '/auth/callback'
@@ -282,6 +293,7 @@ export interface FileRouteTypes {
     | '/_authenticated/calendar'
     | '/_authenticated/checkout'
     | '/_authenticated/faq'
+    | '/_authenticated/help'
     | '/_authenticated/plan'
     | '/_authenticated/settings'
     | '/auth/callback'
@@ -408,6 +420,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedFaqRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
+    '/_authenticated/help': {
+      id: '/_authenticated/help'
+      path: '/help'
+      fullPath: '/help'
+      preLoaderRoute: typeof AuthenticatedHelpRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
     '/_authenticated/plan': {
       id: '/_authenticated/plan'
       path: '/plan'
@@ -474,6 +493,7 @@ interface AuthenticatedRouteRouteChildren {
   AuthenticatedCalendarRoute: typeof AuthenticatedCalendarRoute
   AuthenticatedCheckoutRoute: typeof AuthenticatedCheckoutRoute
   AuthenticatedFaqRoute: typeof AuthenticatedFaqRoute
+  AuthenticatedHelpRoute: typeof AuthenticatedHelpRoute
   AuthenticatedPlanRoute: typeof AuthenticatedPlanRoute
   AuthenticatedSettingsRoute: typeof AuthenticatedSettingsRoute
 }
@@ -485,6 +505,7 @@ const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
   AuthenticatedCalendarRoute: AuthenticatedCalendarRoute,
   AuthenticatedCheckoutRoute: AuthenticatedCheckoutRoute,
   AuthenticatedFaqRoute: AuthenticatedFaqRoute,
+  AuthenticatedHelpRoute: AuthenticatedHelpRoute,
   AuthenticatedPlanRoute: AuthenticatedPlanRoute,
   AuthenticatedSettingsRoute: AuthenticatedSettingsRoute,
 }

@@ -2,6 +2,7 @@ import { createServerFn } from "@tanstack/react-start";
 import { getRequestHeader } from "@tanstack/react-start/server";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import type { ChannelConnectionStatus } from "@/lib/channels/config";
+import type { PublishResult } from "@/lib/channels/publishers.server";
 
 function originFromRequest(): string {
   const origin = getRequestHeader("origin");
@@ -143,7 +144,7 @@ export const publishAllContent = createServerFn({ method: "POST" })
 
     const pending = (items ?? []) as Array<{ id: string; scheduled_date: string }>;
     if (pending.length === 0) {
-      return { posted: 0, itemResults: [] as Array<{ itemId: string; results: unknown[] }> };
+      return { posted: 0, itemResults: [] as Array<{ itemId: string; results: PublishResult[] }> };
     }
 
     const { data: connectionsRaw } = await supabaseAdmin
@@ -177,7 +178,7 @@ export const publishAllContent = createServerFn({ method: "POST" })
     }
 
     const { publishItemToChannels } = await import("@/lib/channels/publish.server");
-    const itemResults: Array<{ itemId: string; results: unknown[] }> = [];
+    const itemResults: Array<{ itemId: string; results: PublishResult[] }> = [];
     let posted = 0;
     for (const item of pending) {
       const { results } = await publishItemToChannels(context.userId, item.id, targets);

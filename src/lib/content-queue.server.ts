@@ -52,7 +52,7 @@ export async function processGenerationQueue(admin: AdminClient) {
       0,
       entitlement.plan.channelLimit ?? undefined,
     );
-    const contentPlan = (job.content_plan ?? {}) as Record<string, DailyContentQuota>;
+    const contentPlan = (job.content_plan ?? {}) as unknown as Record<string, DailyContentQuota>;
     const quotas = Object.fromEntries(
       pending.map((date) => [date, contentPlan[date] ?? { blog: 0, infographic: 0, video: 0 }]),
     ) as Record<string, DailyContentQuota>;

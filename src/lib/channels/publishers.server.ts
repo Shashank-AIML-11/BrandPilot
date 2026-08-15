@@ -27,7 +27,7 @@ export interface PublishResult {
 
 // LinkedIn retires versioned REST APIs regularly. Keep this configurable so a
 // deployment can move to a newly supported version without a code release.
-const LINKEDIN_VERSION = process.env.LINKEDIN_VERSION || "202606";
+const LINKEDIN_VERSION = process.env["LINKEDIN_VERSION"] || "202606";
 
 function textFor(item: PublishItem, limit = 3000): string {
   const parts = [item.title, item.caption || item.summary || "", item.hashtags || ""].filter(

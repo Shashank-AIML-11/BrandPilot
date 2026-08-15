@@ -115,6 +115,7 @@ export type Database = {
       }
       content_generation_jobs: {
         Row: {
+          content_plan: Json
           created_at: string
           days_done: number
           days_total: number
@@ -127,6 +128,7 @@ export type Database = {
           user_id: string
         }
         Insert: {
+          content_plan?: Json
           created_at?: string
           days_done?: number
           days_total?: number
@@ -139,6 +141,7 @@ export type Database = {
           user_id: string
         }
         Update: {
+          content_plan?: Json
           created_at?: string
           days_done?: number
           days_total?: number
@@ -417,6 +420,36 @@ export type Database = {
           razorpay_subscription_id?: string | null
           status?: string
           updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
+      support_messages: {
+        Row: {
+          created_at: string
+          email: string
+          id: string
+          message: string
+          status: string
+          subject: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          email?: string
+          id?: string
+          message: string
+          status?: string
+          subject?: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          email?: string
+          id?: string
+          message?: string
+          status?: string
+          subject?: string
           user_id?: string
         }
         Relationships: []

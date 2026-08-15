@@ -95,6 +95,7 @@ function AuthPage() {
 
     } catch (err) {
       toast.error(err instanceof Error ? err.message : `Could not sign in with ${provider}`);
+      return;
     } finally {
       setSocialBusy(null);
     }

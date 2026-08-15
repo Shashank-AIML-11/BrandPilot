@@ -126,6 +126,11 @@ export function AppShell({ children }: { children: ReactNode }) {
                 <HelpCircle className="mr-2 h-4 w-4" /> FAQ
               </Link>
             </DropdownMenuItem>
+	<DropdownMenuItem asChild>
+              <Link to="/help">
+                <LifeBuoy className="mr-2 h-4 w-4" /> Help
+              </Link>
+            </DropdownMenuItem>
             <DropdownMenuSeparator />
             <DropdownMenuItem onClick={signOut}>
               <LogOut className="mr-2 h-4 w-4" /> Logout

@@ -164,7 +164,7 @@ function CalendarPage() {
   }
 
 
-
+/*
   async function toggleDay(date: string, enabled: boolean) {
     const { error } = await supabase
       .from("content_items")
@@ -176,6 +176,31 @@ function CalendarPage() {
       queryClient.invalidateQueries({ queryKey: ["content", monthKey] });
     }
   }
+*/
+async function postContent() {
+    setPosting(true);
+    try {
+      // Posts every not-yet-posted blog scheduled today or earlier, to
+      // every connected channel that supports blogs (LinkedIn, Website,
+      // and Quora/Medium if a manual handle is set in Brand Profile).
+      const result = await publishAllContent();
+      await queryClient.invalidateQueries({ queryKey: ["content", monthKey] });
+      if (result.posted === 0) {
+        toast.info("Nothing new to post — no due, unposted blogs found.");
+      } else {
+        toast.success(
+          `Posted ${result.posted} item${result.posted === 1 ? "" : "s"} to your connected channels.`,
+        );
+      }
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Posting failed");
+    } finally {
+      setPosting(false);
+    }
+  }
+
+  async function toggleDay(date: string, enabled: boolean) {
+
 
   const dayItems = openDay ? (byDate.get(openDay) ?? []) : [];
 
@@ -210,14 +235,24 @@ function CalendarPage() {
             ) : (
               <Sparkles className="mr-2 h-4 w-4" />
             )}
+
+              
             {activeJob
               ? `Generating ${activeJob.days_done}/${activeJob.days_total} days`
               : queueing
                 ? "Queueing…"
                 : "Generate Content"}
           </Button>
+          <Button variant="secondary" onClick={postContent} disabled={posting}>
+            {posting ? (
+              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+            ) : (
+              <Send className="mr-2 h-4 w-4" />
+            )}
+            {posting ? "Posting…" : "Post Content"}
+          </Button>
         </div>
-      </div>
+      </div>  
 
       {activeJob && (
         <p className="text-sm text-muted-foreground">

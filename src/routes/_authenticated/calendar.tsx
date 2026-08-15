@@ -200,7 +200,16 @@ async function postContent() {
   }
 
   async function toggleDay(date: string, enabled: boolean) {
-
+    const { error } = await supabase
+      .from("content_items")
+      .update({ enabled })
+      .eq("scheduled_date", date);
+    if (error) toast.error(error.message);
+    else {
+      toast.success(enabled ? "Day enabled" : "Day disabled");
+      queryClient.invalidateQueries({ queryKey: ["content", monthKey] });
+    }
+  }
 
   const dayItems = openDay ? (byDate.get(openDay) ?? []) : [];
 

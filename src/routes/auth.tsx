@@ -80,7 +80,7 @@ function AuthPage() {
         // auth.callback.tsx is a TanStack dot-route, so its public URL is
         // /callback (not /auth/callback). An invalid callback falls back to
         // Supabase's Site URL, which is why OAuth was leaving this app.
-        redirectTo: `${window.location.origin}/callback`,
+        redirectTo: `${window.location.origin}/auth/callback`,
       },
      });
 

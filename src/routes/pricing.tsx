@@ -55,7 +55,7 @@ function PricingPage() {
           LOVIZA<span className="text-primary">.</span>
         </Link>
         <Button variant="outline" asChild>
-          <Link to={session ? "/calendar" : "/auth"}>{session ? "Open app" : "Sign in"}</Link>
+          <Link to={session ? "/calendar" : "/auth"}>{session ? "Back to Main" : "Sign in"}</Link>
         </Button>
       </header>
 

@@ -3,6 +3,7 @@ import { useQuery } from "@tanstack/react-query";
 import { Check } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { formatINR, PLANS } from "@/lib/plans";
+import { formatUSD, PLANS } from "@/lib/plans";
 import { Button } from "@/components/ui/button";
 
 export const Route = createFileRoute("/pricing")({
@@ -92,7 +93,7 @@ function PricingPage() {
                 <h2 className="text-lg font-semibold">{plan.name}</h2>
                 <p className="mt-1 text-sm text-muted-foreground">{plan.tagline}</p>
                 <p className="mt-6 font-display text-4xl font-bold">
-                  {formatINR(plan.priceMonthly)}
+                  {formatUSD(plan.priceMonthly)}
                   <span className="text-sm font-normal text-muted-foreground">/month</span>
                 </p>
                 <ul className="mt-6 flex-1 space-y-3 text-sm">

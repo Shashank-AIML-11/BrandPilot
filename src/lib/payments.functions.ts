@@ -21,6 +21,21 @@ export const createRazorpaySubscription = createServerFn({ method: "POST" })
     const plan = PLANS.find((p) => p.id === data.planId);
     if (!plan) throw new Error("Unknown plan");
 
+    const { data: existing } = await context.supabase
+      .from("subscriptions")
+      .select("plan, status")
+      .eq("user_id", context.userId)
+      .in("status", ["pending", "active"])
+      .order("created_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    if (existing?.plan === plan.id) {
+      throw new Error(
+        `You're already on the ${plan.name} plan. Choose a different plan to switch.`,
+      );
+    }
+
     const { data: profile, error: profileError } = await context.supabase
       .from("profiles")
       .select("email, full_name")

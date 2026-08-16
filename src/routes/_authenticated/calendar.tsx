@@ -186,7 +186,7 @@ async function postContent() {
       const result = await publishAllContent();
       await queryClient.invalidateQueries({ queryKey: ["content", monthKey] });
       if (result.posted === 0) {
-        toast.info("Nothing new to post — no due, unposted blogs found.");
+        toast.info("Content already posted.");
       } else {
         toast.success(
           `Posted ${result.posted} item${result.posted === 1 ? "" : "s"} to your connected channels.`,

@@ -30,6 +30,24 @@ function PricingPage() {
     queryFn: async () => (await supabase.auth.getSession()).data.session,
   });
 
+  const { data: currentPlanId } = useQuery({
+    queryKey: ["current-plan-id"],
+    enabled: Boolean(session),
+    queryFn: async () => {
+      const { data: userData } = await supabase.auth.getUser();
+      if (!userData.user) return null;
+      const { data: sub } = await supabase
+        .from("subscriptions")
+        .select("plan")
+        .eq("user_id", userData.user.id)
+        .in("status", ["pending", "active"])
+        .order("created_at", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      return sub?.plan ?? null;
+    },
+  });
+
   return (
     <div className="min-h-screen bg-background">
       <header className="mx-auto flex max-w-6xl items-center justify-between px-6 py-6">
@@ -51,49 +69,64 @@ function PricingPage() {
         </div>
 
         <div className="mt-12 grid gap-6 lg:grid-cols-3">
-          {PLANS.map((plan) => (
-            <div
-              key={plan.id}
-              className={`surface flex flex-col p-6 ${
-                plan.highlight ? "ring-2 ring-primary" : ""
-              }`}
-            >
-              {plan.highlight && (
-                <span className="mb-3 w-fit rounded-full bg-primary px-2.5 py-0.5 text-[11px] font-semibold text-primary-foreground">
-                  Most popular
-                </span>
-              )}
-              <h2 className="text-lg font-semibold">{plan.name}</h2>
-              <p className="mt-1 text-sm text-muted-foreground">{plan.tagline}</p>
-              <p className="mt-6 font-display text-4xl font-bold">
-                {formatINR(plan.priceMonthly)}
-                <span className="text-sm font-normal text-muted-foreground">/month</span>
-              </p>
-              <ul className="mt-6 flex-1 space-y-3 text-sm">
-                {plan.features.map((f) => (
-                  <li key={f} className="flex gap-2">
-                    <Check className="mt-0.5 h-4 w-4 shrink-0 text-primary" />
-                    <span className="text-muted-foreground">{f}</span>
-                  </li>
-                ))}
-              </ul>
-              <Button
-                className="mt-6 w-full"
-                variant={plan.highlight ? "default" : "outline"}
-                asChild
+          {PLANS.map((plan) => {
+            const isCurrent = currentPlanId === plan.id;
+            return (
+              <div
+                key={plan.id}
+                className={`surface flex flex-col p-6 ${
+                  plan.highlight ? "ring-2 ring-primary" : ""
+                } ${isCurrent ? "opacity-80" : ""}`}
               >
-                {session ? (
-                  <Link to="/checkout" search={{ plan: plan.id }}>
-                    Choose {plan.name}
-                  </Link>
+                {isCurrent ? (
+                  <span className="mb-3 w-fit rounded-full bg-secondary px-2.5 py-0.5 text-[11px] font-semibold">
+                    Your current plan
+                  </span>
                 ) : (
-                  <Link to="/auth" search={{ redirect: "/pricing" }}>
-                    Choose {plan.name}
-                  </Link>
+                  plan.highlight && (
+                    <span className="mb-3 w-fit rounded-full bg-primary px-2.5 py-0.5 text-[11px] font-semibold text-primary-foreground">
+                      Most popular
+                    </span>
+                  )
                 )}
-              </Button>
-            </div>
-          ))}
+                <h2 className="text-lg font-semibold">{plan.name}</h2>
+                <p className="mt-1 text-sm text-muted-foreground">{plan.tagline}</p>
+                <p className="mt-6 font-display text-4xl font-bold">
+                  {formatINR(plan.priceMonthly)}
+                  <span className="text-sm font-normal text-muted-foreground">/month</span>
+                </p>
+                <ul className="mt-6 flex-1 space-y-3 text-sm">
+                  {plan.features.map((f) => (
+                    <li key={f} className="flex gap-2">
+                      <Check className="mt-0.5 h-4 w-4 shrink-0 text-primary" />
+                      <span className="text-muted-foreground">{f}</span>
+                    </li>
+                  ))}
+                </ul>
+                {isCurrent ? (
+                  <Button className="mt-6 w-full" variant="outline" disabled>
+                    Current plan
+                  </Button>
+                ) : (
+                  <Button
+                    className="mt-6 w-full"
+                    variant={plan.highlight ? "default" : "outline"}
+                    asChild
+                  >
+                    {session ? (
+                      <Link to="/checkout" search={{ plan: plan.id }}>
+                        {currentPlanId ? `Switch to ${plan.name}` : `Choose ${plan.name}`}
+                      </Link>
+                    ) : (
+                      <Link to="/auth" search={{ redirect: "/pricing" }}>
+                        Choose {plan.name}
+                      </Link>
+                    )}
+                  </Button>
+                )}
+              </div>
+            );
+          })}
         </div>
       </main>
     </div>

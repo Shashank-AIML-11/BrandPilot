@@ -46,7 +46,7 @@ export function distributeMonthlyContent(
   (Object.keys(totals) as Array<keyof DailyContentQuota>).forEach((type) => {
     const count = Math.min(totals[type], dates.length);
     for (let index = 0; index < count; index += 1) {
-      const dateIndex = Math.floor(((index + 0.5) * dates.length) / count);
+      const dateIndex = Math.floor(((index * dates.length) / count);
       schedule[dates[dateIndex]!]![type] += 1;
     }
   });

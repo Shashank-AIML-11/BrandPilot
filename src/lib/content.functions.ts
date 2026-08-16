@@ -362,7 +362,7 @@ export const queueMonthGeneration = createServerFn({ method: "POST" })
 
   // TESTING MODE: infographic and video generation are held while we
   // validate the blog pipeline end-to-end. Revert by removing this override.
-    const monthlyTotals = { ...entitlement.plan.monthlyContent, infographic: 0, video: 0 };
+    const monthlyTotals = { ...entitlement.plan.monthlyContent, video: 0 };
     const contentPlan = distributeMonthlyContent(dates, monthlyTotals);  
   
   const scheduledDates = dates.filter((date) => {

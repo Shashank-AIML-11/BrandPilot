@@ -1,10 +1,9 @@
 import { useState } from "react";
-import { createFileRoute, Link, useNavigate, useSearch } from "@tanstack/react-router";
 import { createFileRoute, useNavigate, useSearch } from "@tanstack/react-router";
 import { useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { ArrowLeft, Check, Loader2, Lock } from "lucide-react";
-import { formatUSD, PLANS, planById, type PlanId } from "@/lib/plans";
+import { formatINR, PLANS, planById, type PlanId } from "@/lib/plans";
 import { createRazorpaySubscription, confirmRazorpayPayment } from "@/lib/payments.functions";
 import { loadRazorpayScript } from "@/lib/payments/load-razorpay-script";
 import { Button } from "@/components/ui/button";
@@ -63,7 +62,7 @@ function CheckoutPage() {
             });
             queryClient.invalidateQueries();
             toast.success(`${planName} plan activated. Welcome aboard!`);
-            navigate({ to: "/pricing" });
+            navigate({ to: "/plan" });
           } catch (err) {
             // Payment succeeded on Razorpay's side even if this
             // confirmation call fails — the webhook will still
@@ -92,17 +91,16 @@ function CheckoutPage() {
 
   return (
     <form onSubmit={submit} className="mx-auto max-w-4xl space-y-6">
-<div className="flex items-start justify-between gap-4">
+      <div className="flex items-start justify-between gap-4">
         <div>
           <h1 className="text-2xl font-bold">Complete your subscription</h1>
           <p className="mt-1 text-sm text-muted-foreground">
             Choose your plan, then complete payment securely via Razorpay.
           </p>
         </div>
-        <Button variant="outline" size="sm" asChild>
-          <Link to="/pricing">
-            <ArrowLeft className="mr-2 h-4 w-4" /> Back to Plans
-          </Link>
+        <Button type="button" variant="ghost" onClick={() => navigate({ to: "/pricing" })}>
+          <ArrowLeft className="mr-2 h-4 w-4" />
+          Back to Plans
         </Button>
       </div>
 
@@ -124,7 +122,7 @@ function CheckoutPage() {
                   <div className="flex-1">
                     <div className="flex items-center justify-between">
                       <span className="font-medium">{p.name}</span>
-                      <span className="font-display font-semibold">{formatUSD(p.priceMonthly)}/mo</span>
+                      <span className="font-display font-semibold">{formatINR(p.priceMonthly)}/mo</span>
                     </div>
                     <p className="mt-1 text-sm text-muted-foreground">{p.tagline}</p>
                   </div>
@@ -151,7 +149,7 @@ function CheckoutPage() {
           <h2 className="text-sm font-semibold">Order summary</h2>
           <div className="mt-4 flex items-center justify-between text-sm">
             <span className="text-muted-foreground">{plan.name} · monthly</span>
-            <span className="font-medium">{formatUSD(plan.priceMonthly)}</span>
+            <span className="font-medium">{formatINR(plan.priceMonthly)}</span>
           </div>
           <div className="mt-2 flex items-center justify-between text-sm">
             <span className="text-muted-foreground">Taxes</span>
@@ -159,7 +157,7 @@ function CheckoutPage() {
           </div>
           <div className="mt-4 flex items-center justify-between border-t border-border pt-4 font-display text-lg font-semibold">
             <span>Total due</span>
-            <span>{formatUSD(plan.priceMonthly)}</span>
+            <span>{formatINR(plan.priceMonthly)}</span>
           </div>
           <ul className="mt-5 space-y-2 text-sm">
             {plan.features.slice(0, 4).map((f) => (

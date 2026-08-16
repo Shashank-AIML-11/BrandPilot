@@ -164,20 +164,8 @@ function CalendarPage() {
   }
 
 
-/*
-  async function toggleDay(date: string, enabled: boolean) {
-    const { error } = await supabase
-      .from("content_items")
-      .update({ enabled })
-      .eq("scheduled_date", date);
-    if (error) toast.error(error.message);
-    else {
-      toast.success(enabled ? "Day enabled" : "Day disabled");
-      queryClient.invalidateQueries({ queryKey: ["content", monthKey] });
-    }
-  }
-*/
-async function postContent() {
+
+  async function postContent() {
     setPosting(true);
     try {
       // Posts every not-yet-posted blog scheduled today or earlier, to
@@ -186,7 +174,7 @@ async function postContent() {
       const result = await publishAllContent();
       await queryClient.invalidateQueries({ queryKey: ["content", monthKey] });
       if (result.posted === 0) {
-        toast.info("Content already posted.");
+        toast.info("Nothing new to post — no due, unposted blogs found.");
       } else {
         toast.success(
           `Posted ${result.posted} item${result.posted === 1 ? "" : "s"} to your connected channels.`,
@@ -198,6 +186,8 @@ async function postContent() {
       setPosting(false);
     }
   }
+
+
 
   async function toggleDay(date: string, enabled: boolean) {
     const { error } = await supabase
@@ -244,8 +234,6 @@ async function postContent() {
             ) : (
               <Sparkles className="mr-2 h-4 w-4" />
             )}
-
-              
             {activeJob
               ? `Generating ${activeJob.days_done}/${activeJob.days_total} days`
               : queueing
@@ -261,7 +249,7 @@ async function postContent() {
             {posting ? "Posting…" : "Post Content"}
           </Button>
         </div>
-      </div>  
+      </div>
 
       {activeJob && (
         <p className="text-sm text-muted-foreground">

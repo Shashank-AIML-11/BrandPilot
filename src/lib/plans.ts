@@ -9,7 +9,7 @@ export interface PlanMonthlyContent {
 export interface Plan {
   id: PlanId;
   name: string;
-  priceMonthly: number; // USD, display only — actual charge comes from the Razorpay Plan ID
+  priceMonthly: number; // INR, whole rupees - must match the amount on the corresponding Razorpay Plan (RAZORPAY_PLAN_STARTER / _GROWTH / _SCALE)
   tagline: string;
   highlight?: boolean;
   features: string[];
@@ -21,11 +21,7 @@ export interface Plan {
   support: "email" | "priority" | "dedicated";
 }
 
-export function formatUSD(amount: number): string {
-  return `$${amount}`;
-}
-
-/** Kept for anywhere still formatting INR (e.g. old subscription records). */
+/** Formats a whole-rupee amount as e.g. "Rs 2,499" (Indian digit grouping, no decimals). Uses a \u20B9 escape sequence rather than a literal rupee character so it can't be silently corrupted by a non-UTF-8 file save (e.g. Notepad's ANSI default). */
 export function formatINR(amount: number): string {
   return `\u20B9${new Intl.NumberFormat("en-IN", { maximumFractionDigits: 0 }).format(amount)}`;
 }
@@ -34,7 +30,7 @@ export const PLANS: Plan[] = [
   {
     id: "starter",
     name: "Starter",
-    priceMonthly: 15,
+    priceMonthly: 2499,
     tagline: "For solo founders testing the water.",
     features: [
       "1 brand profile",
@@ -53,7 +49,7 @@ export const PLANS: Plan[] = [
   {
     id: "growth",
     name: "Growth",
-    priceMonthly: 25,
+    priceMonthly: 2499,
     tagline: "Auto-posting across every channel.",
     highlight: true,
     features: [
@@ -76,7 +72,7 @@ export const PLANS: Plan[] = [
   {
     id: "scale",
     name: "Scale",
-    priceMonthly: 230,
+    priceMonthly: 24999,
     tagline: "Agencies running many brands at once.",
     features: [
       "20 brand profiles",
@@ -88,7 +84,7 @@ export const PLANS: Plan[] = [
       "Advanced analytics",
       "Dedicated support manager",
     ],
-    // Per-brand quota — see the multi-brand-profile note below before this is
+    // Per-brand quota - see the multi-brand-profile note below before this is
     // actually enforced per brand rather than per user.
     monthlyContent: { blog: 4, infographic: 4, video: 4 },
     brandProfileLimit: 20,

@@ -30,7 +30,7 @@ export const PLANS: Plan[] = [
   {
     id: "starter",
     name: "Starter",
-    priceMonthly: 2499,
+    priceMonthly: 1499,
     tagline: "For solo founders testing the water.",
     features: [
       "1 brand profile",

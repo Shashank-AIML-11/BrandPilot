@@ -1,7 +1,7 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { CalendarDays, Sparkles, BarChart3, ShieldCheck, ArrowRight } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { formatUSD, PLANS } from "@/lib/plans";
+import { formatINR, PLANS } from "@/lib/plans";
 
 export const Route = createFileRoute("/")({
   head: () => ({
@@ -111,7 +111,7 @@ function Landing() {
               <h3 className="text-lg font-semibold">{plan.name}</h3>
               <p className="mt-1 text-sm text-muted-foreground">{plan.tagline}</p>
               <p className="mt-5 font-display text-4xl font-bold">
-                {formatUSD(plan.priceMonthly)}
+                {formatINR(plan.priceMonthly)}
                 <span className="text-sm font-normal text-muted-foreground">/mo</span>
               </p>
               <Button className="mt-5 w-full" variant={plan.highlight ? "default" : "outline"} asChild>

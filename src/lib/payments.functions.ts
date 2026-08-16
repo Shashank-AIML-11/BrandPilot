@@ -25,7 +25,7 @@ export const createRazorpaySubscription = createServerFn({ method: "POST" })
       .from("subscriptions")
       .select("plan, status")
       .eq("user_id", context.userId)
-      .in("status", ["pending", "active"])
+      .in("status", ["created", "active"])
       .order("created_at", { ascending: false })
       .limit(1)
       .maybeSingle();

@@ -62,7 +62,7 @@ function CheckoutPage() {
             });
             queryClient.invalidateQueries();
             toast.success(`${planName} plan activated. Welcome aboard!`);
-            navigate({ to: "/plan" });
+            navigate({ to: "/pricing" });
           } catch (err) {
             // Payment succeeded on Razorpay's side even if this
             // confirmation call fails — the webhook will still

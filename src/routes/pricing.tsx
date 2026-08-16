@@ -80,7 +80,7 @@ function PricingPage() {
               >
                 {isCurrent ? (
                   <span className="mb-3 w-fit rounded-full bg-secondary px-2.5 py-0.5 text-[11px] font-semibold">
-                    Your current plan
+                    Your active plan
                   </span>
                 ) : (
                   plan.highlight && (
@@ -105,7 +105,7 @@ function PricingPage() {
                 </ul>
                 {isCurrent ? (
                   <Button className="mt-6 w-full" variant="outline" disabled>
-                    Current plan
+                    Your Active Plan
                   </Button>
                 ) : (
                   <Button

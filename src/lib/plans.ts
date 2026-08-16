@@ -27,7 +27,7 @@ export function formatUSD(amount: number): string {
 
 /** Kept for anywhere still formatting INR (e.g. old subscription records). */
 export function formatINR(amount: number): string {
-  return `?${new Intl.NumberFormat("en-IN", { maximumFractionDigits: 0 }).format(amount)}`;
+  return `\u20B${new Intl.NumberFormat("en-IN", { maximumFractionDigits: 0 }).format(amount)}`;
 }
 
 export const PLANS: Plan[] = [

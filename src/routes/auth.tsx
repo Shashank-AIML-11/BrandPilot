@@ -242,7 +242,9 @@ function AuthPage() {
               <Label htmlFor="email">Email</Label>
               <Input
                 id="email"
+                name="email"
                 type="email"
+                autoComplete="username"
                 required
                 maxLength={255}
                 value={email}
@@ -266,7 +268,9 @@ function AuthPage() {
                 </div>
                 <Input
                   id="password"
+                  name="password"
                   type="password"
+                  autoComplete={mode === "signup" ? "new-password" : "current-password"}
                   required
                   minLength={6}
                   maxLength={72}

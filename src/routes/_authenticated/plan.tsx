@@ -3,7 +3,7 @@ import { useQuery } from "@tanstack/react-query";
 import { format } from "date-fns";
 import { Check, Loader2 } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
-import { formatINR, planById, PLANS } from "@/lib/plans";
+import { formatUSD, planById, PLANS } from "@/lib/plans";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 
@@ -63,7 +63,7 @@ function PlanPage() {
             <h2 className="mt-1 font-display text-2xl font-bold">{current.name}</h2>
           </div>
           <p className="font-display text-2xl font-bold">
-            {formatINR(current.priceMonthly)}
+            {formatUSD(current.priceMonthly)}
             <span className="text-sm font-normal text-muted-foreground">/mo</span>
           </p>
         </div>
@@ -94,7 +94,7 @@ function PlanPage() {
                 </p>
               </div>
               <div className="flex items-center gap-3">
-                <span>{formatINR((s.price_cents ?? 0) / 100)}</span>
+                <span>{formatUSD((s.price_cents ?? 0) / 100)}</span>
                 <Badge variant="secondary" className="capitalize">
                   {s.status}
                 </Badge>

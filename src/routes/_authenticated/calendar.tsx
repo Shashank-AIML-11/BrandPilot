@@ -209,15 +209,54 @@ function CalendarPage() {
     if (refreshed && refreshed !== detail) setDetail(refreshed);
   }, [detail, items]);
 
-  return (
+/*  return (
     <div className="space-y-6">
-      <div className="flex flex-wrap items-end justify-between gap-4">
+      <div className="flex flex-wrap items-end gap-4">
         <div>
           <h1 className="text-2xl font-bold">Content Calendar</h1>
           <p className="mt-1 text-sm text-muted-foreground">
             Plan-based blogs, infographics and videos, generated from your brand profile.
           </p>
         </div>
+        <div className="ml-auto flex items-center gap-2">
+          <Button variant="outline" size="icon" onClick={() => setCursor(addMonths(cursor, -1))}>
+            <ChevronLeft className="h-4 w-4" />
+          </Button>
+          <span className="w-40 text-center font-display text-lg font-semibold">
+            {format(cursor, "MMMM yyyy")}
+          </span>
+          <Button variant="outline" size="icon" onClick={() => setCursor(addMonths(cursor, 1))}>
+            <ChevronRight className="h-4 w-4" />
+          </Button>
+          <Button onClick={generateMonth} disabled={queueing || Boolean(activeJob)}>
+            {queueing || activeJob ? (
+              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+            ) : (
+              <Sparkles className="mr-2 h-4 w-4" />
+            )}
+            {activeJob
+              ? `Generating ${activeJob.days_done}/${activeJob.days_total} days`
+              : queueing
+                ? "Queueing…"
+                : "Generate Content"}
+          </Button>
+          <Button variant="secondary" onClick={postContent} disabled={posting}>
+            {posting ? (
+              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+            ) : (
+              <Send className="mr-2 h-4 w-4" />
+            )}
+            {posting ? "Posting…" : "Post Content"}
+          </Button>
+        </div>
+      </div>*/
+    return (
+  <div className="space-y-6">
+    <div>
+      {/* Top row containing the h1 and buttons side by side */}
+      <div className="flex flex-wrap items-center justify-between gap-4">
+        <h1 className="text-2xl font-bold">Content Calendar</h1>
+
         <div className="flex items-center gap-2">
           <Button variant="outline" size="icon" onClick={() => setCursor(addMonths(cursor, -1))}>
             <ChevronLeft className="h-4 w-4" />
@@ -250,6 +289,12 @@ function CalendarPage() {
           </Button>
         </div>
       </div>
+
+      {/* Description stays underneath */}
+      <p className="mt-1 text-sm text-muted-foreground">
+        Plan-based blogs, infographics and videos, generated from your brand profile.
+      </p>
+    </div>
 
       {activeJob && (
         <p className="text-sm text-muted-foreground">

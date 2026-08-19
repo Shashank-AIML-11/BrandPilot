@@ -3,12 +3,11 @@ import { createFileRoute, useNavigate, useSearch } from "@tanstack/react-router"
 import { useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { ArrowLeft, Check, Loader2, Lock } from "lucide-react";
-import { formatINR, PLANS, planById, type PlanId } from "@/lib/plans";
+import { formatINR, planById, type PlanId } from "@/lib/plans";
 import { createRazorpaySubscription, confirmRazorpayPayment } from "@/lib/payments.functions";
 import { loadRazorpayScript } from "@/lib/payments/load-razorpay-script";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
-import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 
 export const Route = createFileRoute("/_authenticated/checkout")({
   head: () => ({
@@ -30,9 +29,9 @@ function CheckoutPage() {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
 
-  const [planId, setPlanId] = useState<PlanId>(planById(planParam)?.id ?? "growth");
   const [busy, setBusy] = useState(false);
 
+  const planId: PlanId = planById(planParam)?.id ?? "growth";
   const plan = planById(planId)!;
 
   async function submit(e: React.FormEvent) {
@@ -108,27 +107,13 @@ function CheckoutPage() {
         <div className="space-y-6">
           <section className="surface p-5">
             <h2 className="text-sm font-semibold">Plan</h2>
-            <RadioGroup
-              value={planId}
-              onValueChange={(v) => setPlanId(v as PlanId)}
-              className="mt-4 space-y-3"
-            >
-              {PLANS.map((p) => (
-                <label
-                  key={p.id}
-                  className="flex cursor-pointer items-start gap-3 rounded-xl border border-border p-4 transition-colors hover:bg-accent has-[:checked]:border-primary"
-                >
-                  <RadioGroupItem value={p.id} className="mt-1" />
-                  <div className="flex-1">
-                    <div className="flex items-center justify-between">
-                      <span className="font-medium">{p.name}</span>
-                      <span className="font-display font-semibold">{formatINR(p.priceMonthly)}/mo</span>
-                    </div>
-                    <p className="mt-1 text-sm text-muted-foreground">{p.tagline}</p>
-                  </div>
-                </label>
-              ))}
-            </RadioGroup>
+            <div className="mt-4 rounded-xl border border-primary bg-accent/40 p-4">
+              <div className="flex items-center justify-between">
+                <span className="font-medium">{plan.name}</span>
+                <span className="font-display font-semibold">{formatINR(plan.priceMonthly)}/mo</span>
+              </div>
+              <p className="mt-1 text-sm text-muted-foreground">{plan.tagline}</p>
+            </div>
           </section>
 
           <section className="surface p-5">

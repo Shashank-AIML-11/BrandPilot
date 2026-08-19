@@ -61,9 +61,8 @@ function PricingPage() {
 
       <main className="mx-auto w-full max-w-6xl flex-1 overflow-y-auto px-6 pb-6">
         <div className="text-center">
-          <h1 className="text-3xl font-bold">Pick your plan</h1>
+          <h1 className="text-2xl font-bold">Pick your plan</h1>
           <p className="mx-auto mt-2 max-w-xl text-sm text-muted-foreground">
-            Every plan includes the brand profile, the content calendar and unlimited reviews.
             Upgrade or downgrade at any time.
           </p>
         </div>

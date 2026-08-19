@@ -49,8 +49,8 @@ function PricingPage() {
   });
 
   return (
-    <div className="min-h-screen bg-background">
-      <header className="mx-auto flex max-w-6xl items-center justify-between px-6 py-6">
+    <div className="flex h-screen flex-col overflow-hidden bg-background">
+      <header className="mx-auto flex w-full max-w-6xl shrink-0 items-center justify-between px-6 py-4">
         <Link to="/" className="font-display text-lg font-bold">
           LOVIZA<span className="text-primary">.</span>
         </Link>
@@ -59,43 +59,43 @@ function PricingPage() {
         </Button>
       </header>
 
-      <main className="mx-auto max-w-6xl px-6 pb-24">
+      <main className="mx-auto w-full max-w-6xl flex-1 overflow-y-auto px-6 pb-6">
         <div className="text-center">
-          <h1 className="text-4xl font-bold">Pick your plan</h1>
-          <p className="mx-auto mt-3 max-w-xl text-sm text-muted-foreground">
+          <h1 className="text-3xl font-bold">Pick your plan</h1>
+          <p className="mx-auto mt-2 max-w-xl text-sm text-muted-foreground">
             Every plan includes the brand profile, the content calendar and unlimited reviews.
             Upgrade or downgrade at any time.
           </p>
         </div>
 
-        <div className="mt-12 grid gap-6 lg:grid-cols-3">
+        <div className="mt-6 grid gap-5 lg:grid-cols-3">
           {PLANS.map((plan) => {
             const isCurrent = currentPlanId === plan.id;
             return (
               <div
                 key={plan.id}
-                className={`surface flex flex-col p-6 ${
+                className={`surface flex flex-col p-5 ${
                   plan.highlight ? "ring-2 ring-primary" : ""
                 } ${isCurrent ? "opacity-80" : ""}`}
               >
                 {isCurrent ? (
-                  <span className="mb-3 w-fit rounded-full bg-secondary px-2.5 py-0.5 text-[11px] font-semibold">
-                    Your active plan
+                  <span className="mb-2 w-fit rounded-full bg-secondary px-2.5 py-0.5 text-[11px] font-semibold">
+                    Your current plan
                   </span>
                 ) : (
                   plan.highlight && (
-                    <span className="mb-3 w-fit rounded-full bg-primary px-2.5 py-0.5 text-[11px] font-semibold text-primary-foreground">
+                    <span className="mb-2 w-fit rounded-full bg-primary px-2.5 py-0.5 text-[11px] font-semibold text-primary-foreground">
                       Most popular
                     </span>
                   )
                 )}
                 <h2 className="text-lg font-semibold">{plan.name}</h2>
                 <p className="mt-1 text-sm text-muted-foreground">{plan.tagline}</p>
-                <p className="mt-6 font-display text-4xl font-bold">
+                <p className="mt-4 font-display text-3xl font-bold">
                   {formatINR(plan.priceMonthly)}
                   <span className="text-sm font-normal text-muted-foreground">/month</span>
                 </p>
-                <ul className="mt-6 flex-1 space-y-3 text-sm">
+                <ul className="mt-4 flex-1 space-y-2 text-sm">
                   {plan.features.map((f) => (
                     <li key={f} className="flex gap-2">
                       <Check className="mt-0.5 h-4 w-4 shrink-0 text-primary" />
@@ -104,12 +104,12 @@ function PricingPage() {
                   ))}
                 </ul>
                 {isCurrent ? (
-                  <Button className="mt-6 w-full" variant="outline" disabled>
-                    Your Active Plan
+                  <Button className="mt-5 w-full" variant="outline" disabled>
+                    Your Current Plan
                   </Button>
                 ) : (
                   <Button
-                    className="mt-6 w-full"
+                    className="mt-5 w-full"
                     variant={plan.highlight ? "default" : "outline"}
                     asChild
                   >

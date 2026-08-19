@@ -277,7 +277,7 @@ function CalendarPage() {
               ? `Generating ${activeJob.days_done}/${activeJob.days_total} days`
               : queueing
                 ? "Queueing…"
-                : "Generate Content12"}
+                : "Generate Content1234567"}
           </Button>
           <Button variant="secondary" onClick={postContent} disabled={posting}>
             {posting ? (

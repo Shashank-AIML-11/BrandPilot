@@ -277,7 +277,7 @@ function CalendarPage() {
               ? `Generating ${activeJob.days_done}/${activeJob.days_total} days`
               : queueing
                 ? "Queueing…"
-                : "Generate Content for YOUR LOVIZA"}
+                : "Generate Content FOR 20300000000"}
           </Button>
           <Button variant="secondary" onClick={postContent} disabled={posting}>
             {posting ? (

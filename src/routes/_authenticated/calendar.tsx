@@ -285,7 +285,7 @@ function CalendarPage() {
             ) : (
               <Send className="mr-2 h-4 w-4" />
             )}
-            {posting ? "Posting…" : "Post Content"}
+            {posting ? "Posting…" : "Post Content NOW"}
           </Button>
         </div>
       </div>

@@ -143,7 +143,7 @@ function AnalyticsPage() {
       <div>
         <h1 className="text-2xl font-bold">Analytics</h1>
         <p className="mt-1 text-sm text-muted-foreground">
-          Performance for the last 30 days of scheduled content.
+          Your Brand Content Performance for the last 30 days of scheduled content.
         </p>
       </div>
 

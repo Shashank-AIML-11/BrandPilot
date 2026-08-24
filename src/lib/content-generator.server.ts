@@ -1,6 +1,4 @@
 import { generateCarousel } from "./carousel.server";
-import { generatePersonalizedEmail } from "./email.server";
-import { generateAdCreative } from "./ad-creative.server";
 
 export type LOVIZAContentType =
   | "linkedin_post"
@@ -46,26 +44,7 @@ export async function generateLOVIZAContent(
         topic: request.topic || "Educational content",
       });
 
-    case "email":
 
-      return generatePersonalizedEmail({
-        brandName: request.brandName,
-        productOrService: request.productOrService,
-        targetAudience: request.targetAudience,
-        objective: request.objective || "Generate engagement",
-        offer: request.offer,
-      });
-
-    case "ad_image":
-
-      return generateAdCreative({
-        brandName: request.brandName,
-        productOrService: request.productOrService,
-        targetAudience: request.targetAudience,
-        platform: "instagram",
-        objective: request.objective || "Generate leads",
-        offer: request.offer,
-      });
 
     case "linkedin_post":
     case "instagram_post":

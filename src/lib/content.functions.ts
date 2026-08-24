@@ -1075,6 +1075,18 @@ export const processGenerationQueueNow =
     );
 
 
+/**
+ * Queue an entire month for durable
+ * server-side generation.
+ *
+ * IMPORTANT:
+ * This function ONLY creates the database job.
+ *
+ * It does NOT execute the AI generation.
+ *
+ * This prevents the Generate Content button
+ * from waiting several minutes.
+ */
 export const queueMonthGeneration =
   createServerFn({
     method: "POST",
@@ -1108,9 +1120,7 @@ export const queueMonthGeneration =
           data: brand,
         } =
           await context.supabase
-            .from(
-              "brand_profiles",
-            )
+            .from("brand_profiles")
             .select(
               "business_name",
             )
@@ -1221,15 +1231,17 @@ export const queueMonthGeneration =
         const postedDates =
           new Set(
             (posted ?? []).map(
-              (r) =>
-                r.scheduled_date as string,
+              (row) =>
+                row.scheduled_date as string,
             ),
           );
 
         const dates =
           futureDates.filter(
-            (d) =>
-              !postedDates.has(d),
+            (date) =>
+              !postedDates.has(
+                date,
+              ),
           );
 
         if (!dates.length) {
@@ -1246,8 +1258,8 @@ export const queueMonthGeneration =
           );
 
         /*
-         * TESTING MODE:
-         * Video generation disabled.
+         * Video generation remains disabled
+         * exactly as in your current staging code.
          */
         const monthlyTotals = {
           ...entitlement.plan
@@ -1279,8 +1291,7 @@ export const queueMonthGeneration =
           );
 
         /*
-         * Remove any previous generation job
-         * for this month.
+         * Remove any old job for this user/month.
          */
         await context.supabase
           .from(
@@ -1297,7 +1308,9 @@ export const queueMonthGeneration =
           );
 
         /*
-         * Create new durable generation job.
+         * Create the durable job.
+         *
+         * Nothing expensive happens after this.
          */
         const {
           error,
@@ -1329,8 +1342,46 @@ export const queueMonthGeneration =
         }
 
         /*
-         * Drain the queue immediately.
+         * RETURN IMMEDIATELY.
+         *
+         * The browser worker will now process
+         * one generation batch at a time.
          */
+        return {
+          queued:
+            scheduledDates.length,
+          skipped:
+            futureDates.length -
+            dates.length,
+          from:
+            scheduledDates[0],
+          plan:
+            entitlement.plan.name,
+          content:
+            entitlement.plan
+              .monthlyContent,
+          generated: 0,
+          imagesStored: 0,
+        };
+      },
+    );
+
+/**
+ * Process ONE generation batch for the
+ * authenticated user.
+ *
+ * This is deliberately separate from
+ * queueMonthGeneration().
+ */
+export const processGenerationQueueNow =
+  createServerFn({
+    method: "POST",
+  })
+    .middleware([
+      requireSupabaseAuth,
+    ])
+    .handler(
+      async ({ context }) => {
         const {
           supabaseAdmin,
         } =
@@ -1345,81 +1396,10 @@ export const queueMonthGeneration =
             "@/lib/content-queue.server"
           );
 
-        const {
-          processVideoQueue,
-        } =
-          await import(
-            "@/lib/video-queue.server"
-          );
-
-        let generated = 0;
-        let imagesStored = 0;
-
-        try {
-          for (
-            let pass = 0;
-            pass < 5;
-            pass += 1
-          ) {
-            const result =
-              await processGenerationQueue(
-                supabaseAdmin,
-              );
-
-            generated +=
-              result.generated;
-
-            if (
-              !result.generated
-            ) {
-              break;
-            }
-          }
-
-          for (
-            let pass = 0;
-            pass < 5;
-            pass += 1
-          ) {
-            const result =
-              await processVideoQueue(
-                supabaseAdmin,
-                context.userId,
-              );
-
-            imagesStored +=
-              result.imagesStored;
-
-            if (
-              !result.imagesStored
-            ) {
-              break;
-            }
-          }
-        } catch (
-          kickError
-        ) {
-          console.error(
-            kickError,
-          );
-        }
-
-        return {
-          queued:
-            scheduledDates.length,
-          skipped:
-            futureDates.length -
-            dates.length,
-          from:
-            scheduledDates[0],
-          plan:
-            entitlement.plan.name,
-          content:
-            entitlement.plan
-              .monthlyContent,
-          generated,
-          imagesStored,
-        };
+        return processGenerationQueue(
+          supabaseAdmin,
+          context.userId,
+        );
       },
     );
 

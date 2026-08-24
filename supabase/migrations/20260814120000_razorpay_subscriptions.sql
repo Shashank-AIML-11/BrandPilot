@@ -27,6 +27,8 @@ CREATE INDEX IF NOT EXISTS subscriptions_user_id_idx ON public.subscriptions (us
 -- once Razorpay is handling real charges. Replace with SELECT-only.
 DROP POLICY IF EXISTS subs_own ON public.subscriptions;
 
+DROP POLICY IF EXISTS subs_select_own ON public.subscriptions;
+
 CREATE POLICY subs_select_own ON public.subscriptions FOR SELECT TO authenticated
   USING (user_id = auth.uid());
 

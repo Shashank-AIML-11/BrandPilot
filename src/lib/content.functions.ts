@@ -1038,6 +1038,43 @@ export const processVideoQueueNow =
  * Queue an entire month for durable
  * server-side generation.
  */
+/**
+ * Process ONE generation batch for the authenticated user.
+ *
+ * This is intentionally separate from queueMonthGeneration().
+ * The browser calls this repeatedly while the job is active,
+ * so the "Generate Content" button does not wait for the
+ * entire month to finish.
+ */
+export const processGenerationQueueNow =
+  createServerFn({
+    method: "POST",
+  })
+    .middleware([
+      requireSupabaseAuth,
+    ])
+    .handler(
+      async ({ context }) => {
+        const {
+          supabaseAdmin,
+        } = await import(
+          "@/integrations/supabase/client.server"
+        );
+
+        const {
+          processGenerationQueue,
+        } = await import(
+          "@/lib/content-queue.server"
+        );
+
+        return processGenerationQueue(
+          supabaseAdmin,
+          context.userId,
+        );
+      },
+    );
+
+
 export const queueMonthGeneration =
   createServerFn({
     method: "POST",

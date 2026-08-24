@@ -1,13 +1,15 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { createFileRoute, useNavigate, useSearch } from "@tanstack/react-router";
-import { useQueryClient } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { ArrowLeft, Check, Loader2, Lock } from "lucide-react";
-import { formatINR, planById, type PlanId } from "@/lib/plans";
+import { supabase } from "@/integrations/supabase/client";
+import { formatINR, planById, PLANS, type PlanId } from "@/lib/plans";
 import { createRazorpaySubscription, confirmRazorpayPayment } from "@/lib/payments.functions";
 import { loadRazorpayScript } from "@/lib/payments/load-razorpay-script";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
+import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 
 export const Route = createFileRoute("/_authenticated/checkout")({
   head: () => ({
@@ -31,17 +33,59 @@ function CheckoutPage() {
 
   const [busy, setBusy] = useState(false);
 
-  const planId: PlanId = planById(planParam)?.id ?? "growth";
-  const plan = planById(planId)!;
+  // The plan the user is currently subscribed to (if any). Same query
+  // pricing.tsx uses, so it's served from cache when arriving via a
+  // "Switch to X" link.
+  const { data: currentPlanId, isLoading: loadingCurrentPlan } = useQuery({
+    queryKey: ["current-plan-id"],
+    queryFn: async () => {
+      const { data: userData } = await supabase.auth.getUser();
+      if (!userData.user) return null;
+      const { data: sub } = await supabase
+        .from("subscriptions")
+        .select("plan")
+        .eq("user_id", userData.user.id)
+        .in("status", ["pending", "active"])
+        .order("created_at", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      return (sub?.plan as PlanId | undefined) ?? null;
+    },
+  });
+
+  const currentPlan = currentPlanId ? planById(currentPlanId) : null;
+
+  // Plans the user could switch to — everything except the one they're
+  // already on. If they're not subscribed yet, every plan is selectable.
+  const switchablePlans = PLANS.filter((p) => p.id !== currentPlanId);
+
+  // Which plan is selected in the radio group. Defaults to whichever
+  // plan they clicked "Switch to" on, falling back to the first
+  // switchable plan if that ever isn't valid (e.g. it turned out to be
+  // their current plan).
+  const [selectedPlanId, setSelectedPlanId] = useState<PlanId | null>(null);
+
+  useEffect(() => {
+    if (loadingCurrentPlan) return;
+    setSelectedPlanId((prev) => {
+      if (prev && switchablePlans.some((p) => p.id === prev)) return prev;
+      const preferred = planParam !== currentPlanId ? planById(planParam) : null;
+      return (preferred ?? switchablePlans[0])?.id ?? null;
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [loadingCurrentPlan, currentPlanId]);
+
+  const plan = selectedPlanId ? planById(selectedPlanId) : null;
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
+    if (!plan) return;
     setBusy(true);
     try {
       await loadRazorpayScript();
 
       const { subscriptionId, keyId, planName, customerEmail, customerName } =
-        await createRazorpaySubscription({ data: { planId } });
+        await createRazorpaySubscription({ data: { planId: plan.id } });
 
       const checkout = new window.Razorpay({
         key: keyId,
@@ -94,7 +138,9 @@ function CheckoutPage() {
         <div>
           <h1 className="text-2xl font-bold">Complete your subscription</h1>
           <p className="mt-1 text-sm text-muted-foreground">
-            Choose your plan, then complete payment securely via Razorpay.
+            {currentPlan
+              ? "Pick the plan you'd like to switch to, then complete payment securely via Razorpay."
+              : "Choose your plan, then complete payment securely via Razorpay."}
           </p>
         </div>
         <Button type="button" variant="ghost" onClick={() => navigate({ to: "/pricing" })}>
@@ -105,15 +151,67 @@ function CheckoutPage() {
 
       <div className="grid gap-6 lg:grid-cols-[1.4fr_1fr]">
         <div className="space-y-6">
-          <section className="surface p-5">
-            <h2 className="text-sm font-semibold">Plan</h2>
-            <div className="mt-4 rounded-xl border border-primary bg-accent/40 p-4">
-              <div className="flex items-center justify-between">
-                <span className="font-medium">{plan.name}</span>
-                <span className="font-display font-semibold">{formatINR(plan.priceMonthly)}/mo</span>
+          {currentPlan && (
+            <section className="surface p-5">
+              <h2 className="text-sm font-semibold">Current plan</h2>
+              <div className="mt-4 rounded-xl border border-border bg-muted/40 p-4">
+                <div className="flex items-center justify-between">
+                  <span className="flex items-center gap-2 font-medium">
+                    {currentPlan.name}
+                    <span className="rounded-full bg-secondary px-2 py-0.5 text-[11px] font-semibold">
+                      Active
+                    </span>
+                  </span>
+                  <span className="font-display font-semibold">
+                    {formatINR(currentPlan.priceMonthly)}/mo
+                  </span>
+                </div>
+                <p className="mt-1 text-sm text-muted-foreground">{currentPlan.tagline}</p>
               </div>
-              <p className="mt-1 text-sm text-muted-foreground">{plan.tagline}</p>
-            </div>
+            </section>
+          )}
+
+          <section className="surface p-5">
+            <h2 className="text-sm font-semibold">
+              {currentPlan ? "Switch to" : "Plan"}
+            </h2>
+
+            {loadingCurrentPlan ? (
+              <div className="mt-4 flex items-center gap-2 text-sm text-muted-foreground">
+                <Loader2 className="h-4 w-4 animate-spin" />
+                Loading your plan…
+              </div>
+            ) : (
+              <RadioGroup
+                className="mt-4 space-y-3"
+                value={selectedPlanId ?? undefined}
+                onValueChange={(value) => setSelectedPlanId(value as PlanId)}
+              >
+                {switchablePlans.map((p) => {
+                  const selected = selectedPlanId === p.id;
+                  return (
+                    <Label
+                      key={p.id}
+                      htmlFor={`plan-${p.id}`}
+                      className={`flex cursor-pointer items-start gap-3 rounded-xl border p-4 transition-colors ${
+                        selected ? "border-primary bg-accent/40" : "border-border"
+                      }`}
+                    >
+                      <RadioGroupItem value={p.id} id={`plan-${p.id}`} className="mt-1" />
+                      <div className="flex-1">
+                        <div className="flex items-center justify-between">
+                          <span className="font-medium">{p.name}</span>
+                          <span className="font-display font-semibold">
+                            {formatINR(p.priceMonthly)}/mo
+                          </span>
+                        </div>
+                        <p className="mt-1 text-sm text-muted-foreground">{p.tagline}</p>
+                      </div>
+                    </Label>
+                  );
+                })}
+              </RadioGroup>
+            )}
           </section>
 
           <section className="surface p-5">
@@ -132,30 +230,36 @@ function CheckoutPage() {
 
         <aside className="surface h-fit p-5">
           <h2 className="text-sm font-semibold">Order summary</h2>
-          <div className="mt-4 flex items-center justify-between text-sm">
-            <span className="text-muted-foreground">{plan.name} · monthly</span>
-            <span className="font-medium">{formatINR(plan.priceMonthly)}</span>
-          </div>
-          <div className="mt-2 flex items-center justify-between text-sm">
-            <span className="text-muted-foreground">Taxes</span>
-            <span className="text-muted-foreground">Calculated at checkout</span>
-          </div>
-          <div className="mt-4 flex items-center justify-between border-t border-border pt-4 font-display text-lg font-semibold">
-            <span>Total due</span>
-            <span>{formatINR(plan.priceMonthly)}</span>
-          </div>
-          <ul className="mt-5 space-y-2 text-sm">
-            {plan.features.slice(0, 4).map((f) => (
-              <li key={f} className="flex gap-2 text-muted-foreground">
-                <Check className="mt-0.5 h-4 w-4 shrink-0 text-primary" />
-                {f}
-              </li>
-            ))}
-          </ul>
+          {plan ? (
+            <>
+              <div className="mt-4 flex items-center justify-between text-sm">
+                <span className="text-muted-foreground">{plan.name} · monthly</span>
+                <span className="font-medium">{formatINR(plan.priceMonthly)}</span>
+              </div>
+              <div className="mt-2 flex items-center justify-between text-sm">
+                <span className="text-muted-foreground">Taxes</span>
+                <span className="text-muted-foreground">Calculated at checkout</span>
+              </div>
+              <div className="mt-4 flex items-center justify-between border-t border-border pt-4 font-display text-lg font-semibold">
+                <span>Total due</span>
+                <span>{formatINR(plan.priceMonthly)}</span>
+              </div>
+              <ul className="mt-5 space-y-2 text-sm">
+                {plan.features.slice(0, 4).map((f) => (
+                  <li key={f} className="flex gap-2 text-muted-foreground">
+                    <Check className="mt-0.5 h-4 w-4 shrink-0 text-primary" />
+                    {f}
+                  </li>
+                ))}
+              </ul>
+            </>
+          ) : (
+            <p className="mt-4 text-sm text-muted-foreground">Select a plan to continue.</p>
+          )}
           <Label htmlFor="submit" className="sr-only">
             Submit
           </Label>
-          <Button id="submit" type="submit" className="mt-6 w-full" disabled={busy}>
+          <Button id="submit" type="submit" className="mt-6 w-full" disabled={busy || !plan}>
             {busy && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
             Continue to payment
           </Button>

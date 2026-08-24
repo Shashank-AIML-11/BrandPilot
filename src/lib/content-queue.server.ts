@@ -498,10 +498,31 @@ export async function processGenerationQueue(
 
 
 
-    const remaining =
-      (job.pending_dates ?? []).slice(
-        pending.length,
+    await admin
+      .from("content_generation_jobs")
+      .update({
+        pending_dates:
+          remaining,
+
+        days_done:
+          job.days_done +
+          pending.length,
+
+        status:
+          remaining.length
+            ? "running"
+            : "completed",
+
+        error:
+          null,
+      })
+      .eq(
+        "id",
+        job.id,
       );
+
+
+      
 
     await admin
       .from("content_generation_jobs")

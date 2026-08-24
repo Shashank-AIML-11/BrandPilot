@@ -1231,6 +1231,8 @@ export const queueMonthGeneration = createServerFn({ method: "POST" })
      */
     const {
       distributeMonthlyContent,
+      renderingRowsForDay,
+      activePlatforms,
     } = await import(
       "@/lib/content.server"
     );

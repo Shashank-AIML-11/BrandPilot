@@ -21,16 +21,15 @@ export const createRazorpaySubscription = createServerFn({ method: "POST" })
     const plan = PLANS.find((p) => p.id === data.planId);
     if (!plan) throw new Error("Unknown plan");
 
-    const { data: existing } = await context.supabase
+    const { data: existingSubs, error: existingError } = await context.supabase
       .from("subscriptions")
-      .select("plan, status")
+      .select("id, plan, status, razorpay_subscription_id")
       .eq("user_id", context.userId)
-      .in("status", ["created", "active"])
-      .order("created_at", { ascending: false })
-      .limit(1)
-      .maybeSingle();
+      .in("status", ["pending", "active"])
+      .order("created_at", { ascending: false });
+    if (existingError) throw new Error(existingError.message);
 
-    if (existing?.plan === plan.id) {
+    if (existingSubs?.some((s) => s.plan === plan.id)) {
       throw new Error(
         `You're already on the ${plan.name} plan. Choose a different plan to switch.`,
       );
@@ -94,6 +93,30 @@ export const createRazorpaySubscription = createServerFn({ method: "POST" })
         { onConflict: "razorpay_subscription_id" },
       );
     if (upsertError) throw new Error(upsertError.message);
+
+    // Cancel every other live subscription now that the new one is
+    // recorded — this is a plan switch, not an additional plan. Best
+    // effort: if Razorpay's cancel call fails for one (e.g. it was
+    // already cancelled there), log and continue rather than blocking
+    // checkout on it; the webhook/reconciliation job can catch stragglers.
+    if (existingSubs?.length) {
+      for (const old of existingSubs) {
+        try {
+          if (old.razorpay_subscription_id) {
+            await razorpay.cancelSubscription(old.razorpay_subscription_id);
+          }
+        } catch (err) {
+          console.error(
+            `[checkout] failed to cancel old subscription ${old.razorpay_subscription_id}`,
+            err,
+          );
+        }
+        await supabaseAdmin
+          .from("subscriptions")
+          .update({ status: "cancelled", cancelled_at: new Date().toISOString() } as never)
+          .eq("id", old.id);
+      }
+    }
 
     return {
       subscriptionId: subscription.id,

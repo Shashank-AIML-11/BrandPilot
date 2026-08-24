@@ -1,3 +1,6 @@
+-- Expand the content type system from the original
+-- blog / infographic / video model to the final LOVIZA model.
+
 ALTER TYPE public.content_type RENAME TO content_type_old;
 
 CREATE TYPE public.content_type AS ENUM (
@@ -23,6 +26,7 @@ ALTER TABLE public.content_items
       WHEN 'blog' THEN 'blog'
       WHEN 'infographic' THEN 'carousel'
       WHEN 'video' THEN 'product_service_video'
+      ELSE 'blog'
     END
   )::public.content_type;
 

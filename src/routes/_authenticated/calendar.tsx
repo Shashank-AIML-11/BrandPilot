@@ -80,6 +80,8 @@ function CalendarPage() {
   const [refreshing, setRefreshing] = useState(false);
   const [posting, setPosting] = useState(false);
 
+  const processingGeneration = useRef(false);
+
   const monthKey = format(cursor, "yyyy-MM");
   const monthStart = startOfMonth(cursor);
   const monthEnd = endOfMonth(cursor);

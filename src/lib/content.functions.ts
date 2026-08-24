@@ -1291,39 +1291,190 @@ export const queueMonthGeneration = createServerFn({ method: "POST" })
      *
      * This function must return immediately.
      */
-    const { error } =
-      await context.supabase
-        .from(
-          "content_generation_jobs",
-        )
-        .insert({
-          user_id:
+      /*
+      * ============================================================
+      * REMOVE PREVIOUS NON-POSTED CONTENT
+      * ============================================================
+      *
+      * Refresh Calendar normally removes everything.
+      * This additional protection prevents duplicate calendar
+      * entries if Generate is triggered again after a failed job.
+      */
+      const {
+        error: deleteContentError,
+      } =
+        await context.supabase
+          .from("content_items")
+          .delete()
+          .eq(
+            "user_id",
             context.userId,
-
-          month:
-            data.month,
-
-          pending_dates:
+          )
+          .in(
+            "scheduled_date",
             scheduledDates,
+          )
+          .neq(
+            "status",
+            "posted",
+          );
 
-          days_total:
-            scheduledDates.length,
+      if (deleteContentError) {
+        throw new Error(
+          deleteContentError.message,
+        );
+      }
 
-          days_done: 0,
 
-          status:
-            "pending",
+      /*
+      * ============================================================
+      * CREATE DURABLE GENERATION JOB
+      * ============================================================
+      */
+      const {
+        data: generationJob,
+        error: jobError,
+      } =
+        await context.supabase
+          .from(
+            "content_generation_jobs",
+          )
+          .insert({
+            user_id:
+              context.userId,
 
-          content_plan:
-            contentPlan,
-        } as never);
+            month:
+              data.month,
 
-    if (error) {
-      throw new Error(
-        error.message,
-      );
-    }
+            pending_dates:
+              scheduledDates,
 
+            days_total:
+              scheduledDates.length,
+
+            days_done:
+              0,
+
+            status:
+              "pending",
+
+            content_plan:
+              contentPlan,
+
+            error:
+              null,
+          } as never)
+          .select("id")
+          .single();
+
+      if (
+        jobError ||
+        !generationJob
+      ) {
+        throw new Error(
+          jobError?.message ??
+            "Could not create generation job.",
+        );
+      }
+
+
+      /*
+      * ============================================================
+      * CREATE IMMEDIATE "RENDERING" CALENDAR ENTRIES
+      * ============================================================
+      */
+
+      const activeChannelList =
+        activePlatforms(
+          brand as never,
+        ).slice(
+          0,
+          entitlement.plan.channelLimit ??
+            undefined,
+        );
+
+      const renderingRows =
+        scheduledDates.flatMap(
+          (date) => {
+            const quota =
+              contentPlan[date];
+
+            if (!quota) {
+              return [];
+            }
+
+            return renderingRowsForDay(
+              {
+                userId:
+                  context.userId,
+
+                date,
+
+                platforms:
+                  activeChannelList,
+
+                autopost:
+                  entitlement.plan.autoPost,
+              },
+              quota,
+            );
+          },
+        );
+
+      if (
+        renderingRows.length === 0
+      ) {
+        /*
+        * Clean up the job if we couldn't
+        * create any calendar entries.
+        */
+        await context.supabase
+          .from(
+            "content_generation_jobs",
+          )
+          .delete()
+          .eq(
+            "id",
+            generationJob.id,
+          );
+
+        throw new Error(
+          "No calendar content could be scheduled.",
+        );
+      }
+
+      const {
+        error:
+          renderingInsertError,
+      } =
+        await context.supabase
+          .from(
+            "content_items",
+          )
+          .insert(
+            renderingRows as never,
+          );
+
+      if (
+        renderingInsertError
+      ) {
+        /*
+        * Remove the orphan generation job.
+        */
+        await context.supabase
+          .from(
+            "content_generation_jobs",
+          )
+          .delete()
+          .eq(
+            "id",
+            generationJob.id,
+          );
+
+        throw new Error(
+          `Could not create Rendering calendar entries: ${renderingInsertError.message}`,
+        );
+      }
     /*
      * Return immediately.
      */
@@ -1349,6 +1500,9 @@ export const queueMonthGeneration = createServerFn({ method: "POST" })
       imagesStored: 0,
     };
   });
+
+
+
 /**
  * Process ONE generation batch for the
  * authenticated user.

@@ -19,35 +19,78 @@ function groqKey() {
  *   "qwen/qwen3-32b"           (Qwen)
  *   "gemma2-9b-it"             (Google Gemma2)
  */
-export async function chatJSON<T>(system: string, prompt: string): Promise<T> {
+export async function chatJSON<T>(
+  system: string,
+  prompt: string,
+  schema?: Record<string, unknown>,
+): Promise<T> {
+  const responseFormat = schema
+    ? {
+        type: "json_schema",
+        json_schema: {
+          name: "loviza_content_generation",
+          strict: true,
+          schema,
+        },
+      }
+    : {
+        type: "json_object",
+      };
+
   const res = await fetch("https://api.groq.com/openai/v1/chat/completions", {
     method: "POST",
-    headers: { Authorization: `Bearer ${groqKey()}`, "Content-Type": "application/json" },
+    headers: {
+      Authorization: `Bearer ${groqKey()}`,
+      "Content-Type": "application/json",
+    },
     body: JSON.stringify({
       model: "openai/gpt-oss-20b",
       messages: [
         { role: "system", content: system },
         { role: "user", content: prompt },
       ],
-      response_format: { type: "json_object" },
+      response_format: responseFormat,
+      reasoning_effort: "low",
     }),
   });
 
   if (!res.ok) {
     const text = await res.text();
-    if (res.status === 429) throw new Error("AI rate limit reached. Please retry in a minute.");
+
+    if (res.status === 429) {
+      throw new Error("AI rate limit reached. Please retry in a minute.");
+    }
+
     throw new Error(`AI request failed [${res.status}]: ${text}`);
   }
 
-  const json = (await res.json()) as { choices?: Array<{ message?: { content?: string } }> };
+  const json = (await res.json()) as {
+    choices?: Array<{
+      message?: {
+        content?: string;
+      };
+    }>;
+  };
+
   const content = json.choices?.[0]?.message?.content ?? "";
+
+  if (!content.trim()) {
+    throw new Error("AI returned an empty response.");
+  }
+
   const cleaned = content
     .trim()
     .replace(/^```(?:json)?/i, "")
-    .replace(/```$/, "");
+    .replace(/```$/i, "")
+    .trim();
+
   const start = cleaned.indexOf("{");
   const end = cleaned.lastIndexOf("}");
-  if (start === -1 || end === -1) throw new Error("AI returned an unreadable response.");
+
+  if (start === -1 || end === -1) {
+    throw new Error("AI returned an unreadable response.");
+  }
+
   return JSON.parse(cleaned.slice(start, end + 1)) as T;
 }
 

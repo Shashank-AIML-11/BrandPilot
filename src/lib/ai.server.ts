@@ -15,7 +15,7 @@ function groqKey() {
 /**
  * Text generation via Groq — free-tier hosting for open-weight models.
  * Swap the `model` string to try alternatives, e.g.:
- *   "llama-3.3-70b-versatile"  (Meta Llama 3.3, default — best quality)
+ *   "openai/gpt-oss-20b"  ( best quality)
  *   "qwen/qwen3-32b"           (Qwen)
  *   "gemma2-9b-it"             (Google Gemma2)
  */
@@ -24,7 +24,7 @@ export async function chatJSON<T>(system: string, prompt: string): Promise<T> {
     method: "POST",
     headers: { Authorization: `Bearer ${groqKey()}`, "Content-Type": "application/json" },
     body: JSON.stringify({
-      model: "llama-3.3-70b-versatile",
+      model: "openai/gpt-oss-20b",
       messages: [
         { role: "system", content: system },
         { role: "user", content: prompt },

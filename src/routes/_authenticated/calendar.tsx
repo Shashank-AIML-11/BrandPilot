@@ -165,230 +165,230 @@ function CalendarPage() {
   /*
    * Refresh calendar while generation is running.
    */
-/*
- * ============================================================
- * BACKGROUND GENERATION PUMP
- * ============================================================
- *
- * queueMonthGeneration() creates the job and immediately
- * returns.
- *
- * This effect actually processes the queued generation.
- *
- * It runs one server-side generation batch at a time.
- *
- * The browser does NOT wait for the entire month.
- */
-useEffect(() => {
-  if (!activeJob) {
-    return;
-  }
+  /*
+  * ============================================================
+  * BACKGROUND GENERATION PUMP
+  * ============================================================
+  *
+  * queueMonthGeneration() creates the job and immediately
+  * returns.
+  *
+  * This effect actually processes the queued generation.
+  *
+  * It runs one server-side generation batch at a time.
+  *
+  * The browser does NOT wait for the entire month.
+  */
+  useEffect(() => {
+    if (!activeJob) {
+      return;
+    }
 
-  let cancelled = false;
+    let cancelled = false;
 
-  let timer:
-    ReturnType<typeof setTimeout> |
-    undefined;
+    let timer:
+      ReturnType<typeof setTimeout> |
+      undefined;
 
-  const processNextBatch =
-    async () => {
-      if (
-        cancelled ||
-        processingGeneration.current
-      ) {
-        return;
+    const processNextBatch =
+      async () => {
+        if (
+          cancelled ||
+          processingGeneration.current
+        ) {
+          return;
+        }
+
+        processingGeneration.current =
+          true;
+
+        try {
+          const result =
+            await processGenerationQueueNow();
+
+          /*
+          * Immediately refresh the calendar.
+          *
+          * Rendering → Ready happens here because
+          * the worker updates the existing DB rows.
+          */
+          await queryClient.invalidateQueries({
+            queryKey: [
+              "content",
+              monthKey,
+            ],
+          });
+
+          /*
+          * Refresh generation progress.
+          */
+          await queryClient.invalidateQueries({
+            queryKey: [
+              "generation-job",
+              monthKey,
+            ],
+          });
+
+          /*
+          * Stop if generation was cancelled
+          * by Refresh Calendar.
+          */
+          if (
+            result?.cancelled
+          ) {
+            return;
+          }
+
+          /*
+          * Stop on generation error.
+          *
+          * The server job will be marked failed.
+          */
+          if (
+            result?.error
+          ) {
+            toast.error(
+              result.error,
+            );
+
+            return;
+          }
+
+          /*
+          * If another batch is still pending,
+          * process it shortly.
+          */
+          if (
+            result?.generated &&
+            !cancelled
+          ) {
+            timer =
+              setTimeout(
+                processNextBatch,
+                500,
+              );
+          }
+        } catch (error) {
+          if (
+            !cancelled
+          ) {
+            toast.error(
+              error instanceof Error
+                ? error.message
+                : "Background generation failed.",
+            );
+          }
+        } finally {
+          processingGeneration.current =
+            false;
+        }
+      };
+
+    void processNextBatch();
+
+    return () => {
+      cancelled = true;
+
+      if (timer) {
+        clearTimeout(timer);
       }
 
       processingGeneration.current =
-        true;
+        false;
+    };
+  }, [
+    activeJob?.id,
+    monthKey,
+    queryClient,
+  ]);
+
+    /*
+    * Prefetch media URLs.
+    */
+    useEffect(() => {
+      if (!items.length) return;
+
+      void prefetchMediaUrls(
+        items.flatMap((item) => [
+          item.image_url,
+          item.video_url,
+        ]),
+      );
+    }, [items]);
+
+    /*
+    * GROUP CONTENT BY DATE
+    */
+    const byDate = useMemo(() => {
+      const map = new Map<string, ContentItem[]>();
+
+      items.forEach((item) => {
+        const list = map.get(item.scheduled_date) ?? [];
+
+        list.push(item);
+
+        map.set(item.scheduled_date, list);
+      });
+
+      return map;
+    }, [items]);
+
+    /*
+    * GENERATE MONTH
+    *
+    * IMPORTANT:
+    * The server now ONLY queues the job.
+    * It does NOT wait for AI generation.
+    */
+    async function generateMonth() {
+      if (queueing || activeJob) return;
+
+      const monthDays = eachDayOfInterval({
+        start: monthStart,
+        end: monthEnd,
+      }).map((day) =>
+        format(day, "yyyy-MM-dd"),
+      );
+
+      setQueueing(true);
 
       try {
-        const result =
-          await processGenerationQueueNow();
-
-        /*
-         * Immediately refresh the calendar.
-         *
-         * Rendering → Ready happens here because
-         * the worker updates the existing DB rows.
-         */
-        await queryClient.invalidateQueries({
-          queryKey: [
-            "content",
-            monthKey,
-          ],
+        const result = await queueMonthGeneration({
+          data: {
+            month: monthKey,
+            dates: monthDays,
+          },
         });
 
-        /*
-         * Refresh generation progress.
-         */
         await queryClient.invalidateQueries({
-          queryKey: [
-            "generation-job",
-            monthKey,
-          ],
+          queryKey: ["content", monthKey],
         });
 
-        /*
-         * Stop if generation was cancelled
-         * by Refresh Calendar.
-         */
-        if (
-          result?.cancelled
-        ) {
-          return;
-        }
+        await queryClient.invalidateQueries({
+          queryKey: ["generation-job", monthKey],
+        });
 
-        /*
-         * Stop on generation error.
-         *
-         * The server job will be marked failed.
-         */
-        if (
-          result?.error
-        ) {
-          toast.error(
-            result.error,
-          );
-
-          return;
-        }
-
-        /*
-         * If another batch is still pending,
-         * process it shortly.
-         */
-        if (
-          result?.generated &&
-          !cancelled
-        ) {
-          timer =
-            setTimeout(
-              processNextBatch,
-              500,
-            );
-        }
+        toast.success(
+          result?.queued
+            ? `${result.queued} days queued for ${format(
+                cursor,
+                "MMMM yyyy",
+              )}. Generation will continue in the background.`
+            : `${format(
+                cursor,
+                "MMMM yyyy",
+              )} generation queued.`,
+        );
       } catch (error) {
-        if (
-          !cancelled
-        ) {
-          toast.error(
-            error instanceof Error
-              ? error.message
-              : "Background generation failed.",
-          );
-        }
+        toast.error(
+          error instanceof Error
+            ? error.message
+            : "Could not start generation.",
+        );
       } finally {
-        processingGeneration.current =
-          false;
+        setQueueing(false);
       }
-    };
-
-  void processNextBatch();
-
-  return () => {
-    cancelled = true;
-
-    if (timer) {
-      clearTimeout(timer);
     }
-
-    processingGeneration.current =
-      false;
-  };
-}, [
-  activeJob?.id,
-  monthKey,
-  queryClient,
-]);
-
-  /*
-   * Prefetch media URLs.
-   */
-  useEffect(() => {
-    if (!items.length) return;
-
-    void prefetchMediaUrls(
-      items.flatMap((item) => [
-        item.image_url,
-        item.video_url,
-      ]),
-    );
-  }, [items]);
-
-  /*
-   * GROUP CONTENT BY DATE
-   */
-  const byDate = useMemo(() => {
-    const map = new Map<string, ContentItem[]>();
-
-    items.forEach((item) => {
-      const list = map.get(item.scheduled_date) ?? [];
-
-      list.push(item);
-
-      map.set(item.scheduled_date, list);
-    });
-
-    return map;
-  }, [items]);
-
-  /*
-   * GENERATE MONTH
-   *
-   * IMPORTANT:
-   * The server now ONLY queues the job.
-   * It does NOT wait for AI generation.
-   */
-  async function generateMonth() {
-    if (queueing || activeJob) return;
-
-    const monthDays = eachDayOfInterval({
-      start: monthStart,
-      end: monthEnd,
-    }).map((day) =>
-      format(day, "yyyy-MM-dd"),
-    );
-
-    setQueueing(true);
-
-    try {
-      const result = await queueMonthGeneration({
-        data: {
-          month: monthKey,
-          dates: monthDays,
-        },
-      });
-
-      await queryClient.invalidateQueries({
-        queryKey: ["content", monthKey],
-      });
-
-      await queryClient.invalidateQueries({
-        queryKey: ["generation-job", monthKey],
-      });
-
-      toast.success(
-        result?.queued
-          ? `${result.queued} days queued for ${format(
-              cursor,
-              "MMMM yyyy",
-            )}. Generation will continue in the background.`
-          : `${format(
-              cursor,
-              "MMMM yyyy",
-            )} generation queued.`,
-      );
-    } catch (error) {
-      toast.error(
-        error instanceof Error
-          ? error.message
-          : "Could not start generation.",
-      );
-    } finally {
-      setQueueing(false);
-    }
-  }
 
   /*
    * REFRESH CALENDAR
@@ -647,7 +647,8 @@ useEffect(() => {
             disabled={
               queueing ||
               Boolean(activeJob) ||
-              refreshing
+              refreshing ||
+              hasCalendarContent
             }
           >
             {queueing ? (

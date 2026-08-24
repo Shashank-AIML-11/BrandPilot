@@ -588,6 +588,8 @@ function CalendarPage() {
     }
   }, [items, detail]);
 
+  const hasCalendarContent = items.length > 0;
+  
   return (
     <div className="space-y-6">
 

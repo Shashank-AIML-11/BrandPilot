@@ -12,7 +12,7 @@ export type LOVIZAContentType =
   | "blog"
   | "email"
   | "ad_image"
-  | "product_video";
+  | "product_service_video";
 
 export interface ContentGenerationRequest {
   type: LOVIZAContentType;
@@ -82,7 +82,7 @@ export async function generateLOVIZAContent(
 
     case "instagram_reel":
     case "youtube_short":
-    case "product_video":
+    case "product_service_video":
 
       throw new Error(
         "VIDEO_PROVIDER_NOT_CONFIGURED"

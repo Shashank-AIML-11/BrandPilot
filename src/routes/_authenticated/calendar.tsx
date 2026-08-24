@@ -165,18 +165,142 @@ function CalendarPage() {
   /*
    * Refresh calendar while generation is running.
    */
-  useEffect(() => {
-    if (!activeJob) return;
+/*
+ * ============================================================
+ * BACKGROUND GENERATION PUMP
+ * ============================================================
+ *
+ * queueMonthGeneration() creates the job and immediately
+ * returns.
+ *
+ * This effect actually processes the queued generation.
+ *
+ * It runs one server-side generation batch at a time.
+ *
+ * The browser does NOT wait for the entire month.
+ */
+useEffect(() => {
+  if (!activeJob) {
+    return;
+  }
 
-    void queryClient.invalidateQueries({
-      queryKey: ["content", monthKey],
-    });
-  }, [
-    activeJob?.days_done,
-    activeJob?.status,
-    monthKey,
-    queryClient,
-  ]);
+  let cancelled = false;
+
+  let timer:
+    ReturnType<typeof setTimeout> |
+    undefined;
+
+  const processNextBatch =
+    async () => {
+      if (
+        cancelled ||
+        processingGeneration.current
+      ) {
+        return;
+      }
+
+      processingGeneration.current =
+        true;
+
+      try {
+        const result =
+          await processGenerationQueueNow();
+
+        /*
+         * Immediately refresh the calendar.
+         *
+         * Rendering → Ready happens here because
+         * the worker updates the existing DB rows.
+         */
+        await queryClient.invalidateQueries({
+          queryKey: [
+            "content",
+            monthKey,
+          ],
+        });
+
+        /*
+         * Refresh generation progress.
+         */
+        await queryClient.invalidateQueries({
+          queryKey: [
+            "generation-job",
+            monthKey,
+          ],
+        });
+
+        /*
+         * Stop if generation was cancelled
+         * by Refresh Calendar.
+         */
+        if (
+          result?.cancelled
+        ) {
+          return;
+        }
+
+        /*
+         * Stop on generation error.
+         *
+         * The server job will be marked failed.
+         */
+        if (
+          result?.error
+        ) {
+          toast.error(
+            result.error,
+          );
+
+          return;
+        }
+
+        /*
+         * If another batch is still pending,
+         * process it shortly.
+         */
+        if (
+          result?.generated &&
+          !cancelled
+        ) {
+          timer =
+            setTimeout(
+              processNextBatch,
+              500,
+            );
+        }
+      } catch (error) {
+        if (
+          !cancelled
+        ) {
+          toast.error(
+            error instanceof Error
+              ? error.message
+              : "Background generation failed.",
+          );
+        }
+      } finally {
+        processingGeneration.current =
+          false;
+      }
+    };
+
+  void processNextBatch();
+
+  return () => {
+    cancelled = true;
+
+    if (timer) {
+      clearTimeout(timer);
+    }
+
+    processingGeneration.current =
+      false;
+  };
+}, [
+  activeJob?.id,
+  monthKey,
+  queryClient,
+]);
 
   /*
    * Prefetch media URLs.

@@ -341,7 +341,14 @@ function CalendarPage() {
     * It does NOT wait for AI generation.
     */
     async function generateMonth() {
-      if (queueing || activeJob) return;
+        if (
+    queueing ||
+    activeJob ||
+    items.length > 0 ||
+    refreshing
+  ) {
+    return;
+  }
 
       const monthDays = eachDayOfInterval({
         start: monthStart,
@@ -589,7 +596,7 @@ function CalendarPage() {
   }, [items, detail]);
 
   const hasCalendarContent = items.length > 0;
-  
+
   return (
     <div className="space-y-6">
 

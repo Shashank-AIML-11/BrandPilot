@@ -8,10 +8,11 @@ export type LOVIZAContentType =
   | "instagram_reel"
   | "facebook_post"
   | "youtube_short"
+  | "twitter_post"
   | "carousel"
   | "blog"
-  | "email"
-  | "ad_image"
+  | "tiktok_video"
+  | "pinterest"
   | "product_service_video";
 
 export interface ContentGenerationRequest {

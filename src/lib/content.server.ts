@@ -290,6 +290,145 @@ export function rowsForDay(
   return rows;
 }
 
+/**
+ * Creates placeholder calendar rows immediately when
+ * monthly generation starts.
+ *
+ * These rows are intentionally stored as "draft".
+ * The calendar interprets draft rows as "Rendering".
+ *
+ * The background generation worker later updates these
+ * same rows to "scheduled", which makes them "Ready".
+ */
+export function renderingRowsForDay(
+  input: RowInput,
+  quota: DailyContentQuota,
+) {
+  const rows: Record<string, unknown>[] = [];
+
+  const base = {
+    user_id: input.userId,
+    scheduled_date: input.date,
+    platforms: input.platforms,
+    summary: "",
+    body: "",
+    caption: "",
+    hashtags: "",
+    image_prompt: "",
+    video_script: "",
+    autopost: input.autopost ?? false,
+
+    /*
+     * IMPORTANT:
+     * draft = Rendering
+     * scheduled = Ready
+     */
+    status: "draft",
+
+    /*
+     * Video generation is a separate process.
+     * The content-generation worker first creates
+     * the video script/content.
+     */
+    video_status: "none",
+  };
+
+  /*
+   * BLOG
+   */
+  if (quota.blog > 0) {
+    rows.push({
+      ...base,
+
+      type: "blog",
+
+      platforms: platformsForType(
+        input.platforms,
+        "blog",
+      ),
+
+      title: "Rendering blog content...",
+
+      scheduled_time: "08:00",
+    });
+  }
+
+  /*
+   * INFOGRAPHICS
+   */
+  const infoTimes = [
+    "10:00",
+    "12:30",
+    "15:00",
+    "18:30",
+  ];
+
+  for (
+    let i = 0;
+    i < quota.infographic;
+    i += 1
+  ) {
+    rows.push({
+      ...base,
+
+      type: "infographic",
+
+      platforms: platformsForType(
+        input.platforms,
+        "infographic",
+      ),
+
+      title:
+        `Rendering infographic ${i + 1}...`,
+
+      scheduled_time:
+        infoTimes[i] ??
+        "12:00",
+    });
+  }
+
+  /*
+   * VIDEOS
+   */
+  const videoTimes = [
+    "11:00",
+    "17:00",
+  ];
+
+  for (
+    let i = 0;
+    i < quota.video;
+    i += 1
+  ) {
+    rows.push({
+      ...base,
+
+      type: "video",
+
+      platforms: platformsForType(
+        input.platforms,
+        "video",
+      ),
+
+      title:
+        `Rendering video ${i + 1}...`,
+
+      scheduled_time:
+        videoTimes[i] ??
+        "16:00",
+
+      video_status: "none",
+    });
+  }
+
+  return rows;
+}
+
+
+
+
+
+
 export function imagePromptFor(
   item: { type: string; title: string; image_prompt: string; summary: string },
   brand?: Partial<BrandRow> | null,

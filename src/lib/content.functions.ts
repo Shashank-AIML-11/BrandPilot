@@ -1087,285 +1087,266 @@ export const processGenerationQueueNow =
  * This prevents the Generate Content button
  * from waiting several minutes.
  */
-export const queueMonthGeneration =
-  createServerFn({
-    method: "POST",
-  })
-    .middleware([
-      requireSupabaseAuth,
-    ])
-    .inputValidator(
-      (input: unknown) =>
-        monthInput.parse(input),
-    )
-    .handler(
-      async ({
-        data,
-        context,
-      }) => {
-        const {
-          getGenerationEntitlement,
-        } =
-          await import(
-            "@/lib/generation-entitlements"
-          );
+export const queueMonthGeneration = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((input: unknown) => monthInput.parse(input))
 
-        const entitlement =
-          await getGenerationEntitlement(
-            context.supabase,
-            context.userId,
-          );
-
-        const {
-          data: brand,
-        } =
-          await context.supabase
-            .from("brand_profiles")
-            .select(
-              "business_name",
-            )
-            .eq(
-              "user_id",
-              context.userId,
-            )
-            .maybeSingle();
-
-        if (
-          !brand ||
-          !brand.business_name
-        ) {
-          throw new Error(
-            "Complete your Brand Profile before generating content.",
-          );
-        }
-
-        const today =
-          new Date()
-            .toISOString()
-            .slice(0, 10);
-
-        const currentMonth =
-          today.slice(0, 7);
-
-        if (
-          data.month !==
-          currentMonth
-        ) {
-          throw new Error(
-            "Content can only be generated from today through the end of the current month.",
-          );
-        }
-
-        const monthEnd =
-          new Date(
-            `${currentMonth}-01T00:00:00.000Z`,
-          );
-
-        monthEnd.setUTCMonth(
-          monthEnd.getUTCMonth() +
-            1,
-        );
-
-        monthEnd.setUTCDate(0);
-
-        const lastDate =
-          monthEnd
-            .toISOString()
-            .slice(0, 10);
-
-        const futureDates: string[] =
-          [];
-
-        for (
-          let date = today;
-          date <= lastDate;
-        ) {
-          futureDates.push(
-            date,
-          );
-
-          const next =
-            new Date(
-              `${date}T00:00:00.000Z`,
-            );
-
-          next.setUTCDate(
-            next.getUTCDate() +
-              1,
-          );
-
-          date = next
-            .toISOString()
-            .slice(0, 10);
-        }
-
-        /*
-         * Do not regenerate days that already
-         * contain posted content.
-         */
-        const {
-          data: posted,
-        } =
-          await context.supabase
-            .from(
-              "content_items",
-            )
-            .select(
-              "scheduled_date",
-            )
-            .eq(
-              "user_id",
-              context.userId,
-            )
-            .eq(
-              "status",
-              "posted",
-            )
-            .in(
-              "scheduled_date",
-              futureDates.length
-                ? futureDates
-                : ["1970-01-01"],
-            );
-
-        const postedDates =
-          new Set(
-            (posted ?? []).map(
-              (row) =>
-                row.scheduled_date as string,
-            ),
-          );
-
-        const dates =
-          futureDates.filter(
-            (date) =>
-              !postedDates.has(
-                date,
-              ),
-          );
-
-        if (!dates.length) {
-          throw new Error(
-            "No upcoming days left to generate in this month.",
-          );
-        }
-
-        const {
-          distributeMonthlyContent,
-        } =
-          await import(
-            "@/lib/content.server"
-          );
-
-        /*
-         * Video generation remains disabled
-         * exactly as in your current staging code.
-         */
-        const monthlyTotals = {
-          ...entitlement.plan
-            .monthlyContent,
-          video: 0,
-        };
-
-        const contentPlan =
-          distributeMonthlyContent(
-            dates,
-            monthlyTotals,
-          );
-
-        const scheduledDates =
-          dates.filter(
-            (date) => {
-              const quota =
-                contentPlan[
-                  date
-                ]!;
-
-              return (
-                quota.blog +
-                  quota.infographic +
-                  quota.video >
-                0
-              );
-            },
-          );
-
-        /*
-         * Remove any old job for this user/month.
-         */
-        await context.supabase
-          .from(
-            "content_generation_jobs",
-          )
-          .delete()
-          .eq(
-            "user_id",
-            context.userId,
-          )
-          .eq(
-            "month",
-            data.month,
-          );
-
-        /*
-         * Create the durable job.
-         *
-         * Nothing expensive happens after this.
-         */
-        const {
-          error,
-        } =
-          await context.supabase
-            .from(
-              "content_generation_jobs",
-            )
-            .insert({
-              user_id:
-                context.userId,
-              month:
-                data.month,
-              pending_dates:
-                scheduledDates,
-              days_total:
-                scheduledDates.length,
-              days_done: 0,
-              status:
-                "pending",
-              content_plan:
-                contentPlan,
-            } as never);
-
-        if (error) {
-          throw new Error(
-            error.message,
-          );
-        }
-
-        /*
-         * RETURN IMMEDIATELY.
-         *
-         * The browser worker will now process
-         * one generation batch at a time.
-         */
-        return {
-          queued:
-            scheduledDates.length,
-          skipped:
-            futureDates.length -
-            dates.length,
-          from:
-            scheduledDates[0],
-          plan:
-            entitlement.plan.name,
-          content:
-            entitlement.plan
-              .monthlyContent,
-          generated: 0,
-          imagesStored: 0,
-        };
-      },
+  .handler(async ({ data, context }) => {
+    const {
+      getGenerationEntitlement,
+    } = await import(
+      "@/lib/generation-entitlements"
     );
 
+    const entitlement =
+      await getGenerationEntitlement(
+        context.supabase,
+        context.userId,
+      );
+
+    /*
+     * Verify Brand Profile.
+     */
+    const { data: brand } =
+      await context.supabase
+        .from("brand_profiles")
+        .select("business_name")
+        .eq(
+          "user_id",
+          context.userId,
+        )
+        .maybeSingle();
+
+    if (
+      !brand ||
+      !brand.business_name
+    ) {
+      throw new Error(
+        "Complete your Brand Profile before generating content.",
+      );
+    }
+
+    /*
+     * Only current month is allowed.
+     */
+    const today =
+      new Date()
+        .toISOString()
+        .slice(0, 10);
+
+    const currentMonth =
+      today.slice(0, 7);
+
+    if (data.month !== currentMonth) {
+      throw new Error(
+        "Content can only be generated from today through the end of the current month.",
+      );
+    }
+
+    /*
+     * Calculate final day of month.
+     */
+    const monthEnd =
+      new Date(
+        `${currentMonth}-01T00:00:00.000Z`,
+      );
+
+    monthEnd.setUTCMonth(
+      monthEnd.getUTCMonth() + 1,
+    );
+
+    monthEnd.setUTCDate(0);
+
+    const lastDate =
+      monthEnd
+        .toISOString()
+        .slice(0, 10);
+
+    /*
+     * Build today -> month end.
+     */
+    const futureDates: string[] = [];
+
+    for (
+      let date = today;
+      date <= lastDate;
+    ) {
+      futureDates.push(date);
+
+      const next =
+        new Date(
+          `${date}T00:00:00.000Z`,
+        );
+
+      next.setUTCDate(
+        next.getUTCDate() + 1,
+      );
+
+      date =
+        next
+          .toISOString()
+          .slice(0, 10);
+    }
+
+    /*
+     * Do not regenerate already posted days.
+     */
+    const { data: posted } =
+      await context.supabase
+        .from("content_items")
+        .select("scheduled_date")
+        .eq(
+          "user_id",
+          context.userId,
+        )
+        .eq("status", "posted")
+        .in(
+          "scheduled_date",
+          futureDates,
+        );
+
+    const postedDates =
+      new Set(
+        (posted ?? []).map(
+          (row) =>
+            row.scheduled_date as string,
+        ),
+      );
+
+    const dates =
+      futureDates.filter(
+        (date) =>
+          !postedDates.has(date),
+      );
+
+    if (!dates.length) {
+      throw new Error(
+        "No upcoming days left to generate in this month.",
+      );
+    }
+
+    /*
+     * Preserve the current testing configuration:
+     * video generation is disabled.
+     */
+    const {
+      distributeMonthlyContent,
+    } = await import(
+      "@/lib/content.server"
+    );
+
+    const monthlyTotals = {
+      ...entitlement.plan.monthlyContent,
+
+      video: 0,
+    };
+
+    const contentPlan =
+      distributeMonthlyContent(
+        dates,
+        monthlyTotals,
+      );
+
+    const scheduledDates =
+      dates.filter((date) => {
+        const quota =
+          contentPlan[date];
+
+        return (
+          quota.blog +
+            quota.infographic +
+            quota.video >
+          0
+        );
+      });
+
+    /*
+     * Remove previous pending/running job
+     * for this user's current month.
+     */
+    await context.supabase
+      .from("content_generation_jobs")
+      .delete()
+      .eq(
+        "user_id",
+        context.userId,
+      )
+      .eq(
+        "month",
+        data.month,
+      );
+
+    /*
+     * CREATE JOB ONLY.
+     *
+     * CRITICAL:
+     *
+     * DO NOT call processGenerationQueue()
+     * here.
+     *
+     * DO NOT call processVideoQueue()
+     * here.
+     *
+     * This function must return immediately.
+     */
+    const { error } =
+      await context.supabase
+        .from(
+          "content_generation_jobs",
+        )
+        .insert({
+          user_id:
+            context.userId,
+
+          month:
+            data.month,
+
+          pending_dates:
+            scheduledDates,
+
+          days_total:
+            scheduledDates.length,
+
+          days_done: 0,
+
+          status:
+            "pending",
+
+          content_plan:
+            contentPlan,
+        } as never);
+
+    if (error) {
+      throw new Error(
+        error.message,
+      );
+    }
+
+    /*
+     * Return immediately.
+     */
+    return {
+      queued:
+        scheduledDates.length,
+
+      skipped:
+        futureDates.length -
+        dates.length,
+
+      from:
+        scheduledDates[0],
+
+      plan:
+        entitlement.plan.name,
+
+      content:
+        entitlement.plan.monthlyContent,
+
+      generated: 0,
+
+      imagesStored: 0,
+    };
+  });
 /**
  * Process ONE generation batch for the
  * authenticated user.

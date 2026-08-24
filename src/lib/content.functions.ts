@@ -229,6 +229,7 @@ export const generateMediaBatch =
 
         const {
           imagePromptFor,
+          carouselSlideImagePromptFor,
         } =
           await import(
             "@/lib/content.server"
@@ -238,7 +239,7 @@ export const generateMediaBatch =
           await context.supabase
             .from("content_items")
             .select(
-              "id, type, title, summary, image_prompt, image_url",
+              "id, type, title, summary, image_prompt, image_url, carousel_slides, carousel_image_urls",
             )
             .eq(
               "user_id",
@@ -261,14 +262,20 @@ export const generateMediaBatch =
             )
             .maybeSingle();
 
-        const results =
+        // Blog never has an image. Carousel needs one image per slide
+        // instead of a single image_url — handled separately below.
+        const singleImageItems = (items ?? []).filter(
+          (item) => item.type !== "blog" && item.type !== "carousel" && !item.image_url,
+        );
+        const carouselItems = (items ?? []).filter(
+          (item) =>
+            item.type === "carousel" &&
+            (item.carousel_slides as unknown[] | null)?.length,
+        );
+
+        const singleResults =
           await Promise.allSettled(
-            (items ?? [])
-              .filter(
-                (item) =>
-                  !item.image_url,
-              )
-              .map(
+            singleImageItems.map(
                 async (item) => {
                   const bytes =
                     await generateImageBytes(
@@ -327,12 +334,42 @@ export const generateMediaBatch =
               ),
           );
 
+        // One image per carousel slide, skipping slides that already
+        // have a rendered image (so a partial batch can resume cleanly).
+        const carouselResults = await Promise.allSettled(
+          carouselItems.map(async (item) => {
+            const slides = (item.carousel_slides ?? []) as Array<{
+              headline?: string;
+              subtext?: string;
+              image_prompt?: string;
+            }>;
+            const existingUrls = [...((item.carousel_image_urls as string[] | null) ?? [])];
+
+            for (let i = 0; i < slides.length; i += 1) {
+              if (existingUrls[i]) continue; // already rendered
+              const bytes = await generateImageBytes(
+                carouselSlideImagePromptFor(slides[i]!, i, slides.length, brand as never),
+              );
+              const path = `${context.userId}/${item.id}-slide-${i}.png`;
+              const { error: uploadError } = await context.supabase.storage
+                .from("content-media")
+                .upload(path, bytes, { contentType: "image/png", upsert: true });
+              if (uploadError) throw new Error(uploadError.message);
+              existingUrls[i] = path;
+            }
+
+            await context.supabase
+              .from("content_items")
+              .update({ carousel_image_urls: existingUrls } as never)
+              .eq("id", item.id)
+              .eq("user_id", context.userId);
+          }),
+        );
+
         return {
-          done: results.filter(
-            (r) =>
-              r.status ===
-              "fulfilled",
-          ).length,
+          done:
+            singleResults.filter((r) => r.status === "fulfilled").length +
+            carouselResults.filter((r) => r.status === "fulfilled").length,
         };
       },
     );
@@ -399,6 +436,12 @@ export const generateItemImage =
         ) {
           throw new Error(
             "Content item not found.",
+          );
+        }
+
+        if (item.type === "carousel") {
+          throw new Error(
+            "Carousels render one image per slide — use the carousel slide regenerate action instead.",
           );
         }
 
@@ -535,7 +578,7 @@ export const startItemVideo =
               "content_items",
             )
             .select(
-              "id, title, summary, video_script, image_prompt, video_url, video_job_id, video_status",
+              "id, type, title, summary, video_script, image_prompt, video_url, video_job_id, video_status",
             )
             .eq(
               "id",
@@ -1056,411 +1099,204 @@ export const queueMonthGeneration = createServerFn({ method: "POST" })
   .inputValidator((input: unknown) => monthInput.parse(input))
 
   .handler(async ({ data, context }) => {
-    const {
-      getGenerationEntitlement,
-    } = await import(
-      "@/lib/generation-entitlements"
-    );
+    const { getGenerationEntitlement } = await import("@/lib/generation-entitlements");
 
-    const entitlement =
-      await getGenerationEntitlement(
-        context.supabase,
-        context.userId,
-      );
+    const entitlement = await getGenerationEntitlement(context.supabase, context.userId);
 
     /*
      * Verify Brand Profile.
      */
-    const { data: brand } =
-      await context.supabase
-        .from("brand_profiles")
-        .select("business_name")
-        .eq(
-          "user_id",
-          context.userId,
-        )
-        .maybeSingle();
+    const { data: brand } = await context.supabase
+      .from("brand_profiles")
+      .select("business_name")
+      .eq("user_id", context.userId)
+      .maybeSingle();
 
-    if (
-      !brand ||
-      !brand.business_name
-    ) {
-      throw new Error(
-        "Complete your Brand Profile before generating content.",
-      );
+    if (!brand || !brand.business_name) {
+      throw new Error("Complete your Brand Profile before generating content.");
     }
 
     /*
      * Only current month is allowed.
      */
-    const today =
-      new Date()
-        .toISOString()
-        .slice(0, 10);
-
-    const currentMonth =
-      today.slice(0, 7);
+    const today = new Date().toISOString().slice(0, 10);
+    const currentMonth = today.slice(0, 7);
 
     if (data.month !== currentMonth) {
-      throw new Error(
-        "Content can only be generated from today through the end of the current month.",
-      );
+      throw new Error("Content can only be generated from today through the end of the current month.");
     }
 
     /*
      * Calculate final day of month.
      */
-    const monthEnd =
-      new Date(
-        `${currentMonth}-01T00:00:00.000Z`,
-      );
-
-    monthEnd.setUTCMonth(
-      monthEnd.getUTCMonth() + 1,
-    );
-
+    const monthEnd = new Date(`${currentMonth}-01T00:00:00.000Z`);
+    monthEnd.setUTCMonth(monthEnd.getUTCMonth() + 1);
     monthEnd.setUTCDate(0);
-
-    const lastDate =
-      monthEnd
-        .toISOString()
-        .slice(0, 10);
+    const lastDate = monthEnd.toISOString().slice(0, 10);
 
     /*
      * Build today -> month end.
      */
     const futureDates: string[] = [];
-
-    for (
-      let date = today;
-      date <= lastDate;
-    ) {
+    for (let date = today; date <= lastDate; ) {
       futureDates.push(date);
-
-      const next =
-        new Date(
-          `${date}T00:00:00.000Z`,
-        );
-
-      next.setUTCDate(
-        next.getUTCDate() + 1,
-      );
-
-      date =
-        next
-          .toISOString()
-          .slice(0, 10);
+      const next = new Date(`${date}T00:00:00.000Z`);
+      next.setUTCDate(next.getUTCDate() + 1);
+      date = next.toISOString().slice(0, 10);
     }
 
     /*
      * Do not regenerate already posted days.
      */
-    const { data: posted } =
-      await context.supabase
-        .from("content_items")
-        .select("scheduled_date")
-        .eq(
-          "user_id",
-          context.userId,
-        )
-        .eq("status", "posted")
-        .in(
-          "scheduled_date",
-          futureDates,
-        );
+    const { data: posted } = await context.supabase
+      .from("content_items")
+      .select("scheduled_date")
+      .eq("user_id", context.userId)
+      .eq("status", "posted")
+      .in("scheduled_date", futureDates);
 
-    const postedDates =
-      new Set(
-        (posted ?? []).map(
-          (row) =>
-            row.scheduled_date as string,
-        ),
-      );
-
-    const dates =
-      futureDates.filter(
-        (date) =>
-          !postedDates.has(date),
-      );
+    const postedDates = new Set((posted ?? []).map((row) => row.scheduled_date as string));
+    const dates = futureDates.filter((date) => !postedDates.has(date));
 
     if (!dates.length) {
-      throw new Error(
-        "No upcoming days left to generate in this month.",
-      );
+      throw new Error("No upcoming days left to generate in this month.");
     }
 
+    const { distributeMonthlyContent, renderingRowsForDay, activePlatforms, CONTENT_TYPES } =
+      await import("@/lib/content.server");
+
     /*
-     * Preserve the current testing configuration:
-     * video generation is disabled.
+     * Video generation (instagram_reel, youtube_short, tiktok_video,
+     * product_service_video) runs on Gemini and is paused during testing —
+     * zero those four quotas out regardless of what the plan grants, same
+     * as the old single "video: 0" override did for the 3-type system.
      */
-    const {
-      distributeMonthlyContent,
-      renderingRowsForDay,
-      activePlatforms,
-    } = await import(
-      "@/lib/content.server"
-    );
+    const VIDEO_TYPES_PAUSED = [
+      "instagram_reel",
+      "youtube_short",
+      "tiktok_video",
+      "product_service_video",
+    ] as const;
 
-    const monthlyTotals = {
-      ...entitlement.plan.monthlyContent,
+    const monthlyTotals = { ...entitlement.plan.monthlyContent };
+    for (const t of VIDEO_TYPES_PAUSED) {
+      (monthlyTotals as Record<string, number>)[t] = 0;
+    }
 
-      video: 0,
-    };
+    const contentPlan = distributeMonthlyContent(dates, monthlyTotals);
 
-    const contentPlan =
-      distributeMonthlyContent(
-        dates,
-        monthlyTotals,
-      );
-
-    const scheduledDates =
-      dates.filter((date) => {
-        const quota =
-          contentPlan[date];
-
-        return (
-          quota.blog +
-            quota.infographic +
-            quota.video >
-          0
-        );
-      });
+    const scheduledDates = dates.filter((date) => {
+      const quota = contentPlan[date];
+      if (!quota) return false;
+      return CONTENT_TYPES.some((t) => quota[t] > 0);
+    });
 
     /*
-     * Remove previous pending/running job
-     * for this user's current month.
+     * Remove previous pending/running job for this user's current month.
      */
     await context.supabase
       .from("content_generation_jobs")
       .delete()
-      .eq(
-        "user_id",
-        context.userId,
-      )
-      .eq(
-        "month",
-        data.month,
-      );
+      .eq("user_id", context.userId)
+      .eq("month", data.month);
 
     /*
      * CREATE JOB ONLY.
      *
      * CRITICAL:
-     *
-     * DO NOT call processGenerationQueue()
-     * here.
-     *
-     * DO NOT call processVideoQueue()
-     * here.
-     *
+     * DO NOT call processGenerationQueue() here.
+     * DO NOT call processVideoQueue() here.
      * This function must return immediately.
      */
-      /*
-      * ============================================================
-      * REMOVE PREVIOUS NON-POSTED CONTENT
-      * ============================================================
-      *
-      * Refresh Calendar normally removes everything.
-      * This additional protection prevents duplicate calendar
-      * entries if Generate is triggered again after a failed job.
-      */
-      const {
-        error: deleteContentError,
-      } =
-        await context.supabase
-          .from("content_items")
-          .delete()
-          .eq(
-            "user_id",
-            context.userId,
-          )
-          .in(
-            "scheduled_date",
-            scheduledDates,
-          )
-          .neq(
-            "status",
-            "posted",
-          );
 
-      if (deleteContentError) {
-        throw new Error(
-          deleteContentError.message,
-        );
-      }
+    /*
+     * ============================================================
+     * REMOVE PREVIOUS NON-POSTED CONTENT
+     * ============================================================
+     * Refresh Calendar normally removes everything. This additional
+     * protection prevents duplicate calendar entries if Generate is
+     * triggered again after a failed job.
+     */
+    const { error: deleteContentError } = await context.supabase
+      .from("content_items")
+      .delete()
+      .eq("user_id", context.userId)
+      .in("scheduled_date", scheduledDates)
+      .neq("status", "posted");
 
+    if (deleteContentError) {
+      throw new Error(deleteContentError.message);
+    }
 
-      /*
-      * ============================================================
-      * CREATE DURABLE GENERATION JOB
-      * ============================================================
-      */
-      const {
-        data: generationJob,
-        error: jobError,
-      } =
-        await context.supabase
-          .from(
-            "content_generation_jobs",
-          )
-          .insert({
-            user_id:
-              context.userId,
+    /*
+     * ============================================================
+     * CREATE DURABLE GENERATION JOB
+     * ============================================================
+     */
+    const { data: generationJob, error: jobError } = await context.supabase
+      .from("content_generation_jobs")
+      .insert({
+        user_id: context.userId,
+        month: data.month,
+        pending_dates: scheduledDates,
+        days_total: scheduledDates.length,
+        days_done: 0,
+        status: "pending",
+        content_plan: contentPlan,
+        error: null,
+      } as never)
+      .select("id")
+      .single();
 
-            month:
-              data.month,
+    if (jobError || !generationJob) {
+      throw new Error(jobError?.message ?? "Could not create generation job.");
+    }
 
-            pending_dates:
-              scheduledDates,
+    /*
+     * ============================================================
+     * CREATE IMMEDIATE "RENDERING" CALENDAR ENTRIES
+     * ============================================================
+     */
+    const activeChannelList = activePlatforms(brand as never).slice(
+      0,
+      entitlement.plan.channelLimit ?? undefined,
+    );
 
-            days_total:
-              scheduledDates.length,
+    const renderingRows = scheduledDates.flatMap((date) => {
+      const quota = contentPlan[date];
+      if (!quota) return [];
+      return renderingRowsForDay(
+        { userId: context.userId, date, platforms: activeChannelList, autopost: entitlement.plan.autoPost },
+        quota,
+      );
+    });
 
-            days_done:
-              0,
+    if (renderingRows.length === 0) {
+      // Clean up the job if we couldn't create any calendar entries.
+      await context.supabase.from("content_generation_jobs").delete().eq("id", generationJob.id);
+      throw new Error("No calendar content could be scheduled.");
+    }
 
-            status:
-              "pending",
+    const { error: renderingInsertError } = await context.supabase
+      .from("content_items")
+      .insert(renderingRows as never);
 
-            content_plan:
-              contentPlan,
+    if (renderingInsertError) {
+      // Remove the orphan generation job.
+      await context.supabase.from("content_generation_jobs").delete().eq("id", generationJob.id);
+      throw new Error(`Could not create Rendering calendar entries: ${renderingInsertError.message}`);
+    }
 
-            error:
-              null,
-          } as never)
-          .select("id")
-          .single();
-
-      if (
-        jobError ||
-        !generationJob
-      ) {
-        throw new Error(
-          jobError?.message ??
-            "Could not create generation job.",
-        );
-      }
-
-
-      /*
-      * ============================================================
-      * CREATE IMMEDIATE "RENDERING" CALENDAR ENTRIES
-      * ============================================================
-      */
-
-      const activeChannelList =
-        activePlatforms(
-          brand as never,
-        ).slice(
-          0,
-          entitlement.plan.channelLimit ??
-            undefined,
-        );
-
-      const renderingRows =
-        scheduledDates.flatMap(
-          (date) => {
-            const quota =
-              contentPlan[date];
-
-            if (!quota) {
-              return [];
-            }
-
-            return renderingRowsForDay(
-              {
-                userId:
-                  context.userId,
-
-                date,
-
-                platforms:
-                  activeChannelList,
-
-                autopost:
-                  entitlement.plan.autoPost,
-              },
-              quota,
-            );
-          },
-        );
-
-      if (
-        renderingRows.length === 0
-      ) {
-        /*
-        * Clean up the job if we couldn't
-        * create any calendar entries.
-        */
-        await context.supabase
-          .from(
-            "content_generation_jobs",
-          )
-          .delete()
-          .eq(
-            "id",
-            generationJob.id,
-          );
-
-        throw new Error(
-          "No calendar content could be scheduled.",
-        );
-      }
-
-      const {
-        error:
-          renderingInsertError,
-      } =
-        await context.supabase
-          .from(
-            "content_items",
-          )
-          .insert(
-            renderingRows as never,
-          );
-
-      if (
-        renderingInsertError
-      ) {
-        /*
-        * Remove the orphan generation job.
-        */
-        await context.supabase
-          .from(
-            "content_generation_jobs",
-          )
-          .delete()
-          .eq(
-            "id",
-            generationJob.id,
-          );
-
-        throw new Error(
-          `Could not create Rendering calendar entries: ${renderingInsertError.message}`,
-        );
-      }
     /*
      * Return immediately.
      */
     return {
-      queued:
-        scheduledDates.length,
-
-      skipped:
-        futureDates.length -
-        dates.length,
-
-      from:
-        scheduledDates[0],
-
-      plan:
-        entitlement.plan.name,
-
-      content:
-        entitlement.plan.monthlyContent,
-
+      queued: scheduledDates.length,
+      skipped: futureDates.length - dates.length,
+      from: scheduledDates[0],
+      plan: entitlement.plan.name,
+      content: entitlement.plan.monthlyContent,
       generated: 0,
-
       imagesStored: 0,
     };
   });
@@ -1592,7 +1428,7 @@ export const clearCurrentMonthContent =
               "content_items",
             )
             .select(
-              "id, image_url, video_url, voiceover_url",
+              "id, image_url, video_url, voiceover_url, carousel_image_urls",
             )
             .eq(
               "user_id",
@@ -1623,6 +1459,7 @@ export const clearCurrentMonthContent =
                 item.image_url,
                 item.video_url,
                 item.voiceover_url,
+                ...((item.carousel_image_urls as string[] | null) ?? []),
               ],
             )
             .filter(

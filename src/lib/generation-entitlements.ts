@@ -28,17 +28,22 @@ export async function getGenerationEntitlement(
     return { plan, isRoot: true };
   }
 
+  // Filter to pending/active status *before* ordering — otherwise a
+  // newer abandoned or failed checkout row (status "created",
+  // "cancelled", etc.) can outrank a genuinely active subscription
+  // just for being more recent, and a paying user gets locked out.
   const { data: subscription, error: subscriptionError } = await supabase
     .from("subscriptions")
     .select("plan, status, created_at")
     .eq("user_id", userId)
+    .in("status", ["pending", "active"])
     .order("created_at", { ascending: false })
     .limit(1)
     .maybeSingle();
   if (subscriptionError) throw new Error(subscriptionError.message);
 
   const plan = planById(subscription?.plan);
-  if (!plan || !["pending", "active"].includes(subscription?.status ?? "")) {
+  if (!plan) {
     throw new Error("Upgrade Plan");
   }
   return { plan, isRoot: false };

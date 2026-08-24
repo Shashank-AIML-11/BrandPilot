@@ -48,8 +48,14 @@ export async function generateLOVIZAContent(
 
     case "linkedin_post":
     case "instagram_post":
+    case "instagram_reel":
     case "facebook_post":
+    case "youtube_short":
+    case "twitter_post":
     case "blog":
+    case "tiktok_video":
+    case "pinterest":
+    case "product_service_video":
 
       /*
        * KEEP USING YOUR EXISTING

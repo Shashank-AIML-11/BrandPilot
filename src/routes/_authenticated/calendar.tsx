@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, useRef, } from "react";
 import { createFileRoute } from "@tanstack/react-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
@@ -25,7 +25,7 @@ import {
 
 import { supabase } from "@/integrations/supabase/client";
 import { prefetchMediaUrls } from "@/lib/media";
-import { queueMonthGeneration } from "@/lib/content.functions";
+import { queueMonthGeneration, processGenerationQueueNow } from "@/lib/content.functions";
 import { publishAllContent } from "@/lib/channels.functions";
 
 import { Button } from "@/components/ui/button";

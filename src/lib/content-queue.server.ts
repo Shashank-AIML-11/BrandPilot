@@ -235,10 +235,24 @@ export async function processGenerationQueue(
         "The generator returned no content for this batch.",
       );
     }
-
-    await admin
+//********************************************************************************************** */
+    /*
+    * ============================================================
+    * FIND THE PLACEHOLDER "RENDERING" ROWS
+    * ============================================================
+    *
+    * queueMonthGeneration() created these rows before
+    * AI generation started.
+    */
+    const {
+      data: renderingItems,
+      error:
+        renderingReadError,
+    } = await admin
       .from("content_items")
-      .delete()
+      .select(
+        "id, scheduled_date, type, scheduled_time",
+      )
       .eq(
         "user_id",
         job.user_id,
@@ -246,21 +260,243 @@ export async function processGenerationQueue(
       .in(
         "scheduled_date",
         pending,
+      )
+      .eq(
+        "status",
+        "draft",
+      )
+      .order(
+        "scheduled_date",
+        {
+          ascending: true,
+        },
+      )
+      .order(
+        "scheduled_time",
+        {
+          ascending: true,
+        },
       );
 
-    const {
-      error: insertError,
-    } = await admin
-      .from("content_items")
-      .insert(
-        rows as never,
-      );
-
-    if (insertError) {
+    if (
+      renderingReadError
+    ) {
       throw new Error(
-        insertError.message,
+        renderingReadError.message,
       );
     }
+
+
+    /*
+    * ============================================================
+    * GROUP PLACEHOLDER ROWS BY DATE + TYPE
+    * ============================================================
+    */
+
+    const placeholderMap =
+      new Map<
+        string,
+        Array<{
+          id: string;
+          scheduled_date: string;
+          type: string;
+          scheduled_time: string;
+        }>
+      >();
+
+    for (
+      const item of
+        renderingItems ?? []
+    ) {
+      const key =
+        `${item.scheduled_date}:${item.type}`;
+
+      const list =
+        placeholderMap.get(key) ??
+        [];
+
+      list.push(item);
+
+      placeholderMap.set(
+        key,
+        list,
+      );
+    }
+
+
+    /*
+    * ============================================================
+    * UPDATE EXISTING RENDERING ROWS
+    * ============================================================
+    */
+
+    const generatedRows =
+      rows as Array<
+        Record<string, unknown>
+      >;
+
+    const updatedIds =
+      new Set<string>();
+
+    for (
+      const row of generatedRows
+    ) {
+      const date =
+        String(
+          row.scheduled_date,
+        );
+
+      const type =
+        String(
+          row.type,
+        );
+
+      const key =
+        `${date}:${type}`;
+
+      const candidates =
+        placeholderMap.get(key) ??
+        [];
+
+      const placeholder =
+        candidates.shift();
+
+      if (
+        !placeholder
+      ) {
+        /*
+        * Safety fallback:
+        * If the AI returned more content than
+        * the placeholder count, create a new row.
+        */
+        const {
+          status: _ignoredStatus,
+          ...insertRow
+        } = row;
+
+        const {
+          error:
+            fallbackInsertError,
+        } = await admin
+          .from("content_items")
+          .insert({
+            ...insertRow,
+
+            status:
+              "scheduled",
+          } as never);
+
+        if (
+          fallbackInsertError
+        ) {
+          throw new Error(
+            fallbackInsertError.message,
+          );
+        }
+
+        continue;
+      }
+
+
+      /*
+      * Update the existing Rendering row.
+      */
+      const {
+        error:
+          updateError,
+      } = await admin
+        .from("content_items")
+        .update({
+          ...row,
+
+          /*
+          * This is the key transition:
+          *
+          * draft     = Rendering
+          * scheduled = Ready
+          */
+          status:
+            "scheduled",
+        } as never)
+        .eq(
+          "id",
+          placeholder.id,
+        )
+        .eq(
+          "user_id",
+          job.user_id,
+        );
+
+      if (
+        updateError
+      ) {
+        throw new Error(
+          updateError.message,
+        );
+      }
+
+      updatedIds.add(
+        placeholder.id,
+      );
+    }
+
+
+    /*
+    * ============================================================
+    * HANDLE ANY PLACEHOLDERS THAT THE AI FAILED TO FILL
+    * ============================================================
+    */
+
+    for (
+      const [
+        ,
+        remaining,
+      ] of placeholderMap
+    ) {
+      for (
+        const placeholder of
+          remaining
+      ) {
+        if (
+          updatedIds.has(
+            placeholder.id,
+          )
+        ) {
+          continue;
+        }
+
+        await admin
+          .from("content_items")
+          .update({
+            status:
+              "failed",
+
+            title:
+              "Content generation failed",
+
+            summary:
+              "The AI generator did not return content for this slot.",
+          })
+          .eq(
+            "id",
+            placeholder.id,
+          )
+          .eq(
+            "user_id",
+            job.user_id,
+          );
+      }
+    }
+
+
+//********************************************************************************************** */
+
+
+
+
+
+
+
 
     const remaining =
       (job.pending_dates ?? []).slice(

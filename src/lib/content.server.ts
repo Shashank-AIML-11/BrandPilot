@@ -10,6 +10,59 @@ export interface BrandRow {
   social_handles: Record<string, string> | null;
 }
 
+/**
+ * The 11 formats LOVIZA generates. This array is the single source of
+ * truth — quotas, prompts, row-building and channel mapping all derive
+ * from it, so adding a 12th format later means adding one entry here
+ * (plus a CHANNELS_BY_TYPE line) rather than hunting through every file.
+ */
+export const CONTENT_TYPES = [
+  "linkedin_post",
+  "instagram_post",
+  "instagram_reel",
+  "facebook_post",
+  "youtube_short",
+  "twitter_post",
+  "carousel",
+  "blog",
+  "product_service_video",
+  "tiktok_video",
+  "pinterest",
+] as const;
+
+export type ContentType = (typeof CONTENT_TYPES)[number];
+
+/** Formats rendered as an actual video file (mp4), vs a static image. */
+export const VIDEO_TYPES: ContentType[] = [
+  "instagram_reel",
+  "youtube_short",
+  "tiktok_video",
+  "product_service_video",
+];
+
+/** Formats that render as a single static image. */
+export const IMAGE_TYPES: ContentType[] = [
+  "linkedin_post",
+  "instagram_post",
+  "facebook_post",
+  "twitter_post",
+  "pinterest",
+];
+
+export function isVideoType(type: string): boolean {
+  return (VIDEO_TYPES as string[]).includes(type);
+}
+
+export function isImageType(type: string): boolean {
+  return (IMAGE_TYPES as string[]).includes(type);
+}
+
+export interface CarouselSlide {
+  headline?: string;
+  subtext?: string;
+  image_prompt?: string;
+}
+
 export interface GeneratedPiece {
   title?: string;
   summary?: string;
@@ -19,32 +72,31 @@ export interface GeneratedPiece {
   image_prompt?: string;
   script?: string;
   time?: string;
+  slides?: CarouselSlide[];
 }
 
-export interface GeneratedDay {
-  date?: string;
-  blog?: GeneratedPiece;
-  infographics?: GeneratedPiece[];
-  videos?: GeneratedPiece[];
-}
+/** One AI response day: every format maps to a list of generated pieces. */
+export type GeneratedDay = { date?: string } & Partial<Record<ContentType, GeneratedPiece[]>>;
 
-export interface DailyContentQuota {
-  blog: number;
-  infographic: number;
-  video: number;
+export type DailyContentQuota = Record<ContentType, number>;
+
+export function emptyQuota(): DailyContentQuota {
+  return Object.fromEntries(CONTENT_TYPES.map((t) => [t, 0])) as DailyContentQuota;
 }
 
 /** Evenly distribute a plan's monthly allowance over the available dates. */
 export function distributeMonthlyContent(
   dates: string[],
-  totals: DailyContentQuota,
+  totals: Partial<DailyContentQuota>,
 ): Record<string, DailyContentQuota> {
-  const schedule = Object.fromEntries(
-    dates.map((date) => [date, { blog: 0, infographic: 0, video: 0 }]),
-  ) as Record<string, DailyContentQuota>;
+  const schedule = Object.fromEntries(dates.map((date) => [date, emptyQuota()])) as Record<
+    string,
+    DailyContentQuota
+  >;
 
-  (Object.keys(totals) as Array<keyof DailyContentQuota>).forEach((type) => {
-    const count = Math.min(totals[type], dates.length);
+  (Object.keys(totals) as ContentType[]).forEach((type) => {
+    const want = totals[type] ?? 0;
+    const count = Math.min(want, dates.length);
     for (let index = 0; index < count; index += 1) {
       const dateIndex = Math.floor((index * dates.length) / count);
       schedule[dates[dateIndex]!]![type] += 1;
@@ -53,13 +105,31 @@ export function distributeMonthlyContent(
   return schedule;
 }
 
-export const DEFAULT_PLATFORMS = ["LinkedIn", "Instagram", "Facebook", "X"];
+export const DEFAULT_PLATFORMS = [
+  "LinkedIn",
+  "Instagram",
+  "Facebook",
+  "X",
+  "YouTube",
+  "TikTok",
+  "Pinterest",
+];
 
-/** Where each content type is allowed to be published. */
-export const CHANNELS_BY_TYPE: Record<string, string[]> = {
-  blog: ["LinkedIn", "Website", "Quora", "Medium"],
-  infographic: ["LinkedIn", "X", "Instagram", "Facebook", "Pinterest"],
-  video: ["YouTube", "TikTok"],
+/** Where each content type is allowed to be published. One platform-native
+ *  home per type, except blog (syndicated) and carousel (native to both
+ *  LinkedIn and Instagram). */
+export const CHANNELS_BY_TYPE: Record<ContentType, string[]> = {
+  blog: ["Website", "LinkedIn", "Medium", "Quora"],
+  linkedin_post: ["LinkedIn"],
+  instagram_post: ["Instagram"],
+  instagram_reel: ["Instagram"],
+  facebook_post: ["Facebook"],
+  twitter_post: ["X"],
+  pinterest: ["Pinterest"],
+  youtube_short: ["YouTube"],
+  tiktok_video: ["TikTok"],
+  product_service_video: ["YouTube", "Website"],
+  carousel: ["LinkedIn", "Instagram"],
 };
 
 export function activePlatforms(brand: BrandRow): string[] {
@@ -72,11 +142,10 @@ export function activePlatforms(brand: BrandRow): string[] {
 
 /** Intersect the brand's active channels with the channels valid for a type. */
 export function platformsForType(active: string[], type: string): string[] {
-  const allowed = CHANNELS_BY_TYPE[type] ?? [];
+  const allowed = CHANNELS_BY_TYPE[type as ContentType] ?? [];
   const picked = allowed.filter((p) => p === "Website" || active.includes(p));
   return picked.length ? picked : allowed;
 }
-
 
 function handleList(brand: BrandRow): string {
   const handles = brand.social_handles ?? {};
@@ -137,8 +206,13 @@ QUALITY BAR (this is what separates amazing from average):
 - Close every piece with one unmistakable next step tied to the brand's product or service.
 - Titles must promise a specific payoff in under 12 words; no colons stacked with buzzwords.
 
-Blog bodies: 700-1000 words of genuinely useful, expert-level writing in markdown — H2/H3 structure, a strong opening hook,
-step-by-step or framework sections the reader could act on today, a short "what this means for you" section, and an explicit CTA to the brand's website.
+FORMAT-SPECIFIC NOTES:
+- Blog: 700-1000 words of genuinely useful, expert-level writing in markdown — H2/H3 structure, a strong opening hook, step-by-step or framework sections the reader could act on today, a short "what this means for you" section, and an explicit CTA to the brand's website.
+- LinkedIn/Instagram/Facebook/Twitter/Pinterest posts: a single scroll-stopping image post. Caption is platform-native in length and tone (LinkedIn: professional, can run longer; Twitter: terse, under 280 chars; Instagram/Facebook: punchy with emoji sparingly; Pinterest: keyword-rich, description-style).
+- Reels/Shorts/TikTok/product-service video: vertical short-form video script, 15-45 seconds, fast hook in the first 2 seconds.
+- Product/service video: a longer 60-90 second cinematic spoken script for YouTube/website.
+- Carousel: 3-6 slides, each with a short headline, one supporting line, and its own image direction — the slides must read as one connected argument (hook → proof → CTA), not unrelated tips.
+
 Image prompts: precise art direction (layout grid, exact headline text to render, 2-3 colour palette, iconography, lighting, style reference)
 that visually represents THIS brand's product/service and includes the business name as a wordmark. No faces, no logos of other brands, no gibberish text.
 Always answer with a single valid JSON object and nothing else.
@@ -165,6 +239,35 @@ Double down on the formats, hooks, channels and posting times that performed. Dr
 === END PERFORMANCE LEARNINGS ===`;
 }
 
+const TYPE_LABEL: Record<ContentType, string> = {
+  blog: "blog post(s)",
+  linkedin_post: "LinkedIn post(s)",
+  instagram_post: "Instagram post(s)",
+  instagram_reel: "Instagram Reel(s)",
+  facebook_post: "Facebook post(s)",
+  twitter_post: "X/Twitter post(s)",
+  pinterest: "Pinterest pin(s)",
+  youtube_short: "YouTube Short(s)",
+  tiktok_video: "TikTok video(s)",
+  product_service_video: "product/service video(s)",
+  carousel: "carousel(s)",
+};
+
+/** JSON field shape the model must return for each format. */
+const TYPE_SCHEMA: Record<ContentType, string> = {
+  blog: `{ "title", "summary", "body", "caption", "hashtags", "time" }`,
+  linkedin_post: `{ "title", "summary", "caption", "hashtags", "image_prompt", "time" }`,
+  instagram_post: `{ "title", "summary", "caption", "hashtags", "image_prompt", "time" }`,
+  facebook_post: `{ "title", "summary", "caption", "hashtags", "image_prompt", "time" }`,
+  twitter_post: `{ "title", "summary", "caption", "hashtags", "image_prompt", "time" }`,
+  pinterest: `{ "title", "summary", "caption", "hashtags", "image_prompt", "time" }`,
+  instagram_reel: `{ "title", "summary", "script", "caption", "hashtags", "image_prompt", "time" }`,
+  youtube_short: `{ "title", "summary", "script", "caption", "hashtags", "image_prompt", "time" }`,
+  tiktok_video: `{ "title", "summary", "script", "caption", "hashtags", "image_prompt", "time" }`,
+  product_service_video: `{ "title", "summary", "script", "caption", "hashtags", "image_prompt", "time" }`,
+  carousel: `{ "title", "summary", "caption", "hashtags", "time", "slides": [ { "headline", "subtext", "image_prompt" }, ... 3-6 slides ] }`,
+};
+
 export function weekPrompt(
   brand: BrandRow,
   dates: string[],
@@ -173,34 +276,40 @@ export function weekPrompt(
 ): string {
   const requestedContent = dates
     .map((date) => {
-      const quota = quotas?.[date] ?? { blog: 1, infographic: 4, video: 2 };
-      return `- ${date}: ${quota.blog} blog(s), ${quota.infographic} infographic(s), ${quota.video} video(s)`;
+      const quota = quotas?.[date] ?? emptyQuota();
+      const parts = CONTENT_TYPES.filter((t) => quota[t] > 0).map(
+        (t) => `${quota[t]} ${TYPE_LABEL[t]}`,
+      );
+      return `- ${date}: ${parts.length ? parts.join(", ") : "nothing"}`;
     })
     .join("\n");
+
+  const schemaLines = CONTENT_TYPES.map((t) => `For each requested ${t} use: ${TYPE_SCHEMA[t]}.`).join(
+    "\n",
+  );
+
   return `${brandContext(brand)}${strategyContext(strategy)}
 
 
 Create content only for these requested quantities. Do not add any extra pieces:
 ${requestedContent}
 
-For each requested blog use: { "title", "summary", "body", "caption", "hashtags", "time" }.
-For each requested infographic use: { "title", "summary", "caption", "hashtags", "image_prompt", "time" }.
-For each requested video use: { "title", "summary", "script", "caption", "hashtags", "image_prompt", "time" }.
-When a requested quantity is zero, omit that field or return an empty array.
+${schemaLines}
+When a requested quantity for a type is zero, omit that key or return an empty array for it.
 
 Rules:
 - Every title must reference the brand's own product, service, audience or keyword — no generic titles, no buzzword soup.
 - "summary" states which product/service and which value proposition the piece pushes, and who it is for.
 - "hashtags" is a single space-separated string of 4-6 hashtags built from the brand's keywords, niche and business name.
-- "caption" is a ready-to-post social caption under 280 characters: a scroll-stopping first line, one concrete benefit, one clear CTA, in the brand's tone.
-- Video "script" is a 60-90 second spoken script with [HOOK], [BODY], [CTA] markers. Write it as natural narration for a voice-over: complete spoken sentences, a hook in the first 5 seconds, no bullet fragments, and it must name the business and its product/service.
-- Video "image_prompt" describes the YouTube thumbnail, including the exact short headline text (max 5 words) to render.
-- "image_prompt" for infographics must describe data/steps/benefits drawn from this brand's actual products, services and propositions, with the exact on-image text lines to render.
+- "caption" is a ready-to-post social caption, length and tone matched to the platform, in the brand's tone.
+- Video "script" (instagram_reel, youtube_short, tiktok_video, product_service_video) is spoken narration with [HOOK], [BODY], [CTA] markers — complete spoken sentences, no bullet fragments, must name the business and its product/service. Reels/Shorts/TikTok scripts run 15-45 seconds; product_service_video runs 60-90 seconds.
+- "image_prompt" for single-image types must describe the exact on-image text lines to render, drawn from this brand's actual products, services and propositions. For video types it describes the thumbnail/cover frame instead, with a short headline (max 5 words) to render.
+- "slides" (carousel only) is an ordered array of 3-6 objects, each with a one-line "headline", one supporting "subtext" sentence, and its own "image_prompt" — together they must read as one connected argument (hook → proof → CTA).
 - "time" is a 24h "HH:MM" posting time; spread posts through the working day.
 - Vary angles across the week and never repeat a hook, headline structure or example twice: education, product spotlight, ICP pain point, myth-busting, proof/objection handling, behind-the-scenes, industry insight, offer — always about THIS brand.
 
 Return JSON shaped exactly as:
-{ "days": [ { "date": "YYYY-MM-DD", "blog": {...}, "infographics": [ ... ], "videos": [ ... ] } ] }`;
+{ "days": [ { "date": "YYYY-MM-DD", "blog": [...], "linkedin_post": [...], "instagram_post": [...], "instagram_reel": [...], "facebook_post": [...], "twitter_post": [...], "pinterest": [...], "youtube_short": [...], "tiktok_video": [...], "product_service_video": [...], "carousel": [...] } ] }`;
 }
 
 interface RowInput {
@@ -219,15 +328,32 @@ function timeOf(piece: GeneratedPiece, fallback: string): string {
   return /^\d{2}:\d{2}$/.test(t) ? t : fallback;
 }
 
-export function rowsForDay(
-  day: GeneratedDay,
-  input: RowInput,
-  quota: DailyContentQuota = { blog: 1, infographic: 4, video: 2 },
-) {
-  const rows: Record<string, unknown>[] = [];
-  // Every row must carry the same keys: PostgREST fills missing keys in a bulk
-  // insert with NULL instead of the column default, which breaks NOT NULL columns.
-  const base = {
+/** Default posting-time spread per type, so a busy day doesn't stack posts
+ *  at the same minute. Index by occurrence within that type on that day. */
+const DEFAULT_TIMES: Record<ContentType, string[]> = {
+  blog: ["08:00"],
+  linkedin_post: ["09:30", "14:00"],
+  instagram_post: ["10:00", "16:00"],
+  instagram_reel: ["11:00", "19:00"],
+  facebook_post: ["12:00", "17:30"],
+  twitter_post: ["09:00", "13:00", "18:00"],
+  pinterest: ["15:00"],
+  youtube_short: ["18:00"],
+  tiktok_video: ["20:00"],
+  product_service_video: ["11:00"],
+  carousel: ["10:30"],
+};
+
+function timeFor(type: ContentType, index: number, piece?: GeneratedPiece): string {
+  const fallback = DEFAULT_TIMES[type]?.[index] ?? DEFAULT_TIMES[type]?.[0] ?? "12:00";
+  return piece ? timeOf(piece, fallback) : fallback;
+}
+
+function baseRow(input: RowInput) {
+  // Every row must carry the same keys: PostgREST fills missing keys in a
+  // bulk insert with NULL instead of the column default, which breaks
+  // NOT NULL columns.
+  return {
     user_id: input.userId,
     scheduled_date: input.date,
     platforms: input.platforms,
@@ -237,197 +363,93 @@ export function rowsForDay(
     hashtags: "",
     image_prompt: "",
     video_script: "",
+    carousel_slides: [] as unknown[],
     autopost: input.autopost ?? false,
   };
+}
 
-  if (day.blog && quota.blog > 0) {
-    rows.push({
-      ...base,
-      type: "blog",
-      platforms: platformsForType(input.platforms, "blog"),
-      title: clean(day.blog.title, "Untitled blog"),
-      summary: clean(day.blog.summary),
-      body: clean(day.blog.body),
-      caption: clean(day.blog.caption),
-      hashtags: clean(day.blog.hashtags),
-      scheduled_time: timeOf(day.blog, "08:00"),
+export function rowsForDay(
+  day: GeneratedDay,
+  input: RowInput,
+  quota: DailyContentQuota = emptyQuota(),
+) {
+  const rows: Record<string, unknown>[] = [];
+
+  for (const type of CONTENT_TYPES) {
+    const want = quota[type] ?? 0;
+    if (want <= 0) continue;
+    const pieces = (day[type] ?? []).slice(0, want);
+    const platforms = platformsForType(input.platforms, type);
+
+    pieces.forEach((piece, i) => {
+      if (type === "carousel") {
+        const slides = (piece.slides ?? []).slice(0, 6).map((s) => ({
+          headline: clean(s.headline),
+          subtext: clean(s.subtext),
+          image_prompt: clean(s.image_prompt),
+        }));
+        rows.push({
+          ...baseRow(input),
+          type,
+          platforms,
+          title: clean(piece.title, `Carousel ${i + 1}`),
+          summary: clean(piece.summary),
+          caption: clean(piece.caption),
+          hashtags: clean(piece.hashtags),
+          carousel_slides: slides,
+          scheduled_time: timeFor(type, i, piece),
+        });
+        return;
+      }
+
+      rows.push({
+        ...baseRow(input),
+        type,
+        platforms,
+        title: clean(piece.title, `${TYPE_LABEL[type]} ${i + 1}`),
+        summary: clean(piece.summary),
+        body: type === "blog" ? clean(piece.body) : "",
+        caption: clean(piece.caption),
+        hashtags: clean(piece.hashtags),
+        image_prompt: clean(piece.image_prompt),
+        video_script: isVideoType(type) ? clean(piece.script) : "",
+        scheduled_time: timeFor(type, i, piece),
+      });
     });
   }
-
-
-  const infoTimes = ["10:00", "12:30", "15:00", "18:30"];
-  (day.infographics ?? []).slice(0, quota.infographic).forEach((piece, i) => {
-    rows.push({
-      ...base,
-      type: "infographic",
-      platforms: platformsForType(input.platforms, "infographic"),
-      title: clean(piece.title, `Infographic ${i + 1}`),
-      summary: clean(piece.summary),
-      caption: clean(piece.caption),
-      hashtags: clean(piece.hashtags),
-      image_prompt: clean(piece.image_prompt),
-      scheduled_time: timeOf(piece, infoTimes[i] ?? "12:00"),
-    });
-  });
-
-  const videoTimes = ["11:00", "17:00"];
-  (day.videos ?? []).slice(0, quota.video).forEach((piece, i) => {
-    rows.push({
-      ...base,
-      type: "video",
-      platforms: platformsForType(input.platforms, "video"),
-      title: clean(piece.title, `Video ${i + 1}`),
-      summary: clean(piece.summary),
-      caption: clean(piece.caption),
-      hashtags: clean(piece.hashtags),
-      image_prompt: clean(piece.image_prompt),
-      video_script: clean(piece.script),
-
-      scheduled_time: timeOf(piece, videoTimes[i] ?? "16:00"),
-    });
-  });
 
   return rows;
 }
 
 /**
- * Creates placeholder calendar rows immediately when
- * monthly generation starts.
- *
- * These rows are intentionally stored as "draft".
- * The calendar interprets draft rows as "Rendering".
- *
- * The background generation worker later updates these
- * same rows to "scheduled", which makes them "Ready".
+ * Creates placeholder calendar rows immediately when monthly generation
+ * starts. These rows are intentionally stored as "draft" — the calendar
+ * interprets draft rows as "Rendering". The background generation worker
+ * later updates these same rows to "scheduled", which makes them "Ready".
  */
-export function renderingRowsForDay(
-  input: RowInput,
-  quota: DailyContentQuota,
-) {
+export function renderingRowsForDay(input: RowInput, quota: DailyContentQuota) {
   const rows: Record<string, unknown>[] = [];
 
-  const base = {
-    user_id: input.userId,
-    scheduled_date: input.date,
-    platforms: input.platforms,
-    summary: "",
-    body: "",
-    caption: "",
-    hashtags: "",
-    image_prompt: "",
-    video_script: "",
-    autopost: input.autopost ?? false,
+  for (const type of CONTENT_TYPES) {
+    const want = quota[type] ?? 0;
+    if (want <= 0) continue;
+    const platforms = platformsForType(input.platforms, type);
 
-    /*
-     * IMPORTANT:
-     * draft = Rendering
-     * scheduled = Ready
-     */
-    status: "draft",
-
-    /*
-     * Video generation is a separate process.
-     * The content-generation worker first creates
-     * the video script/content.
-     */
-    video_status: "none",
-  };
-
-  /*
-   * BLOG
-   */
-  if (quota.blog > 0) {
-    rows.push({
-      ...base,
-
-      type: "blog",
-
-      platforms: platformsForType(
-        input.platforms,
-        "blog",
-      ),
-
-      title: "Rendering blog content...",
-
-      scheduled_time: "08:00",
-    });
-  }
-
-  /*
-   * INFOGRAPHICS
-   */
-  const infoTimes = [
-    "10:00",
-    "12:30",
-    "15:00",
-    "18:30",
-  ];
-
-  for (
-    let i = 0;
-    i < quota.infographic;
-    i += 1
-  ) {
-    rows.push({
-      ...base,
-
-      type: "infographic",
-
-      platforms: platformsForType(
-        input.platforms,
-        "infographic",
-      ),
-
-      title:
-        `Rendering infographic ${i + 1}...`,
-
-      scheduled_time:
-        infoTimes[i] ??
-        "12:00",
-    });
-  }
-
-  /*
-   * VIDEOS
-   */
-  const videoTimes = [
-    "11:00",
-    "17:00",
-  ];
-
-  for (
-    let i = 0;
-    i < quota.video;
-    i += 1
-  ) {
-    rows.push({
-      ...base,
-
-      type: "video",
-
-      platforms: platformsForType(
-        input.platforms,
-        "video",
-      ),
-
-      title:
-        `Rendering video ${i + 1}...`,
-
-      scheduled_time:
-        videoTimes[i] ??
-        "16:00",
-
-      video_status: "none",
-    });
+    for (let i = 0; i < want; i += 1) {
+      rows.push({
+        ...baseRow(input),
+        type,
+        platforms,
+        title: `Rendering ${TYPE_LABEL[type].replace(/\(s\)$/, "")}${want > 1 ? ` ${i + 1}` : ""}...`,
+        scheduled_time: timeFor(type, i),
+        status: "draft", // draft = Rendering, scheduled = Ready
+        video_status: "none",
+      });
+    }
   }
 
   return rows;
 }
-
-
-
-
-
 
 export function imagePromptFor(
   item: { type: string; title: string; image_prompt: string; summary: string },
@@ -441,11 +463,15 @@ export function imagePromptFor(
         brand.business_name || ""
       }" as a small clean wordmark in a corner.`
     : "";
-  if (item.type === "video") {
-    return `YouTube thumbnail, 16:9 composition, bold legible headline text, high contrast, professional marketing design. ${base}${brandLine}${SAFETY_IMAGE_SUFFIX}`;
+
+  if (isVideoType(item.type)) {
+    const aspect = item.type === "product_service_video" ? "16:9" : "9:16 vertical";
+    return `${aspect} thumbnail/cover frame, bold legible headline text, high contrast, professional marketing design. ${base}${brandLine}${SAFETY_IMAGE_SUFFIX}`;
   }
+
+  const aspect = item.type === "pinterest" ? "2:3 vertical" : "square 1:1";
   return [
-    "Premium, agency-grade marketing infographic poster for social media, square 1:1.",
+    `Premium, agency-grade marketing poster for social media, ${aspect}.`,
     "Art direction: strong visual hierarchy with one bold headline, 3-5 short supporting points in a clean grid,",
     "generous whitespace, a disciplined 3-colour palette with one accent, subtle depth via soft shadows and layered cards,",
     "crisp custom vector iconography (not clipart), tasteful data visualisation where numbers appear,",
@@ -459,10 +485,34 @@ export function imagePromptFor(
     .join(" ");
 }
 
+/** Builds one slide's image prompt within a carousel — same house style as
+ *  imagePromptFor, but slide-numbered so the set reads as one sequence. */
+export function carouselSlideImagePromptFor(
+  slide: CarouselSlide,
+  index: number,
+  total: number,
+  brand?: Partial<BrandRow> | null,
+): string {
+  const brandLine = brand
+    ? ` Brand: ${brand.business_name || "the brand"}. Visual tone: ${brand.tone || "professional, modern"}. Render the business name "${
+        brand.business_name || ""
+      }" as a small clean wordmark in a corner.`
+    : "";
+  return [
+    `Carousel slide ${index + 1} of ${total}, square 1:1, part of one connected visual sequence — consistent colour palette, typography and layout grid across all slides in the set.`,
+    `Headline text to render: "${slide.headline || ""}".`,
+    slide.subtext ? `Supporting line: "${slide.subtext}".` : "",
+    slide.image_prompt || "",
+    brandLine,
+    SAFETY_IMAGE_SUFFIX,
+  ]
+    .filter(Boolean)
+    .join(" ");
+}
 
 /** Builds a cinematic, brand-grounded prompt for real AI video generation. */
 export function videoPromptFor(
-  item: { title: string; summary: string; video_script: string; image_prompt: string },
+  item: { type?: string; title: string; summary: string; video_script: string; image_prompt: string },
   brand?: Partial<BrandRow> | null,
 ): string {
   const beats = narrationFromScript(item.video_script || "", `${item.title}. ${item.summary}`).slice(
@@ -472,12 +522,15 @@ export function videoPromptFor(
   const business = brand?.business_name || "the brand";
   const offering = (brand?.products_services || brand?.description || "").slice(0, 300);
   const tone = brand?.tone || "professional, warm, modern";
+  const vertical = item.type !== "product_service_video";
   return [
-    `Cinematic live-action lifestyle commercial for ${business}.`,
+    `${vertical ? "Vertical 9:16 short-form" : "Cinematic 16:9"} live-action lifestyle commercial for ${business}.`,
     offering ? `The business offers: ${offering}.` : "",
     brand?.icp ? `Featuring real people who match this audience: ${String(brand.icp).slice(0, 200)}.` : "",
     `Story beats to show visually: ${beats}`,
-    `Style: photoreal handheld and smooth gimbal shots, natural daylight, shallow depth of field, authentic candid people, 2-3 quick scene cuts, colour grade matching a ${tone} brand feel.`,
+    `Style: photoreal handheld and smooth gimbal shots, natural daylight, shallow depth of field, authentic candid people, ${
+      vertical ? "fast cuts every 1-2 seconds" : "2-3 quick scene cuts"
+    }, colour grade matching a ${tone} brand feel.`,
     `Include natural ambient sound and an upbeat background music bed. Confident spoken voice-over narrating the key message.`,
     `No captions burned in, no logos other than a subtle "${business}" wordmark at the end, no distorted text.`,
     SAFETY_IMAGE_SUFFIX.trim(),

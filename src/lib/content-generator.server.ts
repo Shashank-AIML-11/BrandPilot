@@ -44,8 +44,6 @@ export async function generateLOVIZAContent(
         topic: request.topic || "Educational content",
       });
 
-
-
     case "linkedin_post":
     case "instagram_post":
     case "instagram_reel":
@@ -64,14 +62,6 @@ export async function generateLOVIZAContent(
 
       throw new Error(
         `Use existing generator for ${request.type}`
-      );
-
-    case "instagram_reel":
-    case "youtube_short":
-    case "product_service_video":
-
-      throw new Error(
-        "VIDEO_PROVIDER_NOT_CONFIGURED"
       );
 
     default:

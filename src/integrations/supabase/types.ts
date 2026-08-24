@@ -12,6 +12,31 @@ export type Database = {
   __InternalSupabase: {
     PostgrestVersion: "14.15"
   }
+  graphql_public: {
+    Tables: {
+      [_ in never]: never
+    }
+    Views: {
+      [_ in never]: never
+    }
+    Functions: {
+      graphql: {
+        Args: {
+          extensions?: Json
+          operationName?: string
+          query?: string
+          variables?: Json
+        }
+        Returns: Json
+      }
+    }
+    Enums: {
+      [_ in never]: never
+    }
+    CompositeTypes: {
+      [_ in never]: never
+    }
+  }
   public: {
     Tables: {
       brand_profiles: {
@@ -290,6 +315,27 @@ export type Database = {
         }
         Relationships: []
       }
+      loviza_website_table: {
+        Row: {
+          created_at: string
+          email: string
+          id: string
+          source: string
+        }
+        Insert: {
+          created_at?: string
+          email: string
+          id?: string
+          source?: string
+        }
+        Update: {
+          created_at?: string
+          email?: string
+          id?: string
+          source?: string
+        }
+        Relationships: []
+      }
       profiles: {
         Row: {
           avatar_url: string | null
@@ -488,7 +534,20 @@ export type Database = {
     Enums: {
       app_role: "viewer" | "editor" | "admin" | "root"
       content_status: "draft" | "scheduled" | "posted" | "failed"
-      content_type: "blog" | "infographic" | "video"
+      content_type:
+        | "linkedin_post"
+        | "instagram_post"
+        | "instagram_reel"
+        | "facebook_post"
+        | "youtube_short"
+        | "twitter_post"
+        | "carousel"
+        | "blog"
+        | "email"
+        | "ad_image"
+        | "product_service_video"
+        | "tiktok_video"
+        | "pinterest"
     }
     CompositeTypes: {
       [_ in never]: never
@@ -614,11 +673,28 @@ export type CompositeTypes<
     : never
 
 export const Constants = {
+  graphql_public: {
+    Enums: {},
+  },
   public: {
     Enums: {
       app_role: ["viewer", "editor", "admin", "root"],
       content_status: ["draft", "scheduled", "posted", "failed"],
-      content_type: ["blog", "infographic", "video"],
+      content_type: [
+        "linkedin_post",
+        "instagram_post",
+        "instagram_reel",
+        "facebook_post",
+        "youtube_short",
+        "twitter_post",
+        "carousel",
+        "blog",
+        "email",
+        "ad_image",
+        "product_service_video",
+        "tiktok_video",
+        "pinterest",
+      ],
     },
   },
 } as const

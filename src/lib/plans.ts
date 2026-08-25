@@ -1,12 +1,14 @@
 export type PlanId = "starter" | "growth" | "scale";
 
 /**
- * Monthly quota per content type. Keyed against ContentType from
- * content.server.ts (11 formats). Use Partial so a plan can omit a
- * type entirely (== 0) instead of listing every key.
+ * One monthly allowance per content type. Kept as a plain literal type
+ * (not imported from content.server.ts) because plans.ts is imported
+ * directly by client components (checkout.tsx, pricing.tsx) — importing
+ * a .server.ts file from here would leak server-only code into the
+ * client bundle. Keep this list in sync with CONTENT_TYPES in
+ * content.server.ts by hand.
  */
-export type PlanMonthlyContent = Partial<{
-  blog: number;
+export interface PlanMonthlyContent {
   linkedin_post: number;
   instagram_post: number;
   instagram_reel: number;
@@ -14,10 +16,11 @@ export type PlanMonthlyContent = Partial<{
   youtube_short: number;
   twitter_post: number;
   carousel: number;
+  blog: number;
   product_service_video: number;
   tiktok_video: number;
   pinterest: number;
-}>;
+}
 
 export interface Plan {
   id: PlanId;
@@ -39,15 +42,6 @@ export function formatINR(amount: number): string {
   return `\u20B9${new Intl.NumberFormat("en-IN", { maximumFractionDigits: 0 }).format(amount)}`;
 }
 
-/*
- * PLACEHOLDER QUOTAS — these numbers are a guess to keep roughly the old
- * total monthly volume (was 4 blog + 4 infographic + 4 video = 12/mo).
- * instagram_reel / youtube_short / tiktok_video / product_service_video
- * are zeroed at generation time anyway (see content.functions.ts
- * VIDEO_TYPES_PAUSED) while video generation is paused, but the numbers
- * are still defined here so flipping that pause back on doesn't require
- * touching plans.ts again. Replace with real numbers before shipping.
- */
 export const PLANS: Plan[] = [
   {
     id: "starter",
@@ -56,20 +50,20 @@ export const PLANS: Plan[] = [
     tagline: "For solo founders testing the water.",
     features: [
       "1 brand profile",
-      "4 blogs + 4 carousels per month",
-      "8 social posts across LinkedIn, Instagram, X & Facebook",
-      "4 video packages per month (paused during testing)",
+      "23 pieces of content per month",
+      "Blog, LinkedIn, Instagram, Facebook, X, Pinterest, carousels",
+      "1 Reel, Short, TikTok & product video per month",
       "2 social channels",
       "Email support",
     ],
     monthlyContent: {
       blog: 4,
-      carousel: 4,
-      linkedin_post: 2,
-      instagram_post: 2,
+      linkedin_post: 4,
+      instagram_post: 4,
       facebook_post: 2,
       twitter_post: 2,
       pinterest: 2,
+      carousel: 1,
       instagram_reel: 1,
       youtube_short: 1,
       tiktok_video: 1,
@@ -89,8 +83,9 @@ export const PLANS: Plan[] = [
     highlight: true,
     features: [
       "2 brand profiles",
-      "4 blogs + 4 carousels per month",
-      "Full social spread across every channel",
+      "36 pieces of content per month",
+      "Blog, LinkedIn, Instagram, Facebook, X, Pinterest, carousels",
+      "2 Reels, Shorts, TikToks & product videos per month",
       "Auto-schedule & auto-posting",
       "All social channels",
       "Google Drive sync",
@@ -99,12 +94,12 @@ export const PLANS: Plan[] = [
     ],
     monthlyContent: {
       blog: 4,
-      carousel: 4,
       linkedin_post: 4,
       instagram_post: 4,
       facebook_post: 4,
       twitter_post: 4,
       pinterest: 4,
+      carousel: 2,
       instagram_reel: 2,
       youtube_short: 2,
       tiktok_video: 2,
@@ -123,8 +118,9 @@ export const PLANS: Plan[] = [
     tagline: "Agencies running many brands at once.",
     features: [
       "20 brand profiles",
-      "4 blogs + 4 carousels per brand",
-      "Full social spread across every channel, per brand",
+      "36 pieces of content per brand, per month",
+      "Blog, LinkedIn, Instagram, Facebook, X, Pinterest, carousels",
+      "2 Reels, Shorts, TikToks & product videos per brand",
       "Auto-schedule & auto-posting",
       "All social channels",
       "Google Drive sync",
@@ -135,12 +131,12 @@ export const PLANS: Plan[] = [
     // actually enforced per brand rather than per user.
     monthlyContent: {
       blog: 4,
-      carousel: 4,
       linkedin_post: 4,
       instagram_post: 4,
       facebook_post: 4,
       twitter_post: 4,
       pinterest: 4,
+      carousel: 2,
       instagram_reel: 2,
       youtube_short: 2,
       tiktok_video: 2,

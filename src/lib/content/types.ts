@@ -111,7 +111,7 @@ export function distributeMonthlyContent(
   dates: string[],
   totals: Partial<DailyContentQuota>,
 ): Record<string, DailyContentQuota> {
-  const schedule = Object.fromEntries(dates.map((date) => [date, emptyQuota()])) as Record
+  const schedule = Object.fromEntries(dates.map((date) => [date, emptyQuota()])) as Record<
     string,
     DailyContentQuota
   >;

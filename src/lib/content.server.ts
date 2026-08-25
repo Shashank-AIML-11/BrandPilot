@@ -94,7 +94,7 @@ QUALITY BAR (this is what separates amazing from average):
 - Titles must promise a specific payoff in under 12 words; no colons stacked with buzzwords.
 
 FORMAT-SPECIFIC NOTES:
-- Blog: 700-1000 words of genuinely useful, expert-level writing in markdown — H2/H3 structure, a strong opening hook, step-by-step or framework sections the reader could act on today, a short "what this means for you" section, and an explicit CTA to the brand's website.
+- Blog: 350-500 words of genuinely useful, expert-level writing in markdown — H2/H3 structure, a strong opening hook, one or two step-by-step or framework sections the reader could act on today, and an explicit CTA to the brand's website. Keep it tight — every sentence must earn its place.
 - LinkedIn/Instagram/Facebook/Twitter/Pinterest posts: a single scroll-stopping image post. Caption is platform-native in length and tone (LinkedIn: professional, can run longer; Twitter: terse, under 280 chars; Instagram/Facebook: punchy with emoji sparingly; Pinterest: keyword-rich, description-style).
 - Reels/Shorts/TikTok/product-service video: vertical short-form video script, 15-45 seconds, fast hook in the first 2 seconds.
 - Product/service video: a longer 60-90 second cinematic spoken script for YouTube/website.

@@ -1,10 +1,23 @@
 export type PlanId = "starter" | "growth" | "scale";
 
-export interface PlanMonthlyContent {
+/**
+ * Monthly quota per content type. Keyed against ContentType from
+ * content.server.ts (11 formats). Use Partial so a plan can omit a
+ * type entirely (== 0) instead of listing every key.
+ */
+export type PlanMonthlyContent = Partial<{
   blog: number;
-  infographic: number;
-  video: number;
-}
+  linkedin_post: number;
+  instagram_post: number;
+  instagram_reel: number;
+  facebook_post: number;
+  youtube_short: number;
+  twitter_post: number;
+  carousel: number;
+  product_service_video: number;
+  tiktok_video: number;
+  pinterest: number;
+}>;
 
 export interface Plan {
   id: PlanId;
@@ -26,6 +39,15 @@ export function formatINR(amount: number): string {
   return `\u20B9${new Intl.NumberFormat("en-IN", { maximumFractionDigits: 0 }).format(amount)}`;
 }
 
+/*
+ * PLACEHOLDER QUOTAS — these numbers are a guess to keep roughly the old
+ * total monthly volume (was 4 blog + 4 infographic + 4 video = 12/mo).
+ * instagram_reel / youtube_short / tiktok_video / product_service_video
+ * are zeroed at generation time anyway (see content.functions.ts
+ * VIDEO_TYPES_PAUSED) while video generation is paused, but the numbers
+ * are still defined here so flipping that pause back on doesn't require
+ * touching plans.ts again. Replace with real numbers before shipping.
+ */
 export const PLANS: Plan[] = [
   {
     id: "starter",
@@ -34,12 +56,25 @@ export const PLANS: Plan[] = [
     tagline: "For solo founders testing the water.",
     features: [
       "1 brand profile",
-      "4 blogs + 4 infographics per month",
-      "4 videos per month",
+      "4 blogs + 4 carousels per month",
+      "8 social posts across LinkedIn, Instagram, X & Facebook",
+      "4 video packages per month (paused during testing)",
       "2 social channels",
       "Email support",
     ],
-    monthlyContent: { blog: 4, infographic: 4, video: 4 },
+    monthlyContent: {
+      blog: 4,
+      carousel: 4,
+      linkedin_post: 2,
+      instagram_post: 2,
+      facebook_post: 2,
+      twitter_post: 2,
+      pinterest: 2,
+      instagram_reel: 1,
+      youtube_short: 1,
+      tiktok_video: 1,
+      product_service_video: 1,
+    },
     brandProfileLimit: 1,
     channelLimit: 2,
     autoPost: false,
@@ -54,15 +89,27 @@ export const PLANS: Plan[] = [
     highlight: true,
     features: [
       "2 brand profiles",
-      "4 blogs + 4 infographics per month",
-      "4 videos per month",
+      "4 blogs + 4 carousels per month",
+      "Full social spread across every channel",
       "Auto-schedule & auto-posting",
       "All social channels",
       "Google Drive sync",
       "Performance analytics",
       "Priority support",
     ],
-    monthlyContent: { blog: 4, infographic: 4, video: 4 },
+    monthlyContent: {
+      blog: 4,
+      carousel: 4,
+      linkedin_post: 4,
+      instagram_post: 4,
+      facebook_post: 4,
+      twitter_post: 4,
+      pinterest: 4,
+      instagram_reel: 2,
+      youtube_short: 2,
+      tiktok_video: 2,
+      product_service_video: 2,
+    },
     brandProfileLimit: 2,
     channelLimit: null,
     autoPost: true,
@@ -76,8 +123,8 @@ export const PLANS: Plan[] = [
     tagline: "Agencies running many brands at once.",
     features: [
       "20 brand profiles",
-      "4 blogs + 4 infographics per brand",
-      "4 videos per brand",
+      "4 blogs + 4 carousels per brand",
+      "Full social spread across every channel, per brand",
       "Auto-schedule & auto-posting",
       "All social channels",
       "Google Drive sync",
@@ -86,7 +133,19 @@ export const PLANS: Plan[] = [
     ],
     // Per-brand quota - see the multi-brand-profile note below before this is
     // actually enforced per brand rather than per user.
-    monthlyContent: { blog: 4, infographic: 4, video: 4 },
+    monthlyContent: {
+      blog: 4,
+      carousel: 4,
+      linkedin_post: 4,
+      instagram_post: 4,
+      facebook_post: 4,
+      twitter_post: 4,
+      pinterest: 4,
+      instagram_reel: 2,
+      youtube_short: 2,
+      tiktok_video: 2,
+      product_service_video: 2,
+    },
     brandProfileLimit: 20,
     channelLimit: null,
     autoPost: true,

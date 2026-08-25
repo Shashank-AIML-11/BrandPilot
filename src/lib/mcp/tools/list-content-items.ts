@@ -1,6 +1,7 @@
 import { defineTool } from "@lovable.dev/mcp-js";
 import { z } from "zod";
 import { supabaseForUser } from "../supabase";
+import { CONTENT_TYPES } from "@/lib/content.server";
 
 const DATE = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Use YYYY-MM-DD");
 
@@ -8,12 +9,12 @@ export default defineTool({
   name: "list_content_items",
   title: "List scheduled content",
   description:
-    "List the signed-in user's scheduled content for a date range. Returns one row per piece (blog, infographic or video) with its date, time, type, title, platforms, status and whether it is enabled. Use it to review what is on the content calendar.",
+    "List the signed-in user's scheduled content for a date range. Returns one row per piece (blog, LinkedIn post, Instagram post/Reel, Facebook post, X/Twitter post, Pinterest pin, YouTube Short, TikTok video, product/service video, or carousel) with its date, time, type, title, platforms, status and whether it is enabled. Use it to review what is on the content calendar.",
   inputSchema: {
     start_date: DATE.describe("First scheduled date to include, YYYY-MM-DD."),
     end_date: DATE.describe("Last scheduled date to include, YYYY-MM-DD."),
     type: z
-      .enum(["blog", "infographic", "video"])
+      .enum(CONTENT_TYPES)
       .optional()
       .describe("Only return this content type."),
     enabled_only: z.boolean().optional().describe("When true, only return items that are enabled."),

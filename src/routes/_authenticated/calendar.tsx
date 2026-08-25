@@ -27,6 +27,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { prefetchMediaUrls } from "@/lib/media";
 import { queueMonthGeneration, processGenerationQueueNow } from "@/lib/content.functions";
 import { publishAllContent } from "@/lib/channels.functions";
+import { isVideoType, isImageType } from "@/lib/content/types";
 
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -51,7 +52,7 @@ export const Route = createFileRoute("/_authenticated/calendar")({
       {
         name: "description",
         content:
-          "A month of blogs, infographics and videos scheduled day by day across channels.",
+          "A month of blogs, social posts, carousels and videos scheduled day by day across channels.",
       },
       {
         property: "og:title",
@@ -125,13 +126,21 @@ function CalendarPage() {
     refetchInterval: (query) => {
       const current = (query.state.data ?? []) as ContentItem[];
 
-      const hasRenderingAssets = current.some(
-        (item) =>
-          (item.type !== "blog" && !item.image_url) ||
-          (item.type === "video" &&
-            !item.video_url &&
-            item.video_status !== "failed"),
-      );
+      const hasRenderingAssets = current.some((item) => {
+        if (item.type === "blog") return false;
+
+        if (item.type === "carousel") {
+          return !(item.carousel_image_urls && item.carousel_image_urls.length > 0);
+        }
+
+        if (isVideoType(item.type)) {
+          return !item.video_url && item.video_status !== "failed";
+        }
+
+        // Static image types (linkedin_post, instagram_post, facebook_post,
+        // twitter_post, pinterest).
+        return !item.image_url;
+      });
 
       return hasRenderingAssets ? 15000 : false;
     },
@@ -312,6 +321,7 @@ function CalendarPage() {
         items.flatMap((item) => [
           item.image_url,
           item.video_url,
+          ...(item.carousel_image_urls ?? []),
         ]),
       );
     }, [items]);
@@ -612,7 +622,7 @@ function CalendarPage() {
           </h1>
 
           <p className="mt-1 text-sm text-muted-foreground">
-            Plan-based blogs, infographics and videos,
+            Blogs, social posts, carousels and videos,
             generated from your brand profile.
           </p>
         </div>
@@ -790,22 +800,26 @@ function CalendarPage() {
                     item.type === "blog",
                 ).length,
 
-                infographic: list.filter(
+                carousel: list.filter(
                   (item) =>
-                    item.type ===
-                    "infographic",
+                    item.type === "carousel",
+                ).length,
+
+                social: list.filter(
+                  (item) =>
+                    isImageType(item.type),
                 ).length,
 
                 video: list.filter(
                   (item) =>
-                    item.type === "video",
+                    isVideoType(item.type),
                 ).length,
               };
 
               const failed =
                 list.some(
                   (item) =>
-                    item.type === "video" &&
+                    isVideoType(item.type) &&
                     item.video_status ===
                       "failed",
                 );
@@ -813,7 +827,7 @@ function CalendarPage() {
               const videoPaused =
                 list.some(
                   (item) =>
-                    item.type === "video" &&
+                    isVideoType(item.type) &&
                     !item.video_url &&
                     item.video_status ===
                       "none",
@@ -821,11 +835,18 @@ function CalendarPage() {
 
               const ready =
                 list.length > 0 &&
-                list.every(
-                  (item) =>
-                    item.type === "blog" ||
-                    Boolean(item.image_url),
-                );
+                list.every((item) => {
+                  if (item.type === "blog") return true;
+
+                  if (item.type === "carousel") {
+                    return Boolean(
+                      item.carousel_image_urls &&
+                        item.carousel_image_urls.length > 0,
+                    );
+                  }
+
+                  return Boolean(item.image_url);
+                });
 
               return (
                 <button
@@ -859,9 +880,15 @@ function CalendarPage() {
                         </p>
                       )}
 
-                      {counts.infographic > 0 && (
+                      {counts.carousel > 0 && (
+                        <p className="truncate rounded bg-blog/15 px-1.5 py-0.5 text-[11px] text-blog">
+                          {counts.carousel} carousel
+                        </p>
+                      )}
+
+                      {counts.social > 0 && (
                         <p className="truncate rounded bg-infographic/15 px-1.5 py-0.5 text-[11px] text-infographic">
-                          {counts.infographic} infographics
+                          {counts.social} social posts
                         </p>
                       )}
 

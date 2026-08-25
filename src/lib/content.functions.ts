@@ -1076,13 +1076,7 @@ export const processVideoQueueNow =
     );
 
 /**
- * Queue an entire month for durable
- * server-side generation.
- */
-
-/**
- * Queue an entire month for durable
- * server-side generation.
+ * Queue TODAY ONLY for durable server-side generation.
  *
  * IMPORTANT:
  * This function ONLY creates the database job.
@@ -1091,6 +1085,16 @@ export const processVideoQueueNow =
  *
  * This prevents the Generate Content button
  * from waiting several minutes.
+ *
+ * NOTE: previously this queued every remaining day in the current
+ * month in one go (today -> end of month), which meant a single
+ * Groq call in generateWeek()/processGenerationQueue() had to
+ * produce valid JSON for many days of content at once — the more
+ * days requested, the larger and more failure-prone that single
+ * JSON response became. Restricting this to today only keeps each
+ * generation batch small and reliable. Re-run "Generate Content"
+ * daily (or wire up a daily cron hitting this + processGenerationQueueNow)
+ * to fill in the rest of the month day by day.
  */
 export const queueMonthGeneration = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
@@ -1125,23 +1129,12 @@ export const queueMonthGeneration = createServerFn({ method: "POST" })
     }
 
     /*
-     * Calculate final day of month.
+     * Generate for TODAY ONLY.
+     *
+     * (Previously this built a full today -> end-of-month date list.
+     * See the note above the function for why that was reduced.)
      */
-    const monthEnd = new Date(`${currentMonth}-01T00:00:00.000Z`);
-    monthEnd.setUTCMonth(monthEnd.getUTCMonth() + 1);
-    monthEnd.setUTCDate(0);
-    const lastDate = monthEnd.toISOString().slice(0, 10);
-
-    /*
-     * Build today -> month end.
-     */
-    const futureDates: string[] = [];
-    for (let date = today; date <= lastDate; ) {
-      futureDates.push(date);
-      const next = new Date(`${date}T00:00:00.000Z`);
-      next.setUTCDate(next.getUTCDate() + 1);
-      date = next.toISOString().slice(0, 10);
-    }
+    const futureDates: string[] = [today];
 
     /*
      * Do not regenerate already posted days.
@@ -1181,6 +1174,12 @@ export const queueMonthGeneration = createServerFn({ method: "POST" })
       (monthlyTotals as Record<string, number>)[t] = 0;
     }
 
+    /*
+     * distributeMonthlyContent caps count = Math.min(want, dates.length)
+     * per type — with dates.length === 1 (today only), every type gets
+     * AT MOST 1 piece for today, never the full monthly total. Safe by
+     * construction, no extra capping needed here.
+     */
     const contentPlan = distributeMonthlyContent(dates, monthlyTotals);
 
     const scheduledDates = dates.filter((date) => {

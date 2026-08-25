@@ -31,10 +31,8 @@ export const generateWeek = createServerFn({
   .handler(async ({ data, context }) => {
     const { chatJSON } =
       await import("@/lib/ai.server");
-
     const helpers =
       await import("@/lib/content.server");
-
     const {
       getGenerationEntitlement,
     } =
@@ -119,6 +117,7 @@ export const generateWeek = createServerFn({
           strategy,
           quotaSchedule,
         ),
+        helpers.buildWeekResponseSchema(),
       );
 
     const days =
@@ -136,7 +135,6 @@ export const generateWeek = createServerFn({
             ) ??
             days[index] ??
             {};
-
           return helpers.rowsForDay(
             day,
             {

@@ -18,7 +18,6 @@ import {
   YAxis,
 } from "recharts";
 import { supabase } from "@/integrations/supabase/client";
-import { CONTENT_TYPES } from "@/lib/content/types";
 
 export const Route = createFileRoute("/_authenticated/analytics")({
   head: () => ({
@@ -127,17 +126,41 @@ function AnalyticsPage() {
     ),
   );
 
-  // All 11 formats (CONTENT_TYPES is the single source of truth — see
-  // src/lib/content/types.ts). Only types with at least one scheduled
-  // piece in the last 30 days are plotted, so the chart doesn't show a
-  // wall of empty bars for formats you haven't generated yet.
+  const CONTENT_TYPES = [
+    "linkedin_post",
+    "instagram_post",
+    "instagram_reel",
+    "facebook_post",
+    "youtube_short",
+    "twitter_post",
+    "carousel",
+    "blog",
+    "product_service_video",
+    "tiktok_video",
+    "pinterest",
+  ];
+
+  const TYPE_SHORT_LABEL: Record<string, string> = {
+    linkedin_post: "LinkedIn",
+    instagram_post: "IG Post",
+    instagram_reel: "IG Reel",
+    facebook_post: "Facebook",
+    youtube_short: "YT Short",
+    twitter_post: "X",
+    carousel: "Carousel",
+    blog: "Blog",
+    product_service_video: "Product Video",
+    tiktok_video: "TikTok",
+    pinterest: "Pinterest",
+  };
+
   const byType = CONTENT_TYPES.map((type) => ({
-    type,
+    type: TYPE_SHORT_LABEL[type] ?? type,
     pieces: rows.filter((r) => r.type === type).length,
     impressions: rows
       .filter((r) => r.type === type)
       .reduce((s, r) => s + (r.impressions ?? 0), 0),
-  })).filter((t) => t.pieces > 0);
+  }));
 
   const platformCounts: Record<string, number> = {};
   rows.forEach((r) => (r.platforms ?? []).forEach((p) => (platformCounts[p] = (platformCounts[p] ?? 0) + 1)));
@@ -261,9 +284,9 @@ function AnalyticsPage() {
 
           <div className="surface p-5 lg:col-span-3">
             <h2 className="text-sm font-semibold">Volume by content type</h2>
-            <div className="mt-4 h-72">
+            <div className="mt-4 h-64">
               <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={byType} margin={{ bottom: 48 }}>
+                <BarChart data={byType} margin={{ bottom: 24 }}>
                   <CartesianGrid strokeDasharray="3 3" stroke="var(--color-border)" />
                   <XAxis
                     dataKey="type"
@@ -273,7 +296,7 @@ function AnalyticsPage() {
                     textAnchor="end"
                     interval={0}
                   />
-                  <YAxis stroke="var(--color-muted-foreground)" fontSize={11} allowDecimals={false} />
+                  <YAxis stroke="var(--color-muted-foreground)" fontSize={11} />
                   <Tooltip
                     contentStyle={{
                       background: "var(--color-card)",

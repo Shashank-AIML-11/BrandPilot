@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, useRef, } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { createFileRoute } from "@tanstack/react-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
@@ -25,7 +25,11 @@ import {
 
 import { supabase } from "@/integrations/supabase/client";
 import { prefetchMediaUrls } from "@/lib/media";
-import { queueMonthGeneration, processGenerationQueueNow } from "@/lib/content.functions";
+import {
+  queueMonthGeneration,
+  processGenerationQueueNow,
+  clearCurrentMonthContent,
+} from "@/lib/content.functions";
 import { publishAllContent } from "@/lib/channels.functions";
 
 import { Button } from "@/components/ui/button";
@@ -69,10 +73,19 @@ export const Route = createFileRoute("/_authenticated/calendar")({
 
 const DOW = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
 
+const VIDEO_TYPES = [
+  "instagram_reel",
+  "youtube_short",
+  "tiktok_video",
+  "product_service_video",
+];
+
 function CalendarPage() {
   const queryClient = useQueryClient();
 
-  const [cursor, setCursor] = useState(() => startOfMonth(new Date()));
+  const [cursor, setCursor] = useState(() =>
+    startOfMonth(new Date()),
+  );
   const [openDay, setOpenDay] = useState<string | null>(null);
   const [detail, setDetail] = useState<ContentItem | null>(null);
 
@@ -97,6 +110,8 @@ function CalendarPage() {
 
   /*
    * LOAD CURRENT MONTH CONTENT
+   *
+   * Poll while any content is still Rendering.
    */
   const { data: items = [], isLoading } = useQuery({
     queryKey: ["content", monthKey],
@@ -113,6 +128,9 @@ function CalendarPage() {
           "scheduled_date",
           format(monthEnd, "yyyy-MM-dd"),
         )
+        .order("scheduled_date", {
+          ascending: true,
+        })
         .order("scheduled_time", {
           ascending: true,
         });
@@ -125,31 +143,46 @@ function CalendarPage() {
     refetchInterval: (query) => {
       const current = (query.state.data ?? []) as ContentItem[];
 
-      const VIDEO_TYPES = ["instagram_reel", "youtube_short", "tiktok_video", "product_service_video"];
+      const hasRenderingItems = current.some((item) => {
+        if (item.status === "failed") return false;
+        if (item.status === "posted") return false;
 
-      const hasRenderingAssets = current.some((item) => {
-        if (item.type === "blog") return false;
+        if (item.type === "blog") {
+          return false;
+        }
+
         if (item.type === "carousel") {
-          const slideCount = item.carousel_slides?.length ?? 0;
-          const imageCount = (item.carousel_image_urls ?? []).filter(Boolean).length;
-          return imageCount < slideCount;
+          const slideCount =
+            item.carousel_slides?.length ?? 0;
+          const imageCount = (
+            item.carousel_image_urls ?? []
+          ).filter(Boolean).length;
+
+          return (
+            slideCount > 0 &&
+            imageCount < slideCount
+          );
         }
+
         if (VIDEO_TYPES.includes(item.type)) {
-          // Thumbnail still needs to render, or the video itself is
-          // actively generating. Don't poll forever just because video
-          // generation is paused (video_status stays "none" indefinitely
-          // in that case) — "Ready · video paused" is the resting state.
-          return !item.image_url || item.video_status === "generating";
+          return (
+            !item.image_url ||
+            item.video_status === "generating"
+          );
         }
+
         return !item.image_url;
       });
 
-      return hasRenderingAssets ? 15000 : false;
+      return hasRenderingItems ? 2000 : false;
     },
   });
 
   /*
    * CURRENT GENERATION JOB
+   *
+   * Do not use maybeSingle() here because an old duplicate
+   * job must not break the calendar query.
    */
   const { data: activeJob } = useQuery({
     queryKey: ["generation-job", monthKey],
@@ -158,142 +191,110 @@ function CalendarPage() {
       const { data, error } = await supabase
         .from("content_generation_jobs")
         .select(
-          "id, status, days_done, days_total, error",
+          "id, status, days_done, days_total, error, created_at",
         )
         .eq("month", monthKey)
         .in("status", ["pending", "running"])
-        .maybeSingle();
+        .order("created_at", {
+          ascending: false,
+        })
+        .limit(1);
 
       if (error) throw error;
 
-      return data;
+      return data?.[0] ?? null;
     },
 
     refetchInterval: (query) =>
-      query.state.data ? 10000 : 30000,
+      query.state.data ? 2000 : 5000,
   });
 
   /*
-   * Refresh calendar while generation is running.
+   * BACKGROUND GENERATION PUMP
+   *
+   * The Generate button only queues the job.
+   * This effect performs the actual AI generation in the background.
    */
-  /*
-  * ============================================================
-  * BACKGROUND GENERATION PUMP
-  * ============================================================
-  *
-  * queueMonthGeneration() creates the job and immediately
-  * returns.
-  *
-  * This effect actually processes the queued generation.
-  *
-  * It runs one server-side generation batch at a time.
-  *
-  * The browser does NOT wait for the entire month.
-  */
   useEffect(() => {
-    if (!activeJob) {
+    if (
+      !activeJob ||
+      activeJob.status === "completed" ||
+      activeJob.status === "failed"
+    ) {
       return;
     }
 
     let cancelled = false;
+    let timer: ReturnType<typeof setTimeout> | undefined;
 
-    let timer:
-      ReturnType<typeof setTimeout> |
-      undefined;
+    const processNextBatch = async () => {
+      if (
+        cancelled ||
+        processingGeneration.current
+      ) {
+        return;
+      }
 
-    const processNextBatch =
-      async () => {
-        if (
-          cancelled ||
-          processingGeneration.current
-        ) {
+      processingGeneration.current = true;
+
+      try {
+        const result =
+          await processGenerationQueueNow();
+
+        if (cancelled) return;
+
+        /*
+         * Immediately refresh both the calendar and progress.
+         */
+        await Promise.all([
+          queryClient.refetchQueries({
+            queryKey: ["content", monthKey],
+          }),
+          queryClient.refetchQueries({
+            queryKey: ["generation-job", monthKey],
+          }),
+        ]);
+
+        if (result?.cancelled) {
           return;
         }
 
-        processingGeneration.current =
-          true;
-
-        try {
-          const result =
-            await processGenerationQueueNow();
-
-          /*
-          * Immediately refresh the calendar.
-          *
-          * Rendering → Ready happens here because
-          * the worker updates the existing DB rows.
-          */
-          await queryClient.invalidateQueries({
-            queryKey: [
-              "content",
-              monthKey,
-            ],
-          });
-
-          /*
-          * Refresh generation progress.
-          */
-          await queryClient.invalidateQueries({
-            queryKey: [
-              "generation-job",
-              monthKey,
-            ],
-          });
-
-          /*
-          * Stop if generation was cancelled
-          * by Refresh Calendar.
-          */
-          if (
-            result?.cancelled
-          ) {
-            return;
-          }
-
-          /*
-          * Stop on generation error.
-          *
-          * The server job will be marked failed.
-          */
-          if (
-            result?.error
-          ) {
-            toast.error(
-              result.error,
-            );
-
-            return;
-          }
-
-          /*
-          * If another batch is still pending,
-          * process it shortly.
-          */
-          if (
-            result?.generated &&
-            !cancelled
-          ) {
-            timer =
-              setTimeout(
-                processNextBatch,
-                500,
-              );
-          }
-        } catch (error) {
-          if (
-            !cancelled
-          ) {
-            toast.error(
-              error instanceof Error
-                ? error.message
-                : "Background generation failed.",
-            );
-          }
-        } finally {
-          processingGeneration.current =
-            false;
+        if (result?.error) {
+          toast.error(result.error);
+          return;
         }
-      };
+
+        if (
+          result?.generated &&
+          !result?.completed &&
+          !cancelled
+        ) {
+          timer = setTimeout(
+            processNextBatch,
+            250,
+          );
+        }
+      } catch (error) {
+        if (!cancelled) {
+          toast.error(
+            error instanceof Error
+              ? error.message
+              : "Background generation failed.",
+          );
+
+          await Promise.all([
+            queryClient.refetchQueries({
+              queryKey: ["content", monthKey],
+            }),
+            queryClient.refetchQueries({
+              queryKey: ["generation-job", monthKey],
+            }),
+          ]);
+        }
+      } finally {
+        processingGeneration.current = false;
+      }
+    };
 
     void processNextBatch();
 
@@ -303,124 +304,120 @@ function CalendarPage() {
       if (timer) {
         clearTimeout(timer);
       }
-
-      processingGeneration.current =
-        false;
     };
   }, [
     activeJob?.id,
+    activeJob?.status,
     monthKey,
     queryClient,
   ]);
 
-    /*
-    * Prefetch media URLs.
-    */
-    useEffect(() => {
-      if (!items.length) return;
+  /*
+   * Prefetch generated media.
+   */
+  useEffect(() => {
+    if (!items.length) return;
 
-      void prefetchMediaUrls(
-        items.flatMap((item) => [
-          item.image_url,
-          item.video_url,
-          ...(item.carousel_image_urls ?? []),
-        ]),
-      );
-    }, [items]);
+    void prefetchMediaUrls(
+      items.flatMap((item) => [
+        item.image_url,
+        item.video_url,
+        ...(item.carousel_image_urls ?? []),
+      ]),
+    );
+  }, [items]);
 
-    /*
-    * GROUP CONTENT BY DATE
-    */
-    const byDate = useMemo(() => {
-      const map = new Map<string, ContentItem[]>();
+  /*
+   * GROUP CONTENT BY DATE
+   */
+  const byDate = useMemo(() => {
+    const map = new Map<string, ContentItem[]>();
 
-      items.forEach((item) => {
-        const list = map.get(item.scheduled_date) ?? [];
+    items.forEach((item) => {
+      const list =
+        map.get(item.scheduled_date) ?? [];
 
-        list.push(item);
+      list.push(item);
+      map.set(item.scheduled_date, list);
+    });
 
-        map.set(item.scheduled_date, list);
-      });
+    return map;
+  }, [items]);
 
-      return map;
-    }, [items]);
+  /*
+   * GENERATE MONTH
+   *
+   * The server function returns immediately after creating:
+   * 1. Durable generation job
+   * 2. Rendering calendar placeholders
+   *
+   * We force an immediate refetch so Rendering entries appear
+   * without waiting for the AI process.
+   */
+  async function generateMonth() {
+    if (
+      queueing ||
+      refreshing ||
+      activeJob ||
+      items.length > 0
+    ) {
+      return;
+    }
 
-    /*
-    * GENERATE MONTH
-    *
-    * IMPORTANT:
-    * The server now ONLY queues the job.
-    * It does NOT wait for AI generation.
-    */
-    async function generateMonth() {
-        if (
-    queueing ||
-    activeJob ||
-    items.length > 0 ||
-    refreshing
-  ) {
-    return;
-  }
+    const monthDays = eachDayOfInterval({
+      start: monthStart,
+      end: monthEnd,
+    }).map((day) =>
+      format(day, "yyyy-MM-dd"),
+    );
 
-      const monthDays = eachDayOfInterval({
-        start: monthStart,
-        end: monthEnd,
-      }).map((day) =>
-        format(day, "yyyy-MM-dd"),
-      );
+    setQueueing(true);
 
-      setQueueing(true);
-
-      try {
-        const result = await queueMonthGeneration({
+    try {
+      const result =
+        await queueMonthGeneration({
           data: {
             month: monthKey,
             dates: monthDays,
           },
         });
 
-        await queryClient.invalidateQueries({
+      /*
+       * CRITICAL:
+       * Refetch immediately instead of only invalidating.
+       */
+      await Promise.all([
+        queryClient.refetchQueries({
           queryKey: ["content", monthKey],
-        });
-
-        await queryClient.invalidateQueries({
+        }),
+        queryClient.refetchQueries({
           queryKey: ["generation-job", monthKey],
-        });
+        }),
+      ]);
 
-        toast.success(
-          result?.queued
-            ? `${result.queued} days queued for ${format(
-                cursor,
-                "MMMM yyyy",
-              )}. Generation will continue in the background.`
-            : `${format(
-                cursor,
-                "MMMM yyyy",
-              )} generation queued.`,
-        );
-      } catch (error) {
-        toast.error(
-          error instanceof Error
-            ? error.message
-            : "Could not start generation.",
-        );
-      } finally {
-        setQueueing(false);
-      }
+      toast.success(
+        result?.queued
+          ? `${result.queued} day${result.queued === 1 ? "" : "s"} queued. Content is now rendering in the background.`
+          : "Content generation queued.",
+      );
+    } catch (error) {
+      toast.error(
+        error instanceof Error
+          ? error.message
+          : "Could not start generation.",
+      );
+    } finally {
+      setQueueing(false);
     }
+  }
 
   /*
    * REFRESH CALENDAR
    *
-   * Deletes:
-   *  - current month's generated content
-   *  - current month's generation job
-   *
-   * It does NOT delete:
-   *  - Brand Profile
-   *  - social connections
-   *  - other months
-   *  - account data
+   * Uses the existing authenticated server function so that:
+   * - the generation job is removed first
+   * - calendar content is deleted
+   * - generated media is cleaned up
    */
   async function refreshCalendar() {
     if (refreshing) return;
@@ -437,81 +434,29 @@ function CalendarPage() {
     setRefreshing(true);
 
     try {
-      const {
-        data: userData,
-        error: userError,
-      } = await supabase.auth.getUser();
+      const result =
+        await clearCurrentMonthContent();
 
-      if (userError || !userData.user) {
-        throw new Error(
-          "Your login session could not be verified.",
-        );
-      }
-
-      /*
-       * First remove/cancel the generation job.
-       */
-      const { error: jobError } = await supabase
-        .from("content_generation_jobs")
-        .delete()
-        .eq("user_id", userData.user.id)
-        .eq("month", monthKey);
-
-      if (jobError) {
-        throw new Error(
-          `Could not clear generation job: ${jobError.message}`,
-        );
-      }
-
-      /*
-       * Then delete this month's calendar content.
-       */
-      const { error: contentError } = await supabase
-        .from("content_items")
-        .delete()
-        .eq("user_id", userData.user.id)
-        .gte(
-          "scheduled_date",
-          format(monthStart, "yyyy-MM-dd"),
-        )
-        .lte(
-          "scheduled_date",
-          format(monthEnd, "yyyy-MM-dd"),
-        );
-
-      if (contentError) {
-        throw new Error(
-          `Could not clear calendar content: ${contentError.message}`,
-        );
-      }
-
-      /*
-       * Close opened panels.
-       */
       setOpenDay(null);
       setDetail(null);
 
-      /*
-       * Force fresh database reads.
-       */
-      await queryClient.invalidateQueries({
-        queryKey: ["content", monthKey],
-      });
-
-      await queryClient.invalidateQueries({
-        queryKey: ["generation-job", monthKey],
-      });
-
-      await queryClient.refetchQueries({
-        queryKey: ["content", monthKey],
-      });
+      await Promise.all([
+        queryClient.refetchQueries({
+          queryKey: ["content", monthKey],
+        }),
+        queryClient.refetchQueries({
+          queryKey: ["generation-job", monthKey],
+        }),
+      ]);
 
       toast.success(
         `${format(
           cursor,
           "MMMM yyyy",
-        )} calendar has been completely cleared.`,
+        )} calendar cleared.`,
       );
+
+      void result;
     } catch (error) {
       toast.error(
         error instanceof Error
@@ -532,9 +477,10 @@ function CalendarPage() {
     setPosting(true);
 
     try {
-      const result = await publishAllContent();
+      const result =
+        await publishAllContent();
 
-      await queryClient.invalidateQueries({
+      await queryClient.refetchQueries({
         queryKey: ["content", monthKey],
       });
 
@@ -583,7 +529,7 @@ function CalendarPage() {
         : "Day disabled",
     );
 
-    await queryClient.invalidateQueries({
+    await queryClient.refetchQueries({
       queryKey: ["content", monthKey],
     });
   }
@@ -593,7 +539,7 @@ function CalendarPage() {
     : [];
 
   /*
-   * Keep opened detail synchronized with database.
+   * Keep opened detail synchronized.
    */
   useEffect(() => {
     if (!detail) return;
@@ -607,17 +553,19 @@ function CalendarPage() {
     }
   }, [items, detail]);
 
-  const hasCalendarContent = items.length > 0;
+  const hasCalendarContent =
+    items.length > 0;
+
+  const generateDisabled =
+    queueing ||
+    refreshing ||
+    Boolean(activeJob) ||
+    hasCalendarContent;
 
   return (
     <div className="space-y-6">
-
-      {/* ====================================================== */}
       {/* HEADER */}
-      {/* ====================================================== */}
-
       <div className="flex flex-wrap items-end justify-between gap-4">
-
         <div>
           <h1 className="text-2xl font-bold">
             Content Calendar
@@ -630,8 +578,7 @@ function CalendarPage() {
         </div>
 
         <div className="flex flex-wrap items-center gap-2">
-
-          {/* Previous Month */}
+          {/* PREVIOUS MONTH */}
           <Button
             variant="outline"
             size="icon"
@@ -640,16 +587,21 @@ function CalendarPage() {
                 addMonths(cursor, -1),
               )
             }
+            disabled={
+              queueing ||
+              refreshing ||
+              Boolean(activeJob)
+            }
           >
             <ChevronLeft className="h-4 w-4" />
           </Button>
 
-          {/* Current Month */}
+          {/* CURRENT MONTH */}
           <span className="w-40 text-center font-display text-lg font-semibold">
             {format(cursor, "MMMM yyyy")}
           </span>
 
-          {/* Next Month */}
+          {/* NEXT MONTH */}
           <Button
             variant="outline"
             size="icon"
@@ -658,21 +610,21 @@ function CalendarPage() {
                 addMonths(cursor, 1),
               )
             }
+            disabled={
+              queueing ||
+              refreshing ||
+              Boolean(activeJob)
+            }
           >
             <ChevronRight className="h-4 w-4" />
           </Button>
 
-          {/* Generate */}
+          {/* GENERATE CONTENT */}
           <Button
             onClick={generateMonth}
-            disabled={
-              queueing ||
-              Boolean(activeJob) ||
-              refreshing ||
-              hasCalendarContent
-            }
+            disabled={generateDisabled}
           >
-            {queueing ? (
+            {queueing || activeJob ? (
               <Loader2 className="mr-2 h-4 w-4 animate-spin" />
             ) : (
               <Sparkles className="mr-2 h-4 w-4" />
@@ -681,9 +633,7 @@ function CalendarPage() {
             {queueing
               ? "Queueing…"
               : activeJob
-                ? `Generating ${
-                    activeJob.days_done
-                  }/${activeJob.days_total}`
+                ? `Generating ${activeJob.days_done}/${activeJob.days_total}`
                 : "Generate Content"}
           </Button>
 
@@ -726,17 +676,12 @@ function CalendarPage() {
               ? "Refreshing…"
               : "Refresh Calendar"}
           </Button>
-
         </div>
       </div>
 
-      {/* ====================================================== */}
       {/* GENERATION STATUS */}
-      {/* ====================================================== */}
-
       {activeJob && (
         <div className="rounded-lg border border-border bg-card px-4 py-3">
-
           <p className="text-sm font-medium">
             Content generation is running in the background.
           </p>
@@ -752,18 +697,12 @@ function CalendarPage() {
               Last error: {activeJob.error}
             </p>
           )}
-
         </div>
       )}
 
-      {/* ====================================================== */}
       {/* CALENDAR */}
-      {/* ====================================================== */}
-
       <div className="surface overflow-hidden">
-
         <div className="grid grid-cols-7 border-b border-border bg-card">
-
           {DOW.map((day) => (
             <div
               key={day}
@@ -772,7 +711,6 @@ function CalendarPage() {
               {day}
             </div>
           ))}
-
         </div>
 
         {isLoading ? (
@@ -781,9 +719,7 @@ function CalendarPage() {
           </div>
         ) : (
           <div className="grid grid-cols-7">
-
             {days.map((day) => {
-
               const key =
                 format(day, "yyyy-MM-dd");
 
@@ -796,30 +732,33 @@ function CalendarPage() {
                   cursor,
                 );
 
-              const VIDEO_TYPES = [
-                "instagram_reel",
-                "youtube_short",
-                "tiktok_video",
-                "product_service_video",
-              ];
+              const blogCount =
+                list.filter(
+                  (item) =>
+                    item.type === "blog",
+                ).length;
 
-              const blogCount = list.filter(
-                (item) => item.type === "blog",
-              ).length;
-              const otherCount = list.length - blogCount;
+              const otherCount =
+                list.length -
+                blogCount;
 
               const failed =
                 list.some(
                   (item) =>
-                    VIDEO_TYPES.includes(item.type) &&
-                    item.video_status ===
-                      "failed",
+                    item.status === "failed" ||
+                    (VIDEO_TYPES.includes(
+                      item.type,
+                    ) &&
+                      item.video_status ===
+                        "failed"),
                 );
 
               const videoPaused =
                 list.some(
                   (item) =>
-                    VIDEO_TYPES.includes(item.type) &&
+                    VIDEO_TYPES.includes(
+                      item.type,
+                    ) &&
                     !item.video_url &&
                     item.video_status !==
                       "failed",
@@ -828,15 +767,44 @@ function CalendarPage() {
               const ready =
                 list.length > 0 &&
                 list.every((item) => {
-                  if (item.type === "blog") return true;
-                  if (item.type === "carousel") {
-                    const slideCount = item.carousel_slides?.length ?? 0;
-                    const imageCount = (item.carousel_image_urls ?? []).filter(
+                  if (
+                    item.status ===
+                    "failed"
+                  ) {
+                    return false;
+                  }
+
+                  if (
+                    item.type === "blog"
+                  ) {
+                    return true;
+                  }
+
+                  if (
+                    item.type ===
+                    "carousel"
+                  ) {
+                    const slideCount =
+                      item.carousel_slides
+                        ?.length ?? 0;
+
+                    const imageCount = (
+                      item.carousel_image_urls ??
+                      []
+                    ).filter(
                       Boolean,
                     ).length;
-                    return slideCount > 0 && imageCount >= slideCount;
+
+                    return (
+                      slideCount > 0 &&
+                      imageCount >=
+                        slideCount
+                    );
                   }
-                  return Boolean(item.image_url);
+
+                  return Boolean(
+                    item.image_url,
+                  );
                 });
 
               return (
@@ -851,7 +819,6 @@ function CalendarPage() {
                       : ""
                   }`}
                 >
-
                   <span
                     className={`inline-flex h-6 w-6 items-center justify-center rounded-full text-xs ${
                       isToday(day)
@@ -864,7 +831,6 @@ function CalendarPage() {
 
                   {list.length > 0 && (
                     <div className="mt-2 space-y-1">
-
                       {blogCount > 0 && (
                         <p className="truncate rounded bg-blog/15 px-1.5 py-0.5 text-[11px] text-blog">
                           {blogCount} blog
@@ -873,7 +839,10 @@ function CalendarPage() {
 
                       {otherCount > 0 && (
                         <p className="truncate rounded bg-muted px-1.5 py-0.5 text-[11px] text-muted-foreground">
-                          {otherCount} post{otherCount === 1 ? "" : "s"}
+                          {otherCount} post
+                          {otherCount === 1
+                            ? ""
+                            : "s"}
                         </p>
                       )}
 
@@ -903,35 +872,26 @@ function CalendarPage() {
                               ? "Ready · video paused"
                               : "Ready"}
                       </p>
-
                     </div>
                   )}
-
                 </button>
               );
             })}
-
           </div>
         )}
-
       </div>
 
-      {/* ====================================================== */}
       {/* DAY DETAILS */}
-      {/* ====================================================== */}
-
       <Sheet
         open={Boolean(openDay)}
-        onOpenChange={(open) =>
-          !open &&
-          setOpenDay(null)
-        }
+        onOpenChange={(open) => {
+          if (!open) {
+            setOpenDay(null);
+          }
+        }}
       >
-
         <SheetContent className="w-full overflow-y-auto sm:max-w-xl">
-
           <SheetHeader>
-
             <SheetTitle>
               {openDay
                 ? format(
@@ -940,7 +900,6 @@ function CalendarPage() {
                   )
                 : ""}
             </SheetTitle>
-
           </SheetHeader>
 
           {dayItems.length === 0 ? (
@@ -951,9 +910,7 @@ function CalendarPage() {
             </p>
           ) : (
             <div className="space-y-3 px-4 pb-8">
-
               <div className="flex items-center justify-between rounded-lg border border-border p-3">
-
                 <span className="text-sm">
                   Enable all content
                   for this day
@@ -964,15 +921,17 @@ function CalendarPage() {
                     (item) =>
                       item.enabled,
                   )}
-                  onCheckedChange={(value) =>
-                    openDay &&
-                    toggleDay(
-                      openDay,
-                      value,
-                    )
-                  }
+                  onCheckedChange={(
+                    value,
+                  ) => {
+                    if (openDay) {
+                      void toggleDay(
+                        openDay,
+                        value,
+                      );
+                    }
+                  }}
                 />
-
               </div>
 
               {dayItems.map(
@@ -984,9 +943,7 @@ function CalendarPage() {
                     }
                     className="w-full rounded-xl border border-border p-3 text-left transition-colors hover:bg-accent"
                   >
-
                     <div className="flex items-center gap-2">
-
                       <Badge
                         variant="outline"
                         className={
@@ -1020,7 +977,6 @@ function CalendarPage() {
                           posted
                         </Badge>
                       )}
-
                     </div>
 
                     <p className="mt-2 text-sm font-medium">
@@ -1033,39 +989,36 @@ function CalendarPage() {
                     </p>
 
                     <div className="mt-2 flex flex-wrap gap-1">
-
-                      {(item.platforms ??
+                      {(
+                        item.platforms ??
                         []
-                      ).map((platform) => (
-                        <span
-                          key={platform}
-                          className="text-[11px] text-muted-foreground"
-                        >
-                          {platform}
-                        </span>
-                      ))}
-
+                      ).map(
+                        (platform) => (
+                          <span
+                            key={platform}
+                            className="text-[11px] text-muted-foreground"
+                          >
+                            {platform}
+                          </span>
+                        ),
+                      )}
                     </div>
-
                   </button>
                 ),
               )}
-
             </div>
           )}
-
         </SheetContent>
-
       </Sheet>
 
       <ContentDetailDialog
         item={detail}
-        onOpenChange={(open) =>
-          !open &&
-          setDetail(null)
-        }
+        onOpenChange={(open) => {
+          if (!open) {
+            setDetail(null);
+          }
+        }}
       />
-
     </div>
   );
 }

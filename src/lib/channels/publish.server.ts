@@ -11,7 +11,7 @@ export async function publishItemToChannels(
   const { data } = await supabaseAdmin
     .from("content_items")
     .select(
-      "id, type, title, summary, body, caption, hashtags, image_url, video_url, published_channels",
+      "id, type, title, summary, body, caption, hashtags, image_url, video_url, carousel_slides, carousel_image_urls, published_channels",
     )
     .eq("id", itemId)
     .eq("user_id", userId)

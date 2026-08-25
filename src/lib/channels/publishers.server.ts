@@ -14,6 +14,8 @@ export interface PublishItem {
   hashtags: string | null;
   image_url: string | null;
   video_url: string | null;
+  carousel_slides: Array<{ headline?: string; subtext?: string }> | null;
+  carousel_image_urls: string[] | null;
 }
 
 export interface PublishResult {
@@ -70,9 +72,9 @@ async function publishLinkedIn(
     "X-Restli-Protocol-Version": "2.0.0",
   };
 
-  let imageUrn: string | null = null;
-  const imageLink = await signed(admin, item.image_url);
-  if (imageLink) {
+  async function uploadImage(path: string): Promise<string | null> {
+    const link = await signed(admin, path);
+    if (!link) return null;
     const init = (await jsonOrThrow(
       "LinkedIn",
       await fetch("https://api.linkedin.com/rest/images?action=initializeUpload", {
@@ -81,14 +83,42 @@ async function publishLinkedIn(
         body: JSON.stringify({ initializeUploadRequest: { owner: author } }),
       }),
     )) as unknown as { value?: { uploadUrl: string; image: string } };
-    if (init.value) {
-      const upload = await fetch(init.value.uploadUrl, {
-        method: "PUT",
-        headers: { authorization: `Bearer ${conn.accessToken}` },
-        body: await bytes(imageLink),
-      });
-      if (!upload.ok) throw new Error(`LinkedIn image upload failed (${upload.status})`);
-      imageUrn = init.value.image;
+    if (!init.value) return null;
+    const upload = await fetch(init.value.uploadUrl, {
+      method: "PUT",
+      headers: { authorization: `Bearer ${conn.accessToken}` },
+      body: await bytes(link),
+    });
+    if (!upload.ok) throw new Error(`LinkedIn image upload failed (${upload.status})`);
+    return init.value.image;
+  }
+
+  let contentBlock: Record<string, unknown> | undefined;
+
+  if (item.type === "carousel" && (item.carousel_image_urls?.length ?? 0) > 0) {
+    // NOTE: LinkedIn's carousel/multi-image post shape has changed across
+    // API versions before — verify this "multiImage" content block against
+    // the current LinkedIn Posts API docs for LINKEDIN_VERSION if this
+    // starts failing after a LinkedIn API upgrade.
+    const slides = item.carousel_slides ?? [];
+    const urns = (
+      await Promise.all(item.carousel_image_urls!.map((path) => uploadImage(path)))
+    ).filter((urn): urn is string => Boolean(urn));
+
+    if (urns.length) {
+      contentBlock = {
+        multiImage: {
+          images: urns.map((id, i) => ({
+            id,
+            altText: (slides[i]?.headline || item.title).slice(0, 100),
+          })),
+        },
+      };
+    }
+  } else {
+    const imageUrn = await uploadImage(item.image_url ?? "");
+    if (imageUrn) {
+      contentBlock = { media: { id: imageUrn, title: item.title.slice(0, 200) } };
     }
   }
 
@@ -102,9 +132,7 @@ async function publishLinkedIn(
       distribution: { feedDistribution: "MAIN_FEED" },
       lifecycleState: "PUBLISHED",
       isReshareDisabledByAuthor: false,
-      ...(imageUrn
-        ? { content: { media: { id: imageUrn, title: item.title.slice(0, 200) } } }
-        : {}),
+      ...(contentBlock ? { content: contentBlock } : {}),
     }),
   });
   const post = (await jsonOrThrow("LinkedIn", postResponse)) as unknown as { id?: string };
@@ -130,10 +158,15 @@ async function publishYouTube(
   const videoLink = await signed(admin, item.video_url);
   if (!videoLink) throw new Error("This item has no rendered video yet.");
 
+  // YouTube has no separate "upload as a Short" endpoint — it classifies a
+  // video as a Short from a combination of vertical aspect ratio, duration,
+  // and the #Shorts tag. We control the first two upstream (videoPromptFor);
+  // this appends the tag that actually triggers Shorts placement.
+  const isShort = item.type === "youtube_short";
   const metadata = {
     snippet: {
-      title: item.title.slice(0, 100),
-      description: textFor(item, 4800),
+      title: (isShort ? `${item.title} #Shorts` : item.title).slice(0, 100),
+      description: isShort ? `${textFor(item, 4790)}\n#Shorts` : textFor(item, 4800),
       categoryId: "22",
     },
     status: { privacyStatus: "public", selfDeclaredMadeForKids: false },
@@ -207,6 +240,55 @@ async function publishInstagram(
   item: PublishItem,
 ): Promise<PublishResult> {
   const igId = conn.accountId;
+
+  if (item.type === "carousel") {
+    const paths = (item.carousel_image_urls ?? []).filter(Boolean);
+    if (paths.length < 2) throw new Error("Instagram carousels need at least 2 rendered slides.");
+
+    const childIds: string[] = [];
+    for (const path of paths) {
+      const link = await signed(admin, path);
+      if (!link) continue;
+      const child = (await jsonOrThrow(
+        "Instagram",
+        await fetch(`https://graph.facebook.com/v21.0/${igId}/media`, {
+          method: "POST",
+          body: new URLSearchParams({
+            access_token: conn.accessToken,
+            image_url: link,
+            is_carousel_item: "true",
+          }),
+        }),
+      )) as unknown as { id?: string };
+      if (child.id) childIds.push(child.id);
+    }
+    if (childIds.length < 2) throw new Error("Could not prepare enough carousel slides.");
+
+    const container = (await jsonOrThrow(
+      "Instagram",
+      await fetch(`https://graph.facebook.com/v21.0/${igId}/media`, {
+        method: "POST",
+        body: new URLSearchParams({
+          access_token: conn.accessToken,
+          media_type: "CAROUSEL",
+          caption: textFor(item, 2200),
+          children: childIds.join(","),
+        }),
+      }),
+    )) as unknown as { id?: string };
+    if (!container.id) throw new Error("Instagram did not return a carousel container.");
+
+    const published = (await jsonOrThrow(
+      "Instagram",
+      await fetch(`https://graph.facebook.com/v21.0/${igId}/media_publish`, {
+        method: "POST",
+        body: new URLSearchParams({ access_token: conn.accessToken, creation_id: container.id }),
+      }),
+    )) as unknown as { id?: string };
+
+    return { channel: "Instagram", ok: true, externalId: published.id ?? "" };
+  }
+
   const imageLink = await signed(admin, item.image_url);
   const videoLink = await signed(admin, item.video_url);
   if (!imageLink && !videoLink) throw new Error("Instagram needs an image or video.");

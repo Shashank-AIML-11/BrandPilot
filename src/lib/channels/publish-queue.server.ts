@@ -1,6 +1,7 @@
 /** Auto-posts scheduled content whose time has arrived. Server-only. */
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { publishItemToChannels } from "./publish.server";
+import { isVideoType, isImageType } from "@/lib/content.server";
 
 type Admin = SupabaseClient<never, never, never>;
 
@@ -13,7 +14,9 @@ export async function processPublishQueue(admin: Admin) {
 
   const { data } = await admin
     .from("content_items")
-    .select("id, user_id, type, platforms, scheduled_date, scheduled_time, image_url, video_url")
+    .select(
+      "id, user_id, type, platforms, scheduled_date, scheduled_time, image_url, video_url, carousel_slides, carousel_image_urls",
+    )
     .eq("status", "scheduled")
     .eq("enabled", true)
     .eq("autopost", true)
@@ -31,15 +34,26 @@ export async function processPublishQueue(admin: Admin) {
     scheduled_time: string | null;
     image_url: string | null;
     video_url: string | null;
+    carousel_slides: unknown[] | null;
+    carousel_image_urls: string[] | null;
   }>;
+
+  function mediaReady(row: (typeof rows)[number]): boolean {
+    if (isVideoType(row.type)) return Boolean(row.video_url);
+    if (isImageType(row.type)) return Boolean(row.image_url);
+    if (row.type === "carousel") {
+      const slideCount = row.carousel_slides?.length ?? 0;
+      const imageCount = (row.carousel_image_urls ?? []).filter(Boolean).length;
+      return slideCount > 0 && imageCount >= slideCount;
+    }
+    return true; // blog — no media required
+  }
 
   const due = rows
     .filter((row) => row.scheduled_date < today || (row.scheduled_time ?? "00:00:00") <= time)
     .filter((row) => (row.platforms ?? []).length > 0)
     // Only publish once the media the channel needs actually exists.
-    .filter((row) =>
-      row.type === "video" ? Boolean(row.video_url) : row.type === "infographic" ? Boolean(row.image_url) : true,
-    )
+    .filter(mediaReady)
     .slice(0, BATCH);
 
   let posted = 0;

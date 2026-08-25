@@ -18,12 +18,30 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import {
-  isVideoType,
-  isImageType,
-  CHANNELS_BY_TYPE,
-  type CarouselSlide,
-} from "@/lib/content/types";
+
+/**
+ * Where each content type is allowed to be published. Client-safe
+ * duplicate of CHANNELS_BY_TYPE in content.server.ts — kept separate
+ * because that file is server-only and this component is client-side.
+ * Keep both lists in sync by hand.
+ */
+const CHANNELS_BY_TYPE: Record<string, string[]> = {
+  blog: ["Website", "LinkedIn", "Medium", "Quora"],
+  linkedin_post: ["LinkedIn"],
+  instagram_post: ["Instagram"],
+  instagram_reel: ["Instagram"],
+  facebook_post: ["Facebook"],
+  twitter_post: ["X"],
+  pinterest: ["Pinterest"],
+  youtube_short: ["YouTube"],
+  tiktok_video: ["TikTok"],
+  product_service_video: ["YouTube", "Website"],
+  carousel: ["LinkedIn", "Instagram"],
+};
+
+/** Same client/server split as CHANNELS_BY_TYPE above. */
+const VIDEO_TYPES = ["instagram_reel", "youtube_short", "tiktok_video", "product_service_video"];
+const IMAGE_TYPES = ["linkedin_post", "instagram_post", "facebook_post", "twitter_post", "pinterest"];
 
 export interface ContentItem {
   id: string;
@@ -40,32 +58,26 @@ export interface ContentItem {
   video_script: string | null;
   video_url: string | null;
   video_status?: string | null;
-  carousel_slides?: CarouselSlide[] | null;
+  carousel_slides?: Array<{ headline?: string; subtext?: string; image_prompt?: string }> | null;
   carousel_image_urls?: string[] | null;
   platforms: string[] | null;
   status: string;
   enabled: boolean;
 }
 
-/**
- * Badge colors. Only three hues exist in styles.css today (--blog,
- * --infographic, --video) so types are grouped onto the closest one —
- * static-image types read as "infographic", video types as "video",
- * blog/carousel keep their own look. Consider adding dedicated CSS
- * variables per type later for a more distinct calendar/detail view.
- */
 export const typeStyles: Record<string, string> = {
   blog: "bg-blog/15 text-blog border-blog/30",
-  carousel: "bg-blog/15 text-blog border-blog/30",
-  linkedin_post: "bg-infographic/15 text-infographic border-infographic/30",
-  instagram_post: "bg-infographic/15 text-infographic border-infographic/30",
-  facebook_post: "bg-infographic/15 text-infographic border-infographic/30",
-  twitter_post: "bg-infographic/15 text-infographic border-infographic/30",
-  pinterest: "bg-infographic/15 text-infographic border-infographic/30",
-  instagram_reel: "bg-video/15 text-video border-video/30",
-  youtube_short: "bg-video/15 text-video border-video/30",
-  tiktok_video: "bg-video/15 text-video border-video/30",
-  product_service_video: "bg-video/15 text-video border-video/30",
+  linkedin_post: "bg-linkedin_post/15 text-linkedin_post border-linkedin_post/30",
+  instagram_post: "bg-instagram_post/15 text-instagram_post border-instagram_post/30",
+  instagram_reel: "bg-instagram_reel/15 text-instagram_reel border-instagram_reel/30",
+  facebook_post: "bg-facebook_post/15 text-facebook_post border-facebook_post/30",
+  twitter_post: "bg-twitter_post/15 text-twitter_post border-twitter_post/30",
+  pinterest: "bg-pinterest/15 text-pinterest border-pinterest/30",
+  youtube_short: "bg-youtube_short/15 text-youtube_short border-youtube_short/30",
+  tiktok_video: "bg-tiktok_video/15 text-tiktok_video border-tiktok_video/30",
+  product_service_video:
+    "bg-product_service_video/15 text-product_service_video border-product_service_video/30",
+  carousel: "bg-carousel/15 text-carousel border-carousel/30",
 };
 
 export function ContentDetailDialog({
@@ -78,7 +90,6 @@ export function ContentDetailDialog({
   const queryClient = useQueryClient();
   const [imageUrl, setImageUrl] = useState<string | null>(() => cachedMediaUrl(item?.image_url));
   const [videoUrl, setVideoUrl] = useState<string | null>(() => cachedMediaUrl(item?.video_url));
-  const [carouselUrls, setCarouselUrls] = useState<(string | null)[]>([]);
 
   // Prefetched during the month load, so this paints synchronously from cache.
   useEffect(() => {
@@ -94,22 +105,6 @@ export function ContentDetailDialog({
       void signedMediaUrl(item.video_url).then(setVideoUrl);
     }
   }, [item?.id, item?.video_url]);
-
-  useEffect(() => {
-    const urls = item?.carousel_image_urls ?? [];
-    setCarouselUrls(urls.map((u) => cachedMediaUrl(u) ?? null));
-    urls.forEach((u, index) => {
-      if (u && !cachedMediaUrl(u)) {
-        void signedMediaUrl(u).then((resolved) =>
-          setCarouselUrls((prev) => {
-            const next = [...prev];
-            next[index] = resolved;
-            return next;
-          }),
-        );
-      }
-    });
-  }, [item?.id, item?.carousel_image_urls]);
 
   const invalidate = () => queryClient.invalidateQueries({ queryKey: ["content"] });
 
@@ -207,10 +202,6 @@ export function ContentDetailDialog({
 
   if (!item) return null;
 
-  const isVideo = isVideoType(item.type);
-  const isImage = isImageType(item.type);
-  const isCarousel = item.type === "carousel";
-
   return (
     <Dialog open={Boolean(item)} onOpenChange={onOpenChange}>
       <DialogContent className="max-h-[88vh] max-w-3xl overflow-y-auto">
@@ -267,7 +258,7 @@ export function ContentDetailDialog({
           </label>
         </div>
 
-        {isVideo && (
+        {VIDEO_TYPES.includes(item.type) && (
           <div className="space-y-3">
             {videoUrl ? (
               <video
@@ -289,16 +280,18 @@ export function ContentDetailDialog({
                   <p className="text-sm text-foreground">
                     {item.video_status === "failed"
                       ? "This video could not be rendered."
-                      : "Rendering in the background. It will be ready here automatically."}
+                      : item.video_status === "generating"
+                        ? "Rendering in the background. It will be ready here automatically."
+                        : "Video generation is currently paused."}
                   </p>
-                  {item.video_status !== "failed" && <Progress className="w-2/3" />}
+                  {item.video_status === "generating" && <Progress className="w-2/3" />}
                 </div>
               </div>
             )}
           </div>
         )}
 
-        {isImage && (
+        {IMAGE_TYPES.includes(item.type) && (
           <div className="space-y-3">
             {imageUrl ? (
               <img
@@ -319,45 +312,11 @@ export function ContentDetailDialog({
           </div>
         )}
 
-        {isCarousel && (
-          <div className="space-y-3">
-            {item.carousel_slides && item.carousel_slides.length > 0 ? (
-              <div className="flex gap-3 overflow-x-auto pb-2">
-                {item.carousel_slides.map((slide, index) => {
-                  const slideUrl = carouselUrls[index];
-                  return (
-                    <div
-                      key={index}
-                      className="w-56 shrink-0 space-y-2 rounded-xl border border-border p-2"
-                    >
-                      {slideUrl ? (
-                        <img
-                          src={slideUrl}
-                          alt={slide.headline ?? `Slide ${index + 1}`}
-                          className="aspect-square w-full rounded-lg object-cover"
-                        />
-                      ) : (
-                        <div className="flex aspect-square w-full items-center justify-center rounded-lg bg-muted/20">
-                          <Loader2 className="h-5 w-5 animate-spin text-primary" />
-                        </div>
-                      )}
-                      {slide.headline && (
-                        <p className="text-xs font-medium">{slide.headline}</p>
-                      )}
-                      {slide.subtext && (
-                        <p className="text-xs text-muted-foreground">{slide.subtext}</p>
-                      )}
-                    </div>
-                  );
-                })}
-              </div>
-            ) : (
-              <div className="flex flex-col items-center gap-3 rounded-xl border border-dashed border-border p-8 text-center">
-                <Loader2 className="h-6 w-6 animate-spin text-primary" />
-                <p className="text-sm text-muted-foreground">Preparing the slides…</p>
-              </div>
-            )}
-          </div>
+        {item.type === "carousel" && (
+          <CarouselSlides
+            slides={item.carousel_slides ?? []}
+            imagePaths={item.carousel_image_urls ?? []}
+          />
         )}
 
         {item.body && (
@@ -394,5 +353,68 @@ export function ContentDetailDialog({
         </div>
       </DialogContent>
     </Dialog>
+  );
+}
+
+function CarouselSlides({
+  slides,
+  imagePaths,
+}: {
+  slides: Array<{ headline?: string; subtext?: string }>;
+  imagePaths: string[];
+}) {
+  const [urls, setUrls] = useState<Record<number, string | null>>({});
+
+  useEffect(() => {
+    imagePaths.forEach((path, i) => {
+      const cached = cachedMediaUrl(path);
+      if (cached) {
+        setUrls((prev) => (prev[i] === cached ? prev : { ...prev, [i]: cached }));
+        return;
+      }
+      void signedMediaUrl(path).then((url) =>
+        setUrls((prev) => ({ ...prev, [i]: url })),
+      );
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [imagePaths.join("|")]);
+
+  if (!slides.length) {
+    return (
+      <div className="flex flex-col items-center gap-3 rounded-xl border border-dashed border-border p-8 text-center">
+        <Loader2 className="h-6 w-6 animate-spin text-primary" />
+        <p className="text-sm text-muted-foreground">Preparing carousel slides…</p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="flex gap-3 overflow-x-auto pb-2">
+      {slides.map((slide, i) => {
+        const url = urls[i];
+        return (
+          <div
+            key={i}
+            className="w-56 shrink-0 space-y-2 rounded-xl border border-border p-2"
+          >
+            {url ? (
+              <img
+                src={url}
+                alt={slide.headline ?? `Slide ${i + 1}`}
+                className="aspect-square w-full rounded-lg object-cover"
+              />
+            ) : (
+              <div className="flex aspect-square w-full items-center justify-center rounded-lg bg-muted/20">
+                <Loader2 className="h-5 w-5 animate-spin text-primary" />
+              </div>
+            )}
+            <p className="text-xs font-medium">{slide.headline}</p>
+            {slide.subtext && (
+              <p className="text-xs text-muted-foreground">{slide.subtext}</p>
+            )}
+          </div>
+        );
+      })}
+    </div>
   );
 }

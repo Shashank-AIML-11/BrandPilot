@@ -27,7 +27,6 @@ import { supabase } from "@/integrations/supabase/client";
 import { prefetchMediaUrls } from "@/lib/media";
 import { queueMonthGeneration, processGenerationQueueNow } from "@/lib/content.functions";
 import { publishAllContent } from "@/lib/channels.functions";
-import { isVideoType, isImageType } from "@/lib/content/types";
 
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -52,7 +51,7 @@ export const Route = createFileRoute("/_authenticated/calendar")({
       {
         name: "description",
         content:
-          "A month of blogs, social posts, carousels and videos scheduled day by day across channels.",
+          "A month of platform-native posts, carousels and videos scheduled day by day across channels.",
       },
       {
         property: "og:title",
@@ -126,19 +125,22 @@ function CalendarPage() {
     refetchInterval: (query) => {
       const current = (query.state.data ?? []) as ContentItem[];
 
+      const VIDEO_TYPES = ["instagram_reel", "youtube_short", "tiktok_video", "product_service_video"];
+
       const hasRenderingAssets = current.some((item) => {
         if (item.type === "blog") return false;
-
         if (item.type === "carousel") {
-          return !(item.carousel_image_urls && item.carousel_image_urls.length > 0);
+          const slideCount = item.carousel_slides?.length ?? 0;
+          const imageCount = (item.carousel_image_urls ?? []).filter(Boolean).length;
+          return imageCount < slideCount;
         }
-
-        if (isVideoType(item.type)) {
-          return !item.video_url && item.video_status !== "failed";
+        if (VIDEO_TYPES.includes(item.type)) {
+          // Thumbnail still needs to render, or the video itself is
+          // actively generating. Don't poll forever just because video
+          // generation is paused (video_status stays "none" indefinitely
+          // in that case) — "Ready · video paused" is the resting state.
+          return !item.image_url || item.video_status === "generating";
         }
-
-        // Static image types (linkedin_post, instagram_post, facebook_post,
-        // twitter_post, pinterest).
         return !item.image_url;
       });
 
@@ -622,7 +624,7 @@ function CalendarPage() {
           </h1>
 
           <p className="mt-1 text-sm text-muted-foreground">
-            Blogs, social posts, carousels and videos,
+            Plan-based posts, carousels and videos,
             generated from your brand profile.
           </p>
         </div>
@@ -794,32 +796,22 @@ function CalendarPage() {
                   cursor,
                 );
 
-              const counts = {
-                blog: list.filter(
-                  (item) =>
-                    item.type === "blog",
-                ).length,
+              const VIDEO_TYPES = [
+                "instagram_reel",
+                "youtube_short",
+                "tiktok_video",
+                "product_service_video",
+              ];
 
-                carousel: list.filter(
-                  (item) =>
-                    item.type === "carousel",
-                ).length,
-
-                social: list.filter(
-                  (item) =>
-                    isImageType(item.type),
-                ).length,
-
-                video: list.filter(
-                  (item) =>
-                    isVideoType(item.type),
-                ).length,
-              };
+              const blogCount = list.filter(
+                (item) => item.type === "blog",
+              ).length;
+              const otherCount = list.length - blogCount;
 
               const failed =
                 list.some(
                   (item) =>
-                    isVideoType(item.type) &&
+                    VIDEO_TYPES.includes(item.type) &&
                     item.video_status ===
                       "failed",
                 );
@@ -827,24 +819,23 @@ function CalendarPage() {
               const videoPaused =
                 list.some(
                   (item) =>
-                    isVideoType(item.type) &&
+                    VIDEO_TYPES.includes(item.type) &&
                     !item.video_url &&
-                    item.video_status ===
-                      "none",
+                    item.video_status !==
+                      "failed",
                 );
 
               const ready =
                 list.length > 0 &&
                 list.every((item) => {
                   if (item.type === "blog") return true;
-
                   if (item.type === "carousel") {
-                    return Boolean(
-                      item.carousel_image_urls &&
-                        item.carousel_image_urls.length > 0,
-                    );
+                    const slideCount = item.carousel_slides?.length ?? 0;
+                    const imageCount = (item.carousel_image_urls ?? []).filter(
+                      Boolean,
+                    ).length;
+                    return slideCount > 0 && imageCount >= slideCount;
                   }
-
                   return Boolean(item.image_url);
                 });
 
@@ -874,27 +865,15 @@ function CalendarPage() {
                   {list.length > 0 && (
                     <div className="mt-2 space-y-1">
 
-                      {counts.blog > 0 && (
+                      {blogCount > 0 && (
                         <p className="truncate rounded bg-blog/15 px-1.5 py-0.5 text-[11px] text-blog">
-                          {counts.blog} blog
+                          {blogCount} blog
                         </p>
                       )}
 
-                      {counts.carousel > 0 && (
-                        <p className="truncate rounded bg-blog/15 px-1.5 py-0.5 text-[11px] text-blog">
-                          {counts.carousel} carousel
-                        </p>
-                      )}
-
-                      {counts.social > 0 && (
-                        <p className="truncate rounded bg-infographic/15 px-1.5 py-0.5 text-[11px] text-infographic">
-                          {counts.social} social posts
-                        </p>
-                      )}
-
-                      {counts.video > 0 && (
-                        <p className="truncate rounded bg-video/15 px-1.5 py-0.5 text-[11px] text-video">
-                          {counts.video} videos
+                      {otherCount > 0 && (
+                        <p className="truncate rounded bg-muted px-1.5 py-0.5 text-[11px] text-muted-foreground">
+                          {otherCount} post{otherCount === 1 ? "" : "s"}
                         </p>
                       )}
 

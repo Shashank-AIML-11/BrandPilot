@@ -15,14 +15,15 @@ function groqKey() {
 /**
  * Text generation via Groq — free-tier hosting for open-weight models.
  * Swap the `model` string to try alternatives, e.g.:
- *   "openai/gpt-oss-20b"  ( best quality)
- *   "qwen/qwen3-32b"           (Qwen)
- *   "gemma2-9b-it"             (Google Gemma2)
+ * "openai/gpt-oss-20b" ( best quality)
+ * "qwen/qwen3-32b" (Qwen)
+ * "gemma2-9b-it" (Google Gemma2)
  */
 export async function chatJSON<T>(
   system: string,
   prompt: string,
   schema?: Record<string, unknown>,
+  maxTokens = 8000,
 ): Promise<T> {
   const responseFormat = schema
     ? {
@@ -51,16 +52,15 @@ export async function chatJSON<T>(
       ],
       response_format: responseFormat,
       reasoning_effort: "low",
+      max_tokens: maxTokens,
     }),
   });
 
   if (!res.ok) {
     const text = await res.text();
-
     if (res.status === 429) {
       throw new Error("AI rate limit reached. Please retry in a minute.");
     }
-
     throw new Error(`AI request failed [${res.status}]: ${text}`);
   }
 
@@ -73,7 +73,6 @@ export async function chatJSON<T>(
   };
 
   const content = json.choices?.[0]?.message?.content ?? "";
-
   if (!content.trim()) {
     throw new Error("AI returned an empty response.");
   }
@@ -86,7 +85,6 @@ export async function chatJSON<T>(
 
   const start = cleaned.indexOf("{");
   const end = cleaned.lastIndexOf("}");
-
   if (start === -1 || end === -1) {
     throw new Error("AI returned an unreadable response.");
   }
@@ -103,7 +101,6 @@ export async function generateImageBytes(prompt: string): Promise<Uint8Array> {
   const encoded = encodeURIComponent(guard(prompt));
   const seed = Math.floor(Math.random() * 1_000_000);
   const url = `https://image.pollinations.ai/prompt/${encoded}?width=1024&height=1024&model=flux&nologo=true&seed=${seed}`;
-
   const res = await fetch(url);
   if (!res.ok) {
     const text = await res.text().catch(() => "");

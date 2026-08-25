@@ -168,7 +168,7 @@ Create content only for these requested quantities. Do not add any extra pieces:
 ${requestedContent}
 
 ${schemaLines}
-When a requested quantity for a type is zero, omit that key or return an empty array for it.
+When a requested quantity for a type is zero, you must still include that key with an empty array [] — never omit a key.
 
 Rules:
 - Every title must reference the brand's own product, service, audience or keyword — no generic titles, no buzzword soup.
@@ -183,6 +183,94 @@ Rules:
 
 Return JSON shaped exactly as:
 { "days": [ { "date": "YYYY-MM-DD", "blog": [...], "linkedin_post": [...], "instagram_post": [...], "instagram_reel": [...], "facebook_post": [...], "twitter_post": [...], "pinterest": [...], "youtube_short": [...], "tiktok_video": [...], "product_service_video": [...], "carousel": [...] } ] }`;
+}
+
+/**
+ * Every content piece — regardless of type — is consumed through the same
+ * set of fields by rowsForDay() (title/summary/body/caption/hashtags/
+ * image_prompt/script/time/slides), with unused fields left as "" or [].
+ * This shared shape lets us define ONE strict schema instead of 11.
+ */
+const WEEK_PIECE_SCHEMA = {
+  type: "object",
+  additionalProperties: false,
+  properties: {
+    title: { type: "string" },
+    summary: { type: "string" },
+    body: { type: "string" },
+    caption: { type: "string" },
+    hashtags: { type: "string" },
+    image_prompt: { type: "string" },
+    script: { type: "string" },
+    time: { type: "string" },
+    slides: {
+      type: "array",
+      maxItems: 6,
+      items: {
+        type: "object",
+        additionalProperties: false,
+        properties: {
+          headline: { type: "string" },
+          subtext: { type: "string" },
+          image_prompt: { type: "string" },
+        },
+        required: ["headline", "subtext", "image_prompt"],
+      },
+    },
+  },
+  required: [
+    "title",
+    "summary",
+    "body",
+    "caption",
+    "hashtags",
+    "image_prompt",
+    "script",
+    "time",
+    "slides",
+  ],
+} as const;
+
+/**
+ * Strict JSON schema for the whole weekPrompt() response, passed to
+ * chatJSON(). With Groq's `strict: true` json_schema mode, generation is
+ * constrained token-by-token so the model literally cannot emit invalid
+ * or incomplete JSON — this replaces the previous loose `json_object`
+ * mode, which had no enforced shape and was the source of the
+ * "json_validate_failed" / "failed_generation" errors on the calendar.
+ *
+ * maxItems: 4 per type per day is a generous cap — rowsForDay() already
+ * slices each type's array down to the day's actual quota, so a higher
+ * cap here only affects token budget, never correctness.
+ */
+export function buildWeekResponseSchema(): Record<string, unknown> {
+  const dayProperties: Record<string, unknown> = {
+    date: { type: "string" },
+  };
+  for (const type of CONTENT_TYPES) {
+    dayProperties[type] = {
+      type: "array",
+      maxItems: 4,
+      items: WEEK_PIECE_SCHEMA,
+    };
+  }
+  return {
+    type: "object",
+    additionalProperties: false,
+    properties: {
+      days: {
+        type: "array",
+        maxItems: 8,
+        items: {
+          type: "object",
+          additionalProperties: false,
+          properties: dayProperties,
+          required: ["date", ...CONTENT_TYPES],
+        },
+      },
+    },
+    required: ["days"],
+  };
 }
 
 interface RowInput {

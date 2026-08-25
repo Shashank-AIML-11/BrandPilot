@@ -46,6 +46,16 @@
   --color-blog: var(--blog);
   --color-infographic: var(--infographic);
   --color-video: var(--video);
+  --color-linkedin_post: var(--linkedin_post);
+  --color-instagram_post: var(--instagram_post);
+  --color-instagram_reel: var(--instagram_reel);
+  --color-facebook_post: var(--facebook_post);
+  --color-twitter_post: var(--twitter_post);
+  --color-pinterest: var(--pinterest);
+  --color-youtube_short: var(--youtube_short);
+  --color-tiktok_video: var(--tiktok_video);
+  --color-product_service_video: var(--product_service_video);
+  --color-carousel: var(--carousel);
   --color-chart-1: var(--chart-1);
   --color-chart-2: var(--chart-2);
   --color-chart-3: var(--chart-3);
@@ -98,8 +108,21 @@
   --ring: oklch(0.79 0.166 76);
 
   --blog: oklch(0.72 0.13 232);
-  --infographic: oklch(0.79 0.166 76);
-  --video: oklch(0.7 0.16 355);
+  --infographic: oklch(0.79 0.166 76); /* legacy — old rows only, no new content uses this */
+  --video: oklch(0.7 0.16 355); /* legacy — old rows only, no new content uses this */
+
+  /* Approximate, adjustable — these are decorative category colors,
+     not exact brand-guideline hex values. */
+  --linkedin_post: oklch(0.62 0.15 255);
+  --instagram_post: oklch(0.66 0.19 335);
+  --instagram_reel: oklch(0.68 0.2 350);
+  --facebook_post: oklch(0.6 0.16 265);
+  --twitter_post: oklch(0.55 0.02 260);
+  --pinterest: oklch(0.6 0.2 20);
+  --youtube_short: oklch(0.62 0.22 30);
+  --tiktok_video: oklch(0.72 0.13 195);
+  --product_service_video: oklch(0.7 0.14 155);
+  --carousel: oklch(0.66 0.15 300);
 
   --chart-1: oklch(0.79 0.166 76);
   --chart-2: oklch(0.72 0.13 232);

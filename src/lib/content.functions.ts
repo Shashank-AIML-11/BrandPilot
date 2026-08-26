@@ -1156,7 +1156,18 @@ export const queueMonthGeneration = createServerFn({ method: "POST" })
       .in("scheduled_date", futureDates);
 
     const postedDates = new Set((posted ?? []).map((row) => row.scheduled_date as string));
-    const dates = futureDates.filter((date) => !postedDates.has(date));
+    const allDates = futureDates.filter((date) => !postedDates.has(date));
+
+    /*
+     * TESTING PHASE ONLY: only generate TODAY, not the rest of the month.
+     * distributeMonthlyContent() spreads the plan's full monthly quota
+     * across however many dates it's given — restricting to 1 date here
+     * also caps per-type quantity to at most 1 for that day, since it
+     * never schedules more occurrences than there are days to spread
+     * across. Change this back to `allDates` once testing is done.
+     */
+    const TESTING_DAYS_LIMIT = 1;
+    const dates = allDates.slice(0, TESTING_DAYS_LIMIT);
 
     if (!dates.length) {
       throw new Error("No upcoming days left to generate in this month.");

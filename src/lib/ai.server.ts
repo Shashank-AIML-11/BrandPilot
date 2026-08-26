@@ -54,10 +54,15 @@ export async function chatJSON<T>(
       // Without an explicit cap, Groq reserves a large default output
       // budget from the model's context window and counts that reserved
       // amount against the per-minute token limit — regardless of how
-      // small the actual prompt/expected output is. This was the real
-      // cause of hitting the TPM ceiling even after cutting content
-      // types down; raise this if a batch's JSON gets truncated.
-      max_completion_tokens: 2500,
+      // small the actual prompt/expected output is. Too low a cap
+      // truncates the JSON mid-object instead (a "json_validate_failed"
+      // / "Failed to generate JSON" error with a cut-off failed_generation
+      // dump is the symptom of that, not of the prompt being wrong).
+      // With generation now scoped to 1 day / a few types during testing,
+      // this has headroom to spare; raise it further only if you see
+      // truncation again after widening ACTIVE_TYPES_FOR_TESTING or
+      // TESTING_DAYS_LIMIT in content.functions.ts.
+      max_completion_tokens: 4000,
     }),
   });
 

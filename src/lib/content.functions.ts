@@ -1183,8 +1183,6 @@ export const queueMonthGeneration = createServerFn({ method: "POST" })
       "blog",
       "linkedin_post",
       "instagram_post",
-      "facebook_post",
-      "carousel",
     ] as const;
 
     const monthlyTotals = { ...entitlement.plan.monthlyContent };

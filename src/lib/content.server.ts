@@ -1,151 +1,38 @@
-export interface BrandRow {
-  business_name: string;
-  website: string;
-  description: string;
-  products_services: string;
-  icp: string;
-  propositions: string;
-  tone: string;
-  keywords: string;
-  social_handles: Record<string, string> | null;
-}
+export {
+  type BrandRow,
+  CONTENT_TYPES,
+  type ContentType,
+  VIDEO_TYPES,
+  IMAGE_TYPES,
+  isVideoType,
+  isImageType,
+  TYPE_LABEL,
+  type CarouselSlide,
+  type GeneratedPiece,
+  type GeneratedDay,
+  type DailyContentQuota,
+  emptyQuota,
+  distributeMonthlyContent,
+  DEFAULT_PLATFORMS,
+  CHANNELS_BY_TYPE,
+  activePlatforms,
+  platformsForType,
+} from "./content/types";
 
-/**
- * The 11 formats LOVIZA generates. This array is the single source of
- * truth — quotas, prompts, row-building and channel mapping all derive
- * from it, so adding a 12th format later means adding one entry here
- * (plus a CHANNELS_BY_TYPE line) rather than hunting through every file.
- */
-export const CONTENT_TYPES = [
-  "linkedin_post",
-  "instagram_post",
-  "instagram_reel",
-  "facebook_post",
-  "youtube_short",
-  "twitter_post",
-  "carousel",
-  "blog",
-  "product_service_video",
-  "tiktok_video",
-  "pinterest",
-] as const;
-
-export type ContentType = (typeof CONTENT_TYPES)[number];
-
-/** Formats rendered as an actual video file (mp4), vs a static image. */
-export const VIDEO_TYPES: ContentType[] = [
-  "instagram_reel",
-  "youtube_short",
-  "tiktok_video",
-  "product_service_video",
-];
-
-/** Formats that render as a single static image. */
-export const IMAGE_TYPES: ContentType[] = [
-  "linkedin_post",
-  "instagram_post",
-  "facebook_post",
-  "twitter_post",
-  "pinterest",
-];
-
-export function isVideoType(type: string): boolean {
-  return (VIDEO_TYPES as string[]).includes(type);
-}
-
-export function isImageType(type: string): boolean {
-  return (IMAGE_TYPES as string[]).includes(type);
-}
-
-export interface CarouselSlide {
-  headline?: string;
-  subtext?: string;
-  image_prompt?: string;
-}
-
-export interface GeneratedPiece {
-  title?: string;
-  summary?: string;
-  body?: string;
-  caption?: string;
-  hashtags?: string;
-  image_prompt?: string;
-  script?: string;
-  time?: string;
-  slides?: CarouselSlide[];
-}
-
-/** One AI response day: every format maps to a list of generated pieces. */
-export type GeneratedDay = { date?: string } & Partial<Record<ContentType, GeneratedPiece[]>>;
-
-export type DailyContentQuota = Record<ContentType, number>;
-
-export function emptyQuota(): DailyContentQuota {
-  return Object.fromEntries(CONTENT_TYPES.map((t) => [t, 0])) as DailyContentQuota;
-}
-
-/** Evenly distribute a plan's monthly allowance over the available dates. */
-export function distributeMonthlyContent(
-  dates: string[],
-  totals: Partial<DailyContentQuota>,
-): Record<string, DailyContentQuota> {
-  const schedule = Object.fromEntries(dates.map((date) => [date, emptyQuota()])) as Record<
-    string,
-    DailyContentQuota
-  >;
-
-  (Object.keys(totals) as ContentType[]).forEach((type) => {
-    const want = totals[type] ?? 0;
-    const count = Math.min(want, dates.length);
-    for (let index = 0; index < count; index += 1) {
-      const dateIndex = Math.floor((index * dates.length) / count);
-      schedule[dates[dateIndex]!]![type] += 1;
-    }
-  });
-  return schedule;
-}
-
-export const DEFAULT_PLATFORMS = [
-  "LinkedIn",
-  "Instagram",
-  "Facebook",
-  "X",
-  "YouTube",
-  "TikTok",
-  "Pinterest",
-];
-
-/** Where each content type is allowed to be published. One platform-native
- *  home per type, except blog (syndicated) and carousel (native to both
- *  LinkedIn and Instagram). */
-export const CHANNELS_BY_TYPE: Record<ContentType, string[]> = {
-  blog: ["Website", "LinkedIn", "Medium", "Quora"],
-  linkedin_post: ["LinkedIn"],
-  instagram_post: ["Instagram"],
-  instagram_reel: ["Instagram"],
-  facebook_post: ["Facebook"],
-  twitter_post: ["X"],
-  pinterest: ["Pinterest"],
-  youtube_short: ["YouTube"],
-  tiktok_video: ["TikTok"],
-  product_service_video: ["YouTube", "Website"],
-  carousel: ["LinkedIn", "Instagram"],
-};
-
-export function activePlatforms(brand: BrandRow): string[] {
-  const handles = brand.social_handles ?? {};
-  const list = Object.entries(handles)
-    .filter(([, v]) => typeof v === "string" && v.trim().length > 0)
-    .map(([k]) => k);
-  return list.length ? list : DEFAULT_PLATFORMS;
-}
-
-/** Intersect the brand's active channels with the channels valid for a type. */
-export function platformsForType(active: string[], type: string): string[] {
-  const allowed = CHANNELS_BY_TYPE[type as ContentType] ?? [];
-  const picked = allowed.filter((p) => p === "Website" || active.includes(p));
-  return picked.length ? picked : allowed;
-}
+import {
+  type BrandRow,
+  CONTENT_TYPES,
+  type ContentType,
+  isVideoType,
+  TYPE_LABEL,
+  type CarouselSlide,
+  type GeneratedPiece,
+  type GeneratedDay,
+  type DailyContentQuota,
+  emptyQuota,
+  platformsForType,
+  activePlatforms,
+} from "./content/types";
 
 function handleList(brand: BrandRow): string {
   const handles = brand.social_handles ?? {};
@@ -183,15 +70,6 @@ export const SAFETY_RULES = `ABSOLUTE CONTENT SAFETY RULES (these override every
 export const SAFETY_IMAGE_SUFFIX =
   " STRICT SAFETY: safe-for-work, brand-safe, general-audience advertising visual only. Fully clothed people in modest professional attire. Absolutely no nudity, partial nudity, lingerie, swimwear, sexualised or suggestive posing, no violence, gore, weapons, drugs, alcohol, hateful symbols, profanity or offensive text, no minors in any suggestive context, no shocking or disturbing imagery.";
 
-/**
- * TESTING PHASE ONLY: shrunk from the normal 700-1000 words to keep each
- * AI request comfortably under Groq's per-minute token limit while we
- * confirm the 11-type pipeline works end-to-end. Raise this back to
- * "700-1000" once ACTIVE_CONTENT_TYPES below is back to all 11 and
- * quotas are tuned.
- */
-export const BLOG_WORD_TARGET = "100-150";
-
 export const SYSTEM_PROMPT = `You are an award-winning content director and direct-response copywriter working in-house for ONE specific brand.
 Your work has to be good enough that a stranger stops scrolling, reads to the end, and wants to buy.
 Every single word must be traceable to the brand profile you are given.
@@ -216,7 +94,7 @@ QUALITY BAR (this is what separates amazing from average):
 - Titles must promise a specific payoff in under 12 words; no colons stacked with buzzwords.
 
 FORMAT-SPECIFIC NOTES:
-- Blog: ${BLOG_WORD_TARGET} words of genuinely useful, expert-level writing in markdown — H2/H3 structure, a strong opening hook, step-by-step or framework sections the reader could act on today, a short "what this means for you" section, and an explicit CTA to the brand's website.
+- Blog: 350-500 words of genuinely useful, expert-level writing in markdown — H2/H3 structure, a strong opening hook, one or two step-by-step or framework sections the reader could act on today, and an explicit CTA to the brand's website. Keep it tight — every sentence must earn its place.
 - LinkedIn/Instagram/Facebook/Twitter/Pinterest posts: a single scroll-stopping image post. Caption is platform-native in length and tone (LinkedIn: professional, can run longer; Twitter: terse, under 280 chars; Instagram/Facebook: punchy with emoji sparingly; Pinterest: keyword-rich, description-style).
 - Reels/Shorts/TikTok/product-service video: vertical short-form video script, 15-45 seconds, fast hook in the first 2 seconds.
 - Product/service video: a longer 60-90 second cinematic spoken script for YouTube/website.
@@ -248,20 +126,6 @@ Double down on the formats, hooks, channels and posting times that performed. Dr
 === END PERFORMANCE LEARNINGS ===`;
 }
 
-const TYPE_LABEL: Record<ContentType, string> = {
-  blog: "blog post(s)",
-  linkedin_post: "LinkedIn post(s)",
-  instagram_post: "Instagram post(s)",
-  instagram_reel: "Instagram Reel(s)",
-  facebook_post: "Facebook post(s)",
-  twitter_post: "X/Twitter post(s)",
-  pinterest: "Pinterest pin(s)",
-  youtube_short: "YouTube Short(s)",
-  tiktok_video: "TikTok video(s)",
-  product_service_video: "product/service video(s)",
-  carousel: "carousel(s)",
-};
-
 /** JSON field shape the model must return for each format. */
 const TYPE_SCHEMA: Record<ContentType, string> = {
   blog: `{ "title", "summary", "body", "caption", "hashtags", "time" }`,
@@ -283,24 +147,17 @@ export function weekPrompt(
   strategy?: StrategyDirective | null,
   quotas?: Record<string, DailyContentQuota>,
 ): string {
-  // Only pay the prompt-token cost for types actually requested somewhere
-  // in this batch — a paused/zero-quota type shouldn't still get its full
-  // JSON schema block on every single call.
-  const activeTypes = CONTENT_TYPES.filter((t) =>
-    dates.some((date) => (quotas?.[date]?.[t] ?? 0) > 0),
-  );
-
   const requestedContent = dates
     .map((date) => {
       const quota = quotas?.[date] ?? emptyQuota();
-      const parts = activeTypes.filter((t) => quota[t] > 0).map(
+      const parts = CONTENT_TYPES.filter((t) => quota[t] > 0).map(
         (t) => `${quota[t]} ${TYPE_LABEL[t]}`,
       );
       return `- ${date}: ${parts.length ? parts.join(", ") : "nothing"}`;
     })
     .join("\n");
 
-  const schemaLines = activeTypes.map((t) => `For each requested ${t} use: ${TYPE_SCHEMA[t]}.`).join(
+  const schemaLines = CONTENT_TYPES.map((t) => `For each requested ${t} use: ${TYPE_SCHEMA[t]}.`).join(
     "\n",
   );
 
@@ -311,7 +168,7 @@ Create content only for these requested quantities. Do not add any extra pieces:
 ${requestedContent}
 
 ${schemaLines}
-When a requested quantity for a type is zero, omit that key or return an empty array for it.
+Only include the content-type keys listed in the schema you've been given. For any of those keys where a specific day's requested quantity above is zero, still include that key for that day with an empty array [] — never omit a key the schema requires.
 
 Rules:
 - Every title must reference the brand's own product, service, audience or keyword — no generic titles, no buzzword soup.
@@ -325,7 +182,109 @@ Rules:
 - Vary angles across the week and never repeat a hook, headline structure or example twice: education, product spotlight, ICP pain point, myth-busting, proof/objection handling, behind-the-scenes, industry insight, offer — always about THIS brand.
 
 Return JSON shaped exactly as:
-{ "days": [ { "date": "YYYY-MM-DD", ${activeTypes.map((t) => `"${t}": [...]`).join(", ")} } ] }`;
+{ "days": [ { "date": "YYYY-MM-DD", "blog": [...], "linkedin_post": [...], "instagram_post": [...], "instagram_reel": [...], "facebook_post": [...], "twitter_post": [...], "pinterest": [...], "youtube_short": [...], "tiktok_video": [...], "product_service_video": [...], "carousel": [...] } ] }`;
+}
+
+/**
+ * Every content piece — regardless of type — is consumed through the same
+ * set of fields by rowsForDay() (title/summary/body/caption/hashtags/
+ * image_prompt/script/time/slides), with unused fields left as "" or [].
+ * This shared shape lets us define ONE strict schema instead of 11.
+ */
+const WEEK_PIECE_SCHEMA = {
+  type: "object",
+  additionalProperties: false,
+  properties: {
+    title: { type: "string" },
+    summary: { type: "string" },
+    body: { type: "string" },
+    caption: { type: "string" },
+    hashtags: { type: "string" },
+    image_prompt: { type: "string" },
+    script: { type: "string" },
+    time: { type: "string" },
+    slides: {
+      type: "array",
+      maxItems: 6,
+      items: {
+        type: "object",
+        additionalProperties: false,
+        properties: {
+          headline: { type: "string" },
+          subtext: { type: "string" },
+          image_prompt: { type: "string" },
+        },
+        required: ["headline", "subtext", "image_prompt"],
+      },
+    },
+  },
+  required: [
+    "title",
+    "summary",
+    "body",
+    "caption",
+    "hashtags",
+    "image_prompt",
+    "script",
+    "time",
+    "slides",
+  ],
+} as const;
+
+/**
+ * Strict JSON schema for the whole weekPrompt() response, passed to
+ * chatJSON(). With Groq's `strict: true` json_schema mode, generation is
+ * constrained token-by-token so the model literally cannot emit invalid
+ * or incomplete JSON.
+ *
+ * IMPORTANT: this is built from the actual requested quotas, and only
+ * lists (and requires) the content types that have quota > 0 on at least
+ * one requested date. Earlier this always required all 11 CONTENT_TYPES
+ * keys on every day, even when a day's quota for a type was 0 — asking a
+ * 20B model to reliably emit 8+ empty filler arrays it wasn't otherwise
+ * writing anything for turned out to be an unreliable ask under strict
+ * mode, and caused "missing properties" schema-validation failures. By
+ * dropping never-requested types from the schema entirely, the model
+ * only has to produce keys it's actually generating real content for.
+ *
+ * For a type requested on SOME but not all days, the key stays required
+ * every day (the weekPrompt instruction below tells the model to use an
+ * empty array for the days where its quota is 0).
+ */
+export function buildWeekResponseSchema(
+  quotas: Record<string, DailyContentQuota>,
+): Record<string, unknown> {
+  const activeTypes = CONTENT_TYPES.filter((type) =>
+    Object.values(quotas).some((quota) => (quota[type] ?? 0) > 0),
+  );
+
+  const dayProperties: Record<string, unknown> = {
+    date: { type: "string" },
+  };
+  for (const type of activeTypes) {
+    dayProperties[type] = {
+      type: "array",
+      maxItems: 4,
+      items: WEEK_PIECE_SCHEMA,
+    };
+  }
+  return {
+    type: "object",
+    additionalProperties: false,
+    properties: {
+      days: {
+        type: "array",
+        maxItems: 8,
+        items: {
+          type: "object",
+          additionalProperties: false,
+          properties: dayProperties,
+          required: ["date", ...activeTypes],
+        },
+      },
+    },
+    required: ["days"],
+  };
 }
 
 interface RowInput {

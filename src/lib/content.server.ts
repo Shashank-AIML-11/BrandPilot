@@ -218,18 +218,45 @@ const WEEK_PIECE_SCHEMA = {
       },
     },
   },
-  required: [
+} as const;
+
+/**
+ * Required fields per content type — kept in exact sync with TYPE_SCHEMA
+ * above. WEEK_PIECE_SCHEMA's `properties` block defines every field any
+ * format might use, but `required` is built per-type here rather than
+ * demanding all 9 fields for every piece: asking the model for fields
+ * that don't apply to that format (e.g. "script" on an instagram_post)
+ * was causing intermittent "missing properties" schema-validation
+ * failures under Groq's strict json_schema mode.
+ */
+const TYPE_REQUIRED_FIELDS: Record<ContentType, string[]> = {
+  blog: ["title", "summary", "body", "caption", "hashtags", "time"],
+  linkedin_post: ["title", "summary", "caption", "hashtags", "image_prompt", "time"],
+  instagram_post: ["title", "summary", "caption", "hashtags", "image_prompt", "time"],
+  facebook_post: ["title", "summary", "caption", "hashtags", "image_prompt", "time"],
+  twitter_post: ["title", "summary", "caption", "hashtags", "image_prompt", "time"],
+  pinterest: ["title", "summary", "caption", "hashtags", "image_prompt", "time"],
+  instagram_reel: ["title", "summary", "script", "caption", "hashtags", "image_prompt", "time"],
+  youtube_short: ["title", "summary", "script", "caption", "hashtags", "image_prompt", "time"],
+  tiktok_video: ["title", "summary", "script", "caption", "hashtags", "image_prompt", "time"],
+  product_service_video: [
     "title",
     "summary",
-    "body",
+    "script",
     "caption",
     "hashtags",
     "image_prompt",
-    "script",
     "time",
-    "slides",
   ],
-} as const;
+  carousel: ["title", "summary", "caption", "hashtags", "time", "slides"],
+};
+
+function weekPieceSchemaFor(type: ContentType) {
+  return {
+    ...WEEK_PIECE_SCHEMA,
+    required: TYPE_REQUIRED_FIELDS[type],
+  };
+}
 
 /**
  * Strict JSON schema for the whole weekPrompt() response, passed to
@@ -265,7 +292,7 @@ export function buildWeekResponseSchema(
     dayProperties[type] = {
       type: "array",
       maxItems: 4,
-      items: WEEK_PIECE_SCHEMA,
+      items: weekPieceSchemaFor(type),
     };
   }
   return {

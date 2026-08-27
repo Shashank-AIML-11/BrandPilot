@@ -1157,21 +1157,18 @@ export const queueMonthGeneration = createServerFn({ method: "POST" })
       await import("@/lib/content.server");
 
     /*
-     * Video generation (instagram_reel, youtube_short, tiktok_video,
-     * product_service_video) runs on Gemini and is paused during testing —
-     * zero those four quotas out regardless of what the plan grants, same
-     * as the old single "video: 0" override did for the 3-type system.
+     * TESTING MODE: only linkedin_post and instagram_post generation is
+     * enabled right now. Every other format (blog included) is paused
+     * regardless of what the plan grants — flip individual types back on
+     * by removing them from ALLOWED_TYPES_FOR_NOW below.
      */
-    const VIDEO_TYPES_PAUSED = [
-      "instagram_reel",
-      "youtube_short",
-      "tiktok_video",
-      "product_service_video",
-    ] as const;
+    const ALLOWED_TYPES_FOR_NOW = ["linkedin_post", "instagram_post"] as const;
 
     const monthlyTotals = { ...entitlement.plan.monthlyContent };
-    for (const t of VIDEO_TYPES_PAUSED) {
-      (monthlyTotals as Record<string, number>)[t] = 0;
+    for (const t of CONTENT_TYPES) {
+      if (!(ALLOWED_TYPES_FOR_NOW as readonly string[]).includes(t)) {
+        (monthlyTotals as Record<string, number>)[t] = 0;
+      }
     }
 
     /*

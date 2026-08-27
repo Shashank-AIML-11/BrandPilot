@@ -185,14 +185,15 @@ export async function processVideoQueue(admin: AdminClient, userId?: string) {
   const { data: pendingImages, error: pendingImagesError } = await pendingImagesQuery;
   if (pendingImagesError) throw new Error(pendingImagesError.message);
 
-  const imageResults = await Promise.allSettled(
-    (pendingImages ?? []).map(async (item) => {
+  const imageResults: PromiseSettledResult<string>[] = [];
+  for (const item of pendingImages ?? []) {
+    try {
       const { data: brand } = await admin
         .from("brand_profiles")
         .select("business_name, description, products_services, icp, propositions, tone")
         .eq("user_id", item.user_id)
         .maybeSingle();
-      const bytes = await generateImageBytes(imagePromptFor(item as never, brand));
+      const bytes = await generateImageWithRetry(imagePromptFor(item as never, brand));
       const path = `${item.user_id}/${item.id}.png`;
       const { error: uploadError } = await admin.storage
         .from("content-media")
@@ -204,9 +205,12 @@ export async function processVideoQueue(admin: AdminClient, userId?: string) {
         .eq("id", item.id)
         .is("image_url", null);
       if (updateError) throw new Error(updateError.message);
-      return item.id;
-    }),
-  );
+      imageResults.push({ status: "fulfilled", value: item.id });
+    } catch (error) {
+      imageResults.push({ status: "rejected", reason: error });
+    }
+    await sleep(IMAGE_REQUEST_DELAY_MS);
+  }
   imageResults.forEach((result) => {
     if (result.status === "rejected") console.error(result.reason);
   });
@@ -234,8 +238,9 @@ export async function processVideoQueue(admin: AdminClient, userId?: string) {
     })
     .slice(0, CAROUSEL_BATCH_LIMIT);
 
-  const carouselResults = await Promise.allSettled(
-    pendingCarousels.map(async (item) => {
+  const carouselResults: PromiseSettledResult<string>[] = [];
+  for (const item of pendingCarousels) {
+    try {
       const { data: brand } = await admin
         .from("brand_profiles")
         .select("business_name, description, products_services, icp, propositions, tone")
@@ -251,7 +256,7 @@ export async function processVideoQueue(admin: AdminClient, userId?: string) {
 
       for (let i = 0; i < slides.length; i += 1) {
         if (urls[i]) continue;
-        const bytes = await generateImageBytes(
+        const bytes = await generateImageWithRetry(
           carouselSlideImagePromptFor(slides[i]!, i, slides.length, brand),
         );
         const path = `${item.user_id}/${item.id}-slide-${i}.png`;
@@ -260,6 +265,7 @@ export async function processVideoQueue(admin: AdminClient, userId?: string) {
           .upload(path, bytes, { contentType: "image/png", upsert: true });
         if (uploadError) throw new Error(uploadError.message);
         urls[i] = path;
+        await sleep(IMAGE_REQUEST_DELAY_MS);
       }
 
       const { error: updateError } = await admin
@@ -267,9 +273,11 @@ export async function processVideoQueue(admin: AdminClient, userId?: string) {
         .update({ carousel_image_urls: urls } as never)
         .eq("id", item.id);
       if (updateError) throw new Error(updateError.message);
-      return item.id;
-    }),
-  );
+      carouselResults.push({ status: "fulfilled", value: item.id });
+    } catch (error) {
+      carouselResults.push({ status: "rejected", reason: error });
+    }
+  }
   carouselResults.forEach((result) => {
     if (result.status === "rejected") console.error(result.reason);
   });

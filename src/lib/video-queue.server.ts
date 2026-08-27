@@ -19,6 +19,36 @@ type AdminClient = SupabaseClient<Database>;
 const ACTIVE_LIMIT = 2;
 const IMAGE_BATCH_LIMIT = 6;
 const CAROUSEL_BATCH_LIMIT = 3;
+const IMAGE_REQUEST_DELAY_MS = 1200;
+
+function sleep(ms: number) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+// Pollinations only allows 1 in-flight image request per IP. Serialize every
+// call through here instead of firing them in parallel, and back off/retry
+// specifically on 429s instead of failing the item immediately.
+async function generateImageWithRetry(
+  prompt: Parameters<typeof generateImageBytes>[0],
+  maxAttempts = 3,
+): Promise<Awaited<ReturnType<typeof generateImageBytes>>> {
+  let lastError: unknown;
+  for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+    try {
+      return await generateImageBytes(prompt);
+    } catch (error) {
+      lastError = error;
+      const message = error instanceof Error ? error.message : String(error);
+      const isRateLimit = message.includes("429") || message.includes("Too Many Requests");
+      if (isRateLimit && attempt < maxAttempts) {
+        await sleep(3000 * attempt); // 3s, then 6s
+        continue;
+      }
+      throw error;
+    }
+  }
+  throw lastError;
+}
 
 // Everything except blog (no image at all) and carousel (multiple images,
 // handled in its own loop below) goes through the single-image path —

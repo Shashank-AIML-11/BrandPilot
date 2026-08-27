@@ -4,10 +4,21 @@ export const Route = createFileRoute("/api/public/hooks/process-video-queue")({
   server: {
     handlers: {
       POST: async ({ request }) => {
+        // Vercel Cron Jobs can only send the standard Authorization header
+        // (Bearer <CRON_SECRET>), not a custom apikey header — so this
+        // route accepts EITHER: Vercel's cron secret (for the scheduled
+        // trigger) or the Supabase key (for any manual/service calls).
+        const authHeader = request.headers.get("authorization");
+        const cronSecret = process.env["CRON_SECRET"];
+        const isCronAuthorized =
+          !!cronSecret && authHeader === `Bearer ${cronSecret}`;
+
         const providedKey = request.headers.get("apikey");
         const expectedKey =
           process.env["SUPABASE_PUBLISHABLE_KEY"] ?? process.env["SUPABASE_ANON_KEY"];
-        if (!expectedKey || providedKey !== expectedKey) {
+        const isApiKeyAuthorized = !!expectedKey && providedKey === expectedKey;
+
+        if (!isCronAuthorized && !isApiKeyAuthorized) {
           return Response.json({ error: "Unauthorized" }, { status: 401 });
         }
 
@@ -46,8 +57,6 @@ export const Route = createFileRoute("/api/public/hooks/process-video-queue")({
         }
 
         return Response.json({ success: true, strategy, generation, ...result, ...publishing });
-
-
       },
     },
   },

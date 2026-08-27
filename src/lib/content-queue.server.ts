@@ -7,6 +7,7 @@ import {
   rowsForDay,
   weekPrompt,
   emptyQuota,
+  buildWeekResponseSchema,
   type DailyContentQuota,
 } from "@/lib/content.server";
 import { getGenerationEntitlement } from "@/lib/generation-entitlements";
@@ -81,6 +82,7 @@ export async function processGenerationQueue(admin: AdminClient, userId?: string
     const result = await chatJSON<{ days?: Array<Record<string, unknown>> }>(
       SYSTEM_PROMPT,
       weekPrompt(brand as never, pending, strategy, quotas),
+      buildWeekResponseSchema(),
     );
 
     /*

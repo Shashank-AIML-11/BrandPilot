@@ -31,10 +31,8 @@ export const generateWeek = createServerFn({
   .handler(async ({ data, context }) => {
     const { chatJSON } =
       await import("@/lib/ai.server");
-
     const helpers =
       await import("@/lib/content.server");
-
     const {
       getGenerationEntitlement,
     } =
@@ -119,6 +117,7 @@ export const generateWeek = createServerFn({
           strategy,
           quotaSchedule,
         ),
+        helpers.buildWeekResponseSchema(quotaSchedule),
       );
 
     const days =
@@ -136,7 +135,6 @@ export const generateWeek = createServerFn({
             ) ??
             days[index] ??
             {};
-
           return helpers.rowsForDay(
             day,
             {
@@ -1078,13 +1076,7 @@ export const processVideoQueueNow =
     );
 
 /**
- * Queue an entire month for durable
- * server-side generation.
- */
-
-/**
- * Queue an entire month for durable
- * server-side generation.
+ * Queue TODAY ONLY for durable server-side generation.
  *
  * IMPORTANT:
  * This function ONLY creates the database job.
@@ -1093,6 +1085,16 @@ export const processVideoQueueNow =
  *
  * This prevents the Generate Content button
  * from waiting several minutes.
+ *
+ * NOTE: previously this queued every remaining day in the current
+ * month in one go (today -> end of month), which meant a single
+ * Groq call in generateWeek()/processGenerationQueue() had to
+ * produce valid JSON for many days of content at once — the more
+ * days requested, the larger and more failure-prone that single
+ * JSON response became. Restricting this to today only keeps each
+ * generation batch small and reliable. Re-run "Generate Content"
+ * daily (or wire up a daily cron hitting this + processGenerationQueueNow)
+ * to fill in the rest of the month day by day.
  */
 export const queueMonthGeneration = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
@@ -1127,23 +1129,12 @@ export const queueMonthGeneration = createServerFn({ method: "POST" })
     }
 
     /*
-     * Calculate final day of month.
+     * Generate for TODAY ONLY.
+     *
+     * (Previously this built a full today -> end-of-month date list.
+     * See the note above the function for why that was reduced.)
      */
-    const monthEnd = new Date(`${currentMonth}-01T00:00:00.000Z`);
-    monthEnd.setUTCMonth(monthEnd.getUTCMonth() + 1);
-    monthEnd.setUTCDate(0);
-    const lastDate = monthEnd.toISOString().slice(0, 10);
-
-    /*
-     * Build today -> month end.
-     */
-    const futureDates: string[] = [];
-    for (let date = today; date <= lastDate; ) {
-      futureDates.push(date);
-      const next = new Date(`${date}T00:00:00.000Z`);
-      next.setUTCDate(next.getUTCDate() + 1);
-      date = next.toISOString().slice(0, 10);
-    }
+    const futureDates: string[] = [today];
 
     /*
      * Do not regenerate already posted days.
@@ -1156,18 +1147,7 @@ export const queueMonthGeneration = createServerFn({ method: "POST" })
       .in("scheduled_date", futureDates);
 
     const postedDates = new Set((posted ?? []).map((row) => row.scheduled_date as string));
-    const allDates = futureDates.filter((date) => !postedDates.has(date));
-
-    /*
-     * TESTING PHASE ONLY: only generate TODAY, not the rest of the month.
-     * distributeMonthlyContent() spreads the plan's full monthly quota
-     * across however many dates it's given — restricting to 1 date here
-     * also caps per-type quantity to at most 1 for that day, since it
-     * never schedules more occurrences than there are days to spread
-     * across. Change this back to `allDates` once testing is done.
-     */
-    const TESTING_DAYS_LIMIT = 1;
-    const dates = allDates.slice(0, TESTING_DAYS_LIMIT);
+    const dates = futureDates.filter((date) => !postedDates.has(date));
 
     if (!dates.length) {
       throw new Error("No upcoming days left to generate in this month.");
@@ -1177,32 +1157,29 @@ export const queueMonthGeneration = createServerFn({ method: "POST" })
       await import("@/lib/content.server");
 
     /*
-     * TESTING PHASE ONLY: only generate these 5 types right now, to keep
-     * each AI request comfortably under Groq's per-minute token limit
-     * (openai/gpt-oss-20b on this org's tier is capped at 8000 TPM) while
-     * we confirm the full 11-type pipeline end-to-end. This subsumes the
-     * old video-only pause — none of the 4 video types are in this list
-     * either, so they stay at zero for the same reason they were before.
-     *
-     * To resume all 11 types: set this to [...CONTENT_TYPES] once quotas
-     * and prompt size have been tuned to fit comfortably under your Groq
-     * tier's TPM limit (or you've upgraded that tier). See also
-     * BLOG_WORD_TARGET in content.server.ts, which should go back to
-     * "700-1000" at the same time.
+     * Video generation (instagram_reel, youtube_short, tiktok_video,
+     * product_service_video) runs on Gemini and is paused during testing —
+     * zero those four quotas out regardless of what the plan grants, same
+     * as the old single "video: 0" override did for the 3-type system.
      */
-    const ACTIVE_TYPES_FOR_TESTING = [
-      "blog",
-      "linkedin_post",
-      "instagram_post",
+    const VIDEO_TYPES_PAUSED = [
+      "instagram_reel",
+      "youtube_short",
+      "tiktok_video",
+      "product_service_video",
     ] as const;
 
     const monthlyTotals = { ...entitlement.plan.monthlyContent };
-    for (const t of CONTENT_TYPES) {
-      if (!(ACTIVE_TYPES_FOR_TESTING as readonly string[]).includes(t)) {
-        (monthlyTotals as Record<string, number>)[t] = 0;
-      }
+    for (const t of VIDEO_TYPES_PAUSED) {
+      (monthlyTotals as Record<string, number>)[t] = 0;
     }
 
+    /*
+     * distributeMonthlyContent caps count = Math.min(want, dates.length)
+     * per type — with dates.length === 1 (today only), every type gets
+     * AT MOST 1 piece for today, never the full monthly total. Safe by
+     * construction, no extra capping needed here.
+     */
     const contentPlan = distributeMonthlyContent(dates, monthlyTotals);
 
     const scheduledDates = dates.filter((date) => {

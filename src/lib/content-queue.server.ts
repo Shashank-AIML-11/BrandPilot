@@ -7,103 +7,12 @@ import {
   rowsForDay,
   weekPrompt,
   emptyQuota,
+  buildWeekResponseSchema,
   type DailyContentQuota,
 } from "@/lib/content.server";
 import { getGenerationEntitlement } from "@/lib/generation-entitlements";
 
 type AdminClient = SupabaseClient<Database>;
-
-/**
- * JSON schema used by chatJSON().
- *
- * Kept here because content.server.ts does not export
- * buildWeekResponseSchema(). The schema covers all 11 finalized
- * content types, while weekPrompt() controls which types/quantities
- * are actually requested.
- */
-function buildWeekResponseSchema(): Record<string, unknown> {
-  const pieceProperties = {
-    title: { type: "string" },
-    summary: { type: "string" },
-    body: { type: "string" },
-    caption: { type: "string" },
-    hashtags: { type: "string" },
-    image_prompt: { type: "string" },
-    script: { type: "string" },
-    time: { type: "string" },
-    slides: {
-      type: "array",
-      items: {
-        type: "object",
-        additionalProperties: false,
-        properties: {
-          headline: { type: "string" },
-          subtext: { type: "string" },
-          image_prompt: { type: "string" },
-        },
-        required: ["headline", "subtext", "image_prompt"],
-      },
-    },
-  };
-
-  const contentTypes = [
-    "linkedin_post",
-    "instagram_post",
-    "instagram_reel",
-    "facebook_post",
-    "youtube_short",
-    "twitter_post",
-    "carousel",
-    "blog",
-    "product_service_video",
-    "tiktok_video",
-    "pinterest",
-  ];
-
-  const dayProperties: Record<string, unknown> = {
-    date: { type: "string" },
-  };
-
-  for (const type of contentTypes) {
-    dayProperties[type] = {
-      type: "array",
-      items: {
-        type: "object",
-        additionalProperties: false,
-        properties: pieceProperties,
-        required: [
-          "title",
-          "summary",
-          "body",
-          "caption",
-          "hashtags",
-          "image_prompt",
-          "script",
-          "time",
-          "slides",
-        ],
-      },
-    };
-  }
-
-  return {
-    type: "object",
-    additionalProperties: false,
-    properties: {
-      days: {
-        type: "array",
-        items: {
-          type: "object",
-          additionalProperties: false,
-          properties: dayProperties,
-          required: ["date", ...contentTypes],
-        },
-      },
-    },
-    required: ["days"],
-  };
-}
-
 
 const DAYS_PER_CYCLE = 7;
 
@@ -173,7 +82,7 @@ export async function processGenerationQueue(admin: AdminClient, userId?: string
     const result = await chatJSON<{ days?: Array<Record<string, unknown>> }>(
       SYSTEM_PROMPT,
       weekPrompt(brand as never, pending, strategy, quotas),
-      buildWeekResponseSchema(),
+      buildWeekResponseSchema(quotas),
     );
 
     /*

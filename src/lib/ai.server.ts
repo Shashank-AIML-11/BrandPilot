@@ -58,11 +58,23 @@ export async function chatJSON<T>(
       // truncates the JSON mid-object instead (a "json_validate_failed"
       // / "Failed to generate JSON" error with a cut-off failed_generation
       // dump is the symptom of that, not of the prompt being wrong).
-      // With generation now scoped to 1 day / a few types during testing,
-      // this has headroom to spare; raise it further only if you see
-      // truncation again after widening ACTIVE_TYPES_FOR_TESTING or
-      // TESTING_DAYS_LIMIT in content.functions.ts.
-      max_completion_tokens: 4000,
+      //
+      // Scope as of this change: 1 piece of each of the 11 content types
+      // for a single day (11 items/day, not the earlier per-plan quota
+      // of up to 34/day). Measured output for that scope runs roughly
+      // 3,700–4,400 tokens (blog's ~300-word body and the four video
+      // scripts are the heaviest pieces); prompt/input tokens run
+      // roughly 1,200–2,500 depending on Brand Profile length. 5500
+      // leaves headroom above the observed output size while keeping
+      // input + this cap comfortably under Groq's 8,000 TPM free-tier
+      // limit for the current 11-items/day scope. Raise this only if
+      // you see truncation again after widening quotas back up (e.g.
+      // multiple pieces per type per day, or more days per batch) —
+      // and if the input+output total creeps back toward 8,000 TPM,
+      // that's the signal to split generation into multiple smaller
+      // calls (a few content types per call) rather than raising this
+      // further.
+      max_completion_tokens: 5500,
     }),
   });
 

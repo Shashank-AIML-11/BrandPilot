@@ -59,22 +59,19 @@ export async function chatJSON<T>(
       // / "Failed to generate JSON" error with a cut-off failed_generation
       // dump is the symptom of that, not of the prompt being wrong).
       //
-      // Scope as of this change: 1 piece of each of the 11 content types
-      // for a single day (11 items/day, not the earlier per-plan quota
-      // of up to 34/day). Measured output for that scope runs roughly
-      // 3,700–4,400 tokens (blog's ~300-word body and the four video
-      // scripts are the heaviest pieces); prompt/input tokens run
-      // roughly 1,200–2,500 depending on Brand Profile length. 5500
-      // leaves headroom above the observed output size while keeping
-      // input + this cap comfortably under Groq's 8,000 TPM free-tier
-      // limit for the current 11-items/day scope. Raise this only if
-      // you see truncation again after widening quotas back up (e.g.
-      // multiple pieces per type per day, or more days per batch) —
-      // and if the input+output total creeps back toward 8,000 TPM,
-      // that's the signal to split generation into multiple smaller
-      // calls (a few content types per call) rather than raising this
-      // further.
-      max_completion_tokens: 5500,
+      // Scope as of this change: content-queue.server.ts now batches
+      // generation into groups of 4 content types per call (see
+      // TYPE_BATCH_SIZE there), not all 11 at once. A 4-item batch's
+      // real output need tops out around ~1,600–2,400 tokens (the
+      // heaviest batches contain a video type's script or blog's ~300-
+      // word body). 2800 leaves solid headroom above that while keeping
+      // input (~3,000–3,500 for brand context + rules + a 4-type
+      // schema) + this cap safely under Groq's 8,000 TPM free-tier
+      // limit. If TYPE_BATCH_SIZE changes, this needs re-tuning to
+      // match — smaller batches need a smaller cap, larger batches need
+      // a larger one, and either direction risks tipping over 8,000 if
+      // left at a value sized for the old batch size.
+      max_completion_tokens: 2800,
     }),
   });
 

@@ -1129,12 +1129,33 @@ export const queueMonthGeneration = createServerFn({ method: "POST" })
     }
 
     /*
-     * Generate for TODAY ONLY.
+     * ============================================================
+     * ACTIVE-DAY SCHEDULE
+     * ============================================================
+     * TESTING_MODE=true: generate for TODAY only, all other days in
+     * the month stay paused/untouched. This is the current setting.
      *
-     * (Previously this built a full today -> end-of-month date list.
-     * See the note above the function for why that was reduced.)
+     * TESTING_MODE=false (production behaviour, once enabled): 4
+     * active days per month, spaced 6 days apart, starting from the
+     * day the user's subscription was purchased. NOT YET IMPLEMENTED
+     * below — this needs the subscription start-date column/table
+     * name to compute correctly (e.g. a `subscriptions.created_at` or
+     * `current_period_start` field via getGenerationEntitlement) and
+     * is left as a clear TODO rather than guessed at, to avoid the
+     * same kind of mismatch bug we hit earlier with an assumed schema.
+     * Flip TESTING_MODE to false only once that logic is filled in.
      */
-    const futureDates: string[] = [today];
+    const TESTING_MODE = true;
+
+    let futureDates: string[];
+    if (TESTING_MODE) {
+      futureDates = [today];
+    } else {
+      // TODO: replace with real 4-days/month, 6-day-gap-from-subscription-
+      // start scheduling once the subscription start date source is known.
+      // Placeholder keeps behaviour identical to testing mode until then.
+      futureDates = [today];
+    }
 
     /*
      * Do not regenerate already posted days.
@@ -1153,31 +1174,20 @@ export const queueMonthGeneration = createServerFn({ method: "POST" })
       throw new Error("No upcoming days left to generate in this month.");
     }
 
-    const { distributeMonthlyContent, renderingRowsForDay, activePlatforms, CONTENT_TYPES } =
+    const { flatDailyQuota, renderingRowsForDay, activePlatforms, CONTENT_TYPES } =
       await import("@/lib/content.server");
 
     /*
-     * TESTING MODE: only linkedin_post and instagram_post generation is
-     * enabled right now. Every other format (blog included) is paused
-     * regardless of what the plan grants — flip individual types back on
-     * by removing them from ALLOWED_TYPES_FOR_NOW below.
+     * QUOTA: exactly 1 piece of EVERY content type (all 11), for each
+     * active date — fixed, independent of plan tier ("1 of every type
+     * per day, 4 of every type per month" per product decision). This
+     * replaces the previous plan-based distributeMonthlyContent() call
+     * and the ALLOWED_TYPES_FOR_NOW 2-type restriction that used to sit
+     * here. Sized so a single active day (11 items) comfortably fits
+     * one Groq call under the 8,000 TPM free-tier limit — see the
+     * max_completion_tokens comment in ai.server.ts for the token math.
      */
-    const ALLOWED_TYPES_FOR_NOW = ["linkedin_post", "instagram_post"] as const;
-
-    const monthlyTotals = { ...entitlement.plan.monthlyContent };
-    for (const t of CONTENT_TYPES) {
-      if (!(ALLOWED_TYPES_FOR_NOW as readonly string[]).includes(t)) {
-        (monthlyTotals as Record<string, number>)[t] = 0;
-      }
-    }
-
-    /*
-     * distributeMonthlyContent caps count = Math.min(want, dates.length)
-     * per type — with dates.length === 1 (today only), every type gets
-     * AT MOST 1 piece for today, never the full monthly total. Safe by
-     * construction, no extra capping needed here.
-     */
-    const contentPlan = distributeMonthlyContent(dates, monthlyTotals);
+    const contentPlan = flatDailyQuota(dates);
 
     const scheduledDates = dates.filter((date) => {
       const quota = contentPlan[date];

@@ -105,6 +105,29 @@ export function distributeMonthlyContent(
   return schedule;
 }
 
+/**
+ * Fixed quota model: exactly ONE piece of EVERY content type, for each
+ * given (active) date — independent of plan tier. Replaces
+ * distributeMonthlyContent for queueMonthGeneration's day-schedule, which
+ * now decides "how many active days this month" separately (see
+ * queueMonthGeneration in content.functions.ts) rather than deriving a
+ * per-day count from a monthly total divided across all days.
+ *
+ * With 4 active days/month (the non-testing schedule) this yields exactly
+ * 4 pieces of each of the 11 types per month, 44 pieces total across the
+ * month, 11 pieces per active day — sized to fit one Groq call per day
+ * comfortably under the 8,000 TPM free-tier limit (see the comment on
+ * max_completion_tokens in ai.server.ts for the token math).
+ */
+export function flatDailyQuota(dates: string[]): Record<string, DailyContentQuota> {
+  return Object.fromEntries(
+    dates.map((date) => [
+      date,
+      Object.fromEntries(CONTENT_TYPES.map((t) => [t, 1])) as DailyContentQuota,
+    ]),
+  );
+}
+
 export const DEFAULT_PLATFORMS = [
   "LinkedIn",
   "Instagram",

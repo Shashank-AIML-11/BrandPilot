@@ -361,14 +361,25 @@ const PIECE_SCHEMA = {
 } as const;
 
 /** Builds the strict Groq response schema for the weekly generation call.
- *  Always covers all 11 CONTENT_TYPES regardless of that batch's quotas —
- *  weekPrompt() instructs the model to send [] for any type not requested
- *  that day, which keeps the actual response shape matching this schema. */
-export function buildWeekResponseSchema(): Record<string, unknown> {
+ *  Accepts an optional subset of CONTENT_TYPES so a single call can cover
+ *  just a few types at a time (see BATCH_SIZE / batching in
+ *  content-queue.server.ts) — keeps prompt + schema + expected output
+ *  small enough to fit Groq's free-tier TPM limit. Defaults to all 11
+ *  types for any caller that doesn't pass a subset. Falls back to all
+ *  types if given something that isn't a real array (defensive: an
+ *  existing caller, generateWeek() in content.functions.ts, currently
+ *  passes a quota object here by mistake — this keeps that unrelated,
+ *  pre-existing call path behaving exactly as it did before, rather
+ *  than crashing on an unrelated change). */
+export function buildWeekResponseSchema(
+  types: readonly ContentType[] = CONTENT_TYPES,
+): Record<string, unknown> {
+  const activeTypes = Array.isArray(types) && types.length ? types : CONTENT_TYPES;
+
   const dayProperties: Record<string, unknown> = {
     date: { type: "string" },
   };
-  for (const type of CONTENT_TYPES) {
+  for (const type of activeTypes) {
     dayProperties[type] = {
       type: "array",
       items: PIECE_SCHEMA,
@@ -383,7 +394,7 @@ export function buildWeekResponseSchema(): Record<string, unknown> {
         items: {
           type: "object",
           properties: dayProperties,
-          required: ["date", ...CONTENT_TYPES],
+          required: ["date", ...activeTypes],
           additionalProperties: false,
         },
       },
@@ -398,13 +409,14 @@ export function weekPrompt(
   dates: string[],
   strategy?: StrategyDirective | null,
   quotas?: Record<string, DailyContentQuota>,
+  types: readonly ContentType[] = CONTENT_TYPES,
 ): string {
   // Only pay the prompt-token cost of TYPE_SCHEMA explanations for types
-  // actually requested somewhere in this batch. The response schema itself
-  // (buildWeekResponseSchema) still covers all 11 types either way — a
-  // zero-quota type just gets an empty array instead of a full explanation
-  // of what its pieces should contain.
-  const activeTypes = CONTENT_TYPES.filter((t) =>
+  // actually requested somewhere in this batch, AND only within the given
+  // `types` subset — this is what makes batched calls (a few types per
+  // call) actually smaller, not just the response schema.
+  const typePool = Array.isArray(types) && types.length ? types : CONTENT_TYPES;
+  const activeTypes = typePool.filter((t) =>
     dates.some((date) => (quotas?.[date]?.[t] ?? 0) > 0),
   );
 
@@ -430,8 +442,8 @@ ${requestedContent}
 
 ${schemaLines}
 
-The response schema requires ALL ${CONTENT_TYPES.length} content-type keys to be present on every day object: ${CONTENT_TYPES.join(", ")}.
-For any type with a requested quantity of zero (or not listed above), return that key as an empty array [] — never omit the key.
+The response schema requires ALL ${typePool.length} content-type keys covered in this request to be present on every day object: ${typePool.join(", ")}.
+For any of these types with a requested quantity of zero (or not listed above), return that key as an empty array [] — never omit the key.
 
 Every generated piece object must include every one of these fields: title, summary, caption, hashtags, time, image_prompt, body, script, slides.
 Set a field to the JSON value null when it does not apply to that content type:
@@ -452,7 +464,7 @@ Rules:
 - Vary angles across the week and never repeat a hook, headline structure or example twice: education, product spotlight, ICP pain point, myth-busting, proof/objection handling, behind-the-scenes, industry insight, offer — always about THIS brand.
 
 Return JSON shaped exactly as:
-{ "days": [ { "date": "YYYY-MM-DD", ${CONTENT_TYPES.map((t) => `"${t}": [...]`).join(", ")} } ] }`;
+{ "days": [ { "date": "YYYY-MM-DD", ${typePool.map((t) => `"${t}": [...]`).join(", ")} } ] }`;
 }
 
 interface RowInput {

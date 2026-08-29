@@ -72,13 +72,17 @@ export async function chatJSON<T>(
       // 5500, meaning the untrimmed prompt's real input size was
       // 10103 - 5500 = 4603 tokens. The Rules/field-explanation section
       // in weekPrompt() (content.server.ts) has since been trimmed for
-      // extra headroom. 3200 keeps input (~4300-4600) + this cap safely
-      // under 8,000, leaving ~3,000-3,700 tokens for actual output — a
-      // bit tight for a day where blog + multiple video scripts land in
-      // the same request, so watch for "json_validate_failed" truncation
-      // errors specifically (different from "Request too large" or
-      // "rate limit reached"): that's the signal this needs to go up
-      // slightly, trading off against the TPM ceiling.
+      // extra headroom, and 3200 still hit "json_validate_failed"
+      // truncation on the worst-case day (1 blog + all 4 video-script
+      // types + 1 carousel + 5 image posts — every testing-mode day is
+      // exactly this mix, so this isn't a rare edge case). Bumped to
+      // 3600: input (~4300-4600) + this cap stays under 8,000 TPM even
+      // at the higher end, while giving the last item(s) in the array
+      // enough room to finish instead of being cut off mid-object.
+      // If a 429 ever reports "Requested" above ~8000 at this cap, that
+      // pins down the real input size precisely — trim weekPrompt()
+      // further (or drop back toward 3200-3400) rather than raising this
+      // again, since we're now close to the 8,000 ceiling either way.
       max_completion_tokens: 3600,
     }),
   });

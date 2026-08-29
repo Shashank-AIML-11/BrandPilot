@@ -300,65 +300,74 @@ const TYPE_SCHEMA: Record<ContentType, string> = {
   carousel: `{ "title", "summary", "caption", "hashtags", "time", "slides": [ { "headline", "subtext", "image_prompt" }, ... 3-6 slides ] }`,
 };
 
-/**
- * Groq's strict json_schema mode has no concept of an optional property:
- * EVERY key listed in an object's "properties" must also appear in that
- * object's "required" array, or Groq rejects the schema itself before
- * generation even starts (error code: invalid_request_error /
- * "invalid JSON schema for response_format ... required is required to be
- * supplied and to be an array including every key in properties").
- *
- * To keep fields that only apply to SOME content types (image_prompt,
- * body, script, slides) without violating that rule, they stay in
- * "required" but their type becomes a nullable union ["string", "null"]
- * (or ["array", "null"] for slides). The model must then explicitly send
- * null for anything that doesn't apply to that type, instead of omitting
- * the key. weekPrompt() below tells the model exactly when to do that,
- * and clean() (used in rowsForDay) already treats null exactly like a
- * missing field, so no downstream changes are needed to consume this.
- *
- * Same logic applies one level up: every day object must always carry
- * all 11 content-type keys, using an empty array [] for any type with a
- * zero quota that day, rather than omitting the key.
- */
-const PIECE_SCHEMA = {
+const CAROUSEL_SLIDE_SCHEMA = {
   type: "object",
   properties: {
+    headline: { type: "string" },
+    subtext: { type: "string" },
+    image_prompt: { type: "string" },
+  },
+  required: ["headline", "subtext", "image_prompt"],
+  additionalProperties: false,
+} as const;
+
+/**
+ * Per-type piece schema. Groq's strict json_schema mode requires every
+ * declared property to also be in "required" — the previous approach
+ * worked around that with ONE shared schema listing every possible field
+ * (image_prompt, body, script, slides) as required-but-nullable, relying
+ * on the model to explicitly send `null` for whatever didn't apply to a
+ * given type. In practice the model didn't always do that (a blog piece
+ * validating without image_prompt/script/slides is exactly that failing).
+ *
+ * A schema that simply never declares a field a type doesn't need can't
+ * fail that way — there's nothing to remember to null out, and
+ * additionalProperties:false rejects the model trying to add it anyway.
+ */
+function pieceSchemaForType(type: ContentType): Record<string, unknown> {
+  const base = {
     title: { type: "string" },
     summary: { type: "string" },
     caption: { type: "string" },
     hashtags: { type: "string" },
     time: { type: "string" },
-    image_prompt: { type: ["string", "null"] },
-    body: { type: ["string", "null"] },
-    script: { type: ["string", "null"] },
-    slides: {
-      type: ["array", "null"],
-      items: {
-        type: "object",
-        properties: {
-          headline: { type: "string" },
-          subtext: { type: "string" },
-          image_prompt: { type: "string" },
-        },
-        required: ["headline", "subtext", "image_prompt"],
-        additionalProperties: false,
-      },
-    },
-  },
-  required: [
-    "title",
-    "summary",
-    "caption",
-    "hashtags",
-    "time",
-    "image_prompt",
-    "body",
-    "script",
-    "slides",
-  ],
-  additionalProperties: false,
-} as const;
+  };
+
+  if (type === "blog") {
+    return {
+      type: "object",
+      properties: { ...base, body: { type: "string" } },
+      required: ["title", "summary", "caption", "hashtags", "time", "body"],
+      additionalProperties: false,
+    };
+  }
+
+  if (type === "carousel") {
+    return {
+      type: "object",
+      properties: { ...base, slides: { type: "array", items: CAROUSEL_SLIDE_SCHEMA } },
+      required: ["title", "summary", "caption", "hashtags", "time", "slides"],
+      additionalProperties: false,
+    };
+  }
+
+  if ((VIDEO_TYPES as readonly string[]).includes(type)) {
+    return {
+      type: "object",
+      properties: { ...base, script: { type: "string" }, image_prompt: { type: "string" } },
+      required: ["title", "summary", "caption", "hashtags", "time", "script", "image_prompt"],
+      additionalProperties: false,
+    };
+  }
+
+  // IMAGE_TYPES: linkedin_post, instagram_post, facebook_post, twitter_post, pinterest
+  return {
+    type: "object",
+    properties: { ...base, image_prompt: { type: "string" } },
+    required: ["title", "summary", "caption", "hashtags", "time", "image_prompt"],
+    additionalProperties: false,
+  };
+}
 
 /** Builds the strict Groq response schema for the weekly generation call.
  *  Accepts an optional subset of CONTENT_TYPES so a single call can cover
@@ -382,7 +391,7 @@ export function buildWeekResponseSchema(
   for (const type of activeTypes) {
     dayProperties[type] = {
       type: "array",
-      items: PIECE_SCHEMA,
+      items: pieceSchemaForType(type),
     };
   }
 
@@ -445,12 +454,7 @@ ${schemaLines}
 The response schema requires ALL ${typePool.length} content-type keys covered in this request to be present on every day object: ${typePool.join(", ")}.
 For any of these types with a requested quantity of zero (or not listed above), return that key as an empty array [] — never omit the key.
 
-Every piece object must include: title, summary, caption, hashtags, time, image_prompt, body, script, slides.
-Use JSON null for fields that don't apply to a type:
-- body: null except blog.
-- script: null except instagram_reel, youtube_short, tiktok_video, product_service_video.
-- slides: null except carousel.
-- image_prompt: null only for blog; every other type needs a real value.
+Each type's piece object must include exactly the fields listed for it above — no more, no fewer. Do not add image_prompt, script, body, or slides to a piece unless that type's field list above includes it.
 
 Rules:
 - Titles reference the brand's actual product/service/audience/keyword — no generic titles or buzzwords.

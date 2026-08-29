@@ -8,6 +8,7 @@ import {
   weekPrompt,
   emptyQuota,
   buildWeekResponseSchema,
+  CONTENT_TYPES,
   type DailyContentQuota,
 } from "@/lib/content.server";
 import { getGenerationEntitlement } from "@/lib/generation-entitlements";
@@ -79,10 +80,19 @@ export async function processGenerationQueue(admin: AdminClient, userId?: string
     const { latestStrategy } = await import("@/lib/strategy-queue.server");
     const strategy = await latestStrategy(admin, job.user_id);
 
+    // Only ask for (and only require in the schema) the types that
+    // actually have quota somewhere in this batch — asking the model to
+    // also emit empty arrays for 8 unused types on every day, and
+    // building schema branches for them, is pure waste when testing
+    // has most types zeroed out.
+    const batchActiveTypes = CONTENT_TYPES.filter((t) =>
+      pending.some((date) => (quotas[date]?.[t] ?? 0) > 0),
+    );
+
     const result = await chatJSON<{ days?: Array<Record<string, unknown>> }>(
       SYSTEM_PROMPT,
-      weekPrompt(brand as never, pending, strategy, quotas),
-      buildWeekResponseSchema(),
+      weekPrompt(brand as never, pending, strategy, quotas, batchActiveTypes),
+      buildWeekResponseSchema(batchActiveTypes),
     );
 
     const days = (result.days ?? []) as Array<{ date?: string }>;

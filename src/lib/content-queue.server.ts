@@ -140,10 +140,17 @@ export async function processGenerationQueue(admin: AdminClient, userId?: string
         combinedByDate.set(date, existing);
       });
 
-      // Small gap between calls — defensive against any cumulative
-      // per-minute throughput limit on top of the per-request size cap.
+      // TPM is cumulative across a rolling minute, not just a per-request
+      // cap — three ~6,000-token batches fired seconds apart can still
+      // sum past 8,000 within the same minute even though each one is
+      // individually small enough (this is what an "AI rate limit
+      // reached" / 429 after batching means, vs. the earlier 413 "too
+      // large" which was a single request exceeding the cap on its
+      // own). 12s between batches keeps the rolling-minute sum under
+      // budget in practice. If you see 429s again, raise this further
+      // before anything else — it's cheaper than shrinking batches.
       if (batchIndex < typeBatches.length - 1) {
-        await sleep(800);
+        await sleep(12000);
       }
     }
 

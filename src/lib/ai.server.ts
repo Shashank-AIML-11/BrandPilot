@@ -79,7 +79,7 @@ export async function chatJSON<T>(
       // errors specifically (different from "Request too large" or
       // "rate limit reached"): that's the signal this needs to go up
       // slightly, trading off against the TPM ceiling.
-      max_completion_tokens: 3200,
+      max_completion_tokens: 3600,
     }),
   });
 

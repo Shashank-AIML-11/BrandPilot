@@ -17,9 +17,17 @@ import {
 type AdminClient = SupabaseClient<Database>;
 
 const ACTIVE_LIMIT = 2;
-const IMAGE_BATCH_LIMIT = 6;
-const CAROUSEL_BATCH_LIMIT = 3;
-const IMAGE_REQUEST_DELAY_MS = 1200;
+// Kept intentionally tiny: each processVideoQueue call does at most ONE
+// image generation now (see below), so a single invocation stays fast
+// regardless of the actual Vercel function timeout in effect — which,
+// after removing the invalid `functions` glob from vercel.json, is
+// whatever this app's Nitro/Vercel preset defaults to (likely 10s on
+// Hobby) rather than an explicit 60s. A batch of several slow Pollinations
+// calls per call risked the function being killed mid-batch before any
+// progress was saved. The client's 4-second poll loop (calendar.tsx) now
+// does the batching by calling this repeatedly instead.
+const IMAGE_BATCH_LIMIT = 1;
+const CAROUSEL_BATCH_LIMIT = 1;
 
 function sleep(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -209,7 +217,6 @@ export async function processVideoQueue(admin: AdminClient, userId?: string) {
     } catch (error) {
       imageResults.push({ status: "rejected", reason: error });
     }
-    await sleep(IMAGE_REQUEST_DELAY_MS);
   }
   imageResults.forEach((result) => {
     if (result.status === "rejected") console.error(result.reason);
@@ -218,14 +225,17 @@ export async function processVideoQueue(admin: AdminClient, userId?: string) {
 
   // Carousels don't fit the single image_url path above — each one needs
   // multiple slide images. Same "keep working after the calendar closes"
-  // principle: pick up carousels with any un-rendered slide and fill them in.
+  // principle: pick up carousels with any un-rendered slide and fill them
+  // in — but only ONE slide per call (see IMAGE_BATCH_LIMIT comment above
+  // for why), saving immediately after that slide so a later slide failing
+  // on a future call can never discard already-completed ones.
   let pendingCarouselsQuery = admin
     .from("content_items")
     .select("id, user_id, carousel_slides, carousel_image_urls")
     .eq("type", "carousel")
     .order("scheduled_date", { ascending: true })
     .order("scheduled_time", { ascending: true })
-    .limit(CAROUSEL_BATCH_LIMIT * 4); // over-fetch; most will already be complete
+    .limit(CAROUSEL_BATCH_LIMIT * 8); // over-fetch; most will already be complete
   if (userId) pendingCarouselsQuery = pendingCarouselsQuery.eq("user_id", userId);
   const { data: pendingCarouselsRaw, error: pendingCarouselsError } = await pendingCarouselsQuery;
   if (pendingCarouselsError) throw new Error(pendingCarouselsError.message);
@@ -254,19 +264,18 @@ export async function processVideoQueue(admin: AdminClient, userId?: string) {
       }>) ?? [];
       const urls = [...((item.carousel_image_urls as string[] | null) ?? [])];
 
-      for (let i = 0; i < slides.length; i += 1) {
-        if (urls[i]) continue;
-        const bytes = await generateImageWithRetry(
-          carouselSlideImagePromptFor(slides[i]!, i, slides.length, brand),
-        );
-        const path = `${item.user_id}/${item.id}-slide-${i}.png`;
-        const { error: uploadError } = await admin.storage
-          .from("content-media")
-          .upload(path, bytes, { contentType: "image/png", upsert: true });
-        if (uploadError) throw new Error(uploadError.message);
-        urls[i] = path;
-        await sleep(IMAGE_REQUEST_DELAY_MS);
-      }
+      const nextIndex = slides.findIndex((_, i) => !urls[i]);
+      if (nextIndex === -1) continue; // shouldn't happen given the filter above, but be safe
+
+      const bytes = await generateImageWithRetry(
+        carouselSlideImagePromptFor(slides[nextIndex]!, nextIndex, slides.length, brand),
+      );
+      const path = `${item.user_id}/${item.id}-slide-${nextIndex}.png`;
+      const { error: uploadError } = await admin.storage
+        .from("content-media")
+        .upload(path, bytes, { contentType: "image/png", upsert: true });
+      if (uploadError) throw new Error(uploadError.message);
+      urls[nextIndex] = path;
 
       const { error: updateError } = await admin
         .from("content_items")

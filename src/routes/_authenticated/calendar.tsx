@@ -370,7 +370,7 @@ function CalendarPage() {
         if (!cancelled) {
           // Keep polling — there may be more items still missing media,
           // or new ones queued after this batch started.
-          timer = setTimeout(processNextMediaBatch, 4000);
+          timer = setTimeout(processNextMediaBatch, 2000);
         }
       }
     };

@@ -1,0 +1,8 @@
+{
+  "crons": [
+    {
+      "path": "/api/public/hooks/process-video-queue",
+      "schedule": "0 3 * * *"
+    }
+  ]
+}

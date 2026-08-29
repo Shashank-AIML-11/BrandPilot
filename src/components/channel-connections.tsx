@@ -128,7 +128,7 @@ export function ChannelConnections() {
                     size="sm"
                     variant="secondary"
                     onClick={() => connect.mutate(channel.key)}
-                    disabled={connect.isPending}
+                    disabled={connect}
                   >
                     <Link2 className="mr-1.5 h-3.5 w-3.5" /> Connect
                   </Button>

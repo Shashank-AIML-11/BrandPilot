@@ -1,9 +1,4 @@
 {
-  "functions": {
-    "api/**/*.ts": {
-      "maxDuration": 60
-    }
-  },
   "crons": [
     {
       "path": "/api/public/hooks/process-video-queue",

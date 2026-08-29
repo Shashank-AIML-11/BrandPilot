@@ -8,8 +8,6 @@ import {
   weekPrompt,
   emptyQuota,
   buildWeekResponseSchema,
-  CONTENT_TYPES,
-  type ContentType,
   type DailyContentQuota,
 } from "@/lib/content.server";
 import { getGenerationEntitlement } from "@/lib/generation-entitlements";
@@ -17,33 +15,6 @@ import { getGenerationEntitlement } from "@/lib/generation-entitlements";
 type AdminClient = SupabaseClient<Database>;
 
 const DAYS_PER_CYCLE = 7;
-
-/**
- * How many content types go into a single Groq call. A single call
- * covering all 11 types was landing at ~10,000 combined input+output
- * tokens even at 1 piece per type (Requested 10103, Limit 8000) — the
- * brand-context/rules portion of the prompt alone runs ~3,000+ tokens
- * regardless of how many types are requested, and grows further with
- * every type's schema explanation and expected output. Splitting into
- * groups of 4 (11 types → 3 calls: 4, 4, 3) keeps each individual call
- * comfortably under the 8,000 TPM free-tier limit. If you widen quotas
- * back up (more than 1 piece per type per day) and start seeing
- * "Request too large" again, lower this further before raising
- * max_completion_tokens in ai.server.ts.
- */
-const TYPE_BATCH_SIZE = 4;
-
-function chunkTypes(types: readonly ContentType[], size: number): ContentType[][] {
-  const batches: ContentType[][] = [];
-  for (let i = 0; i < types.length; i += size) {
-    batches.push(types.slice(i, i + size) as ContentType[]);
-  }
-  return batches;
-}
-
-function sleep(ms: number) {
-  return new Promise((resolve) => setTimeout(resolve, ms));
-}
 
 /**
  * Generates one chunk of days for a queued month job.
@@ -108,53 +79,13 @@ export async function processGenerationQueue(admin: AdminClient, userId?: string
     const { latestStrategy } = await import("@/lib/strategy-queue.server");
     const strategy = await latestStrategy(admin, job.user_id);
 
-    /*
-     * ============================================================
-     * BATCHED GENERATION — a few content types per Groq call
-     * ============================================================
-     * Each batch's response only contains that batch's types; results
-     * are merged into one combined day-object per date (same shape the
-     * rest of this function already expects) before building rows.
-     */
-    const combinedByDate = new Map<string, Record<string, unknown>>(
-      pending.map((date) => [date, { date } as Record<string, unknown>]),
+    const result = await chatJSON<{ days?: Array<Record<string, unknown>> }>(
+      SYSTEM_PROMPT,
+      weekPrompt(brand as never, pending, strategy, quotas),
+      buildWeekResponseSchema(),
     );
 
-    const typeBatches = chunkTypes(CONTENT_TYPES, TYPE_BATCH_SIZE);
-
-    for (const [batchIndex, batchTypes] of typeBatches.entries()) {
-      const batchResult = await chatJSON<{ days?: Array<Record<string, unknown>> }>(
-        SYSTEM_PROMPT,
-        weekPrompt(brand as never, pending, strategy, quotas, batchTypes),
-        buildWeekResponseSchema(batchTypes),
-      );
-
-      const batchDays = (batchResult.days ?? []) as Array<{ date?: string } & Record<string, unknown>>;
-
-      pending.forEach((date, index) => {
-        const day = batchDays.find((d) => d.date === date) ?? batchDays[index] ?? {};
-        const existing = combinedByDate.get(date) ?? ({ date } as Record<string, unknown>);
-        for (const type of batchTypes) {
-          existing[type] = (day as Record<string, unknown>)[type] ?? [];
-        }
-        combinedByDate.set(date, existing);
-      });
-
-      // TPM is cumulative across a rolling minute, not just a per-request
-      // cap — three ~6,000-token batches fired seconds apart can still
-      // sum past 8,000 within the same minute even though each one is
-      // individually small enough (this is what an "AI rate limit
-      // reached" / 429 after batching means, vs. the earlier 413 "too
-      // large" which was a single request exceeding the cap on its
-      // own). 12s between batches keeps the rolling-minute sum under
-      // budget in practice. If you see 429s again, raise this further
-      // before anything else — it's cheaper than shrinking batches.
-      if (batchIndex < typeBatches.length - 1) {
-        await sleep(12000);
-      }
-    }
-
-    const days = pending.map((date) => combinedByDate.get(date)!);
+    const days = (result.days ?? []) as Array<{ date?: string }>;
 
     /*
      * IMPORTANT: the user may have clicked "Refresh Calendar" while the AI

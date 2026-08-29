@@ -59,19 +59,27 @@ export async function chatJSON<T>(
       // / "Failed to generate JSON" error with a cut-off failed_generation
       // dump is the symptom of that, not of the prompt being wrong).
       //
-      // Scope as of this change: content-queue.server.ts now batches
-      // generation into groups of 4 content types per call (see
-      // TYPE_BATCH_SIZE there), not all 11 at once. A 4-item batch's
-      // real output need tops out around ~1,600–2,400 tokens (the
-      // heaviest batches contain a video type's script or blog's ~300-
-      // word body). 2800 leaves solid headroom above that while keeping
-      // input (~3,000–3,500 for brand context + rules + a 4-type
-      // schema) + this cap safely under Groq's 8,000 TPM free-tier
-      // limit. If TYPE_BATCH_SIZE changes, this needs re-tuning to
-      // match — smaller batches need a smaller cap, larger batches need
-      // a larger one, and either direction risks tipping over 8,000 if
-      // left at a value sized for the old batch size.
-      max_completion_tokens: 2800,
+      // Scope: single call, all 11 content types, 1 piece of each per
+      // active day. Splitting into multiple smaller calls was tried and
+      // reverted — each call repeats the same large fixed prompt
+      // overhead (brand context + rules), so multiple calls within the
+      // same rolling minute summed their overhead alone past the 8,000
+      // TPM limit before counting any actual content. A single call
+      // avoids that entirely.
+      //
+      // This value is based on MEASURED data, not estimate: an actual
+      // 429 response reported "Requested 10103" when this was set to
+      // 5500, meaning the untrimmed prompt's real input size was
+      // 10103 - 5500 = 4603 tokens. The Rules/field-explanation section
+      // in weekPrompt() (content.server.ts) has since been trimmed for
+      // extra headroom. 3200 keeps input (~4300-4600) + this cap safely
+      // under 8,000, leaving ~3,000-3,700 tokens for actual output — a
+      // bit tight for a day where blog + multiple video scripts land in
+      // the same request, so watch for "json_validate_failed" truncation
+      // errors specifically (different from "Request too large" or
+      // "rate limit reached"): that's the signal this needs to go up
+      // slightly, trading off against the TPM ceiling.
+      max_completion_tokens: 3200,
     }),
   });
 

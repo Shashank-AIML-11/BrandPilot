@@ -445,23 +445,23 @@ ${schemaLines}
 The response schema requires ALL ${typePool.length} content-type keys covered in this request to be present on every day object: ${typePool.join(", ")}.
 For any of these types with a requested quantity of zero (or not listed above), return that key as an empty array [] — never omit the key.
 
-Every generated piece object must include every one of these fields: title, summary, caption, hashtags, time, image_prompt, body, script, slides.
-Set a field to the JSON value null when it does not apply to that content type:
-- "body" is null for every type except blog.
-- "script" is null for every type except instagram_reel, youtube_short, tiktok_video, product_service_video.
-- "slides" is null for every type except carousel.
-- "image_prompt" is null only for blog; every other type must supply a real value.
+Every piece object must include: title, summary, caption, hashtags, time, image_prompt, body, script, slides.
+Use JSON null for fields that don't apply to a type:
+- body: null except blog.
+- script: null except instagram_reel, youtube_short, tiktok_video, product_service_video.
+- slides: null except carousel.
+- image_prompt: null only for blog; every other type needs a real value.
 
 Rules:
-- Every title must reference the brand's own product, service, audience or keyword — no generic titles, no buzzword soup.
-- "summary" states which product/service and which value proposition the piece pushes, and who it is for.
-- "hashtags" is a single space-separated string of 4-6 hashtags built from the brand's keywords, niche and business name.
-- "caption" is a ready-to-post social caption, length and tone matched to the platform, in the brand's tone.
-- Video "script" (instagram_reel, youtube_short, tiktok_video, product_service_video) is spoken narration with [HOOK], [BODY], [CTA] markers — complete spoken sentences, no bullet fragments, must name the business and its product/service. Reels/Shorts/TikTok scripts run 15-45 seconds; product_service_video runs 60-90 seconds.
-- "image_prompt" for single-image types must describe the exact on-image text lines to render, drawn from this brand's actual products, services and propositions. For video types it describes the thumbnail/cover frame instead, with a short headline (max 5 words) to render.
-- "slides" (carousel only) is an ordered array of 3-6 objects, each with a one-line "headline", one supporting "subtext" sentence, and its own "image_prompt" — together they must read as one connected argument (hook → proof → CTA).
-- "time" is a 24h "HH:MM" posting time; spread posts through the working day.
-- Vary angles across the week and never repeat a hook, headline structure or example twice: education, product spotlight, ICP pain point, myth-busting, proof/objection handling, behind-the-scenes, industry insight, offer — always about THIS brand.
+- Titles reference the brand's actual product/service/audience/keyword — no generic titles or buzzwords.
+- summary: which product/service + value prop + who it's for.
+- hashtags: one space-separated string, 4-6 tags from the brand's keywords/niche/name.
+- caption: ready-to-post, platform-appropriate length and tone, in the brand's voice.
+- script (video types): spoken narration, [HOOK]/[BODY]/[CTA] markers, full sentences (no bullet fragments), names the business + product. Reels/Shorts/TikTok: 15-45s. product_service_video: 60-90s.
+- image_prompt: on-image text lines for single-image types (drawn from real brand products/propositions); for video types, describes the thumbnail with a short (max 5 words) headline.
+- slides (carousel only): 3-6 objects, each with headline + one-line subtext + its own image_prompt, forming one argument (hook → proof → CTA).
+- time: 24h "HH:MM", spread through the working day.
+- Vary angles, no repeated hooks/structure: education, product spotlight, pain point, myth-busting, proof, behind-the-scenes, industry insight, offer — always this brand specifically.
 
 Return JSON shaped exactly as:
 { "days": [ { "date": "YYYY-MM-DD", ${typePool.map((t) => `"${t}": [...]`).join(", ")} } ] }`;

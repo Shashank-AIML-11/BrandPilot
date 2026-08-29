@@ -53,7 +53,7 @@ export const PROVIDERS: Record<string, ProviderConfig> = {
     secretEnv: "META_APP_SECRET",
   },
   X: {
-    channel: "X",
+    channel: "x",
     authUrl: "https://twitter.com/i/oauth2/authorize",
     tokenUrl: "https://api.twitter.com/2/oauth2/token",
     scope: "tweet.read tweet.write users.read offline.access media.write",

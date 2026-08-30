@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { createFileRoute, Link, redirect, useNavigate, useSearch } from "@tanstack/react-router";
 import { toast } from "sonner";
 import { Loader2 } from "lucide-react";
@@ -46,6 +46,12 @@ function AuthPage() {
   const [fullName, setFullName] = useState("");
   const [busy, setBusy] = useState(false);
   const [socialBusy, setSocialBusy] = useState<"google" | "apple" | null>(null);
+  const [agreed, setAgreed] = useState(false);
+  const agreedRef = useRef(false);
+
+  useEffect(() => {
+    agreedRef.current = agreed;
+  }, [agreed]);
 
   useEffect(() => {
     let active = true;
@@ -57,7 +63,20 @@ function AuthPage() {
     };
 
     const { data: subscription } = supabase.auth.onAuthStateChange((event, session) => {
-      if (event === "SIGNED_IN" && session) enterApp();
+      if (event === "SIGNED_IN" && session) {
+        // Only record consent for a fresh, active sign-in triggered from
+        // this page (guarded by agreedRef) — not for a session silently
+        // restored on load, which is handled by the getUser() branch below
+        // and should never overwrite an existing consent timestamp.
+        if (agreedRef.current) {
+          void supabase
+            .from("profiles")
+            .update({ terms_accepted_at: new Date().toISOString() } as never)
+            .eq("id", session.user.id)
+            .is("terms_accepted_at", null);
+        }
+        enterApp();
+      }
     });
 
     void supabase.auth.getUser().then(({ data }) => {
@@ -71,6 +90,10 @@ function AuthPage() {
   }, [navigate, next]);
 
   async function handleSocialSignIn(provider: "google" | "apple") {
+    if (!agreed) {
+      toast.error("Please agree to the Terms of Service and Privacy Policy first.");
+      return;
+    }
     setSocialBusy(provider);
     try {
       window.sessionStorage.setItem("LOVIZA-auth-redirect", next);
@@ -103,6 +126,10 @@ function AuthPage() {
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
+    if (mode !== "forgot" && !agreed) {
+      toast.error("Please agree to the Terms of Service and Privacy Policy first.");
+      return;
+    }
     setBusy(true);
     try {
       if (mode === "signin") {
@@ -180,12 +207,43 @@ function AuthPage() {
 
           {mode !== "forgot" && (
             <>
-              <div className="mt-8 grid gap-3 sm:grid-cols-2">
+              <div className="mt-6 flex items-start gap-2">
+                <input
+                  id="terms-agree"
+                  type="checkbox"
+                  checked={agreed}
+                  onChange={(e) => setAgreed(e.target.checked)}
+                  className="mt-0.5 h-4 w-4 shrink-0 rounded border-input"
+                />
+                <label htmlFor="terms-agree" className="text-xs leading-snug text-muted-foreground">
+                  I have read and agree to the{" "}
+                  <a
+                    href="https://loviza.click/terms-of-service.html"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-primary hover:underline"
+                  >
+                    Terms of Service
+                  </a>{" "}
+                  and{" "}
+                  <a
+                    href="https://loviza.click/privacy-policy.html"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-primary hover:underline"
+                  >
+                    Privacy Policy
+                  </a>
+                  .
+                </label>
+              </div>
+
+              <div className="mt-4 grid gap-3 sm:grid-cols-2">
                 <Button
                   type="button"
                   variant="outline"
                   className="h-10 w-full"
-                  disabled={busy || socialBusy !== null}
+                  disabled={busy || socialBusy !== null || !agreed}
                   onClick={() => void handleSocialSignIn("google")}
                 >
                   {socialBusy === "google" ? (
@@ -204,7 +262,7 @@ function AuthPage() {
                   type="button"
                   variant="outline"
                   className="h-10 w-full"
-                  disabled={busy || socialBusy !== null}
+                  disabled={busy || socialBusy !== null || !agreed}
                   onClick={() => void handleSocialSignIn("apple")}
                 >
                   {socialBusy === "apple" ? (
@@ -277,7 +335,7 @@ function AuthPage() {
               </div>
             )}
 
-            <Button type="submit" className="w-full" disabled={busy}>
+            <Button type="submit" className="w-full" disabled={busy || (mode !== "forgot" && !agreed)}>
               {busy && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
               {mode === "signin" && "Sign in"}
               {mode === "signup" && "Create account"}

@@ -3,7 +3,7 @@ import { supabase } from "@/integrations/supabase/client";
 const cache = new Map<string, string>();
 
 /**
- * content-media is a PUBLIC bucket, so we build a plain public URL
+ * content-media is a PUBLIC bucket, so we build a plain public URL 
  * client-side instead of requesting a signed URL. This is intentional,
  * not just a simplification: createSignedUrl() goes through Supabase
  * Storage's authenticated /object/sign/ endpoint, which enforces Storage

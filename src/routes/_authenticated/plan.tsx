@@ -3,7 +3,7 @@ import { useQuery } from "@tanstack/react-query";
 import { format } from "date-fns";
 import { Check, Loader2 } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
-import { formatINR, planById, PLANS } from "@/lib/plans";
+import { formatINR, planById } from "@/lib/plans";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 
@@ -25,15 +25,12 @@ function PlanPage() {
     queryFn: async () => {
       const { data: userData } = await supabase.auth.getUser();
       const id = userData.user!.id;
-      const [{ data: profile }, { data: subs }] = await Promise.all([
-        supabase.from("profiles").select("plan").eq("id", id).maybeSingle(),
-        supabase
-          .from("subscriptions")
-          .select("*")
-          .eq("user_id", id)
-          .order("created_at", { ascending: false }),
-      ]);
-      return { profile, subs: subs ?? [] };
+      const { data: subs } = await supabase
+        .from("subscriptions")
+        .select("*")
+        .eq("user_id", id)
+        .order("created_at", { ascending: false });
+      return { subs: subs ?? [] };
     },
   });
 
@@ -45,7 +42,14 @@ function PlanPage() {
     );
   }
 
-  const current = planById(data?.profile?.plan) ?? PLANS[0]!;
+  /*
+   * The current plan is whichever subscription row is actually active
+   * right now — NOT a profiles.plan column, which doesn't get kept in
+   * sync with payment status. subs is already ordered by created_at
+   * descending, so the first "active" match is the most recent one.
+   */
+  const activeSub = data?.subs.find((s) => s.status === "active");
+  const current = activeSub ? planById(activeSub.plan) : null;
 
   return (
     <div className="mx-auto max-w-3xl space-y-6">
@@ -56,29 +60,45 @@ function PlanPage() {
         </p>
       </div>
 
-      <div className="surface p-6">
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <div>
-            <p className="text-xs uppercase tracking-wide text-muted-foreground">Current plan</p>
-            <h2 className="mt-1 font-display text-2xl font-bold">{current.name}</h2>
+      {current ? (
+        <div className="surface p-6">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <p className="text-xs uppercase tracking-wide text-muted-foreground">
+                Your Active Plan
+              </p>
+              <h2 className="mt-1 font-display text-2xl font-bold">{current.name}</h2>
+            </div>
+            <p className="font-display text-2xl font-bold">
+              {formatINR(current.priceMonthly)}
+              <span className="text-sm font-normal text-muted-foreground">/mo</span>
+            </p>
           </div>
-          <p className="font-display text-2xl font-bold">
-            {formatINR(current.priceMonthly)}
-            <span className="text-sm font-normal text-muted-foreground">/mo</span>
-          </p>
+          <ul className="mt-5 grid gap-2 sm:grid-cols-2">
+            {current.features.map((f) => (
+              <li key={f} className="flex gap-2 text-sm text-muted-foreground">
+                <Check className="mt-0.5 h-4 w-4 shrink-0 text-primary" />
+                {f}
+              </li>
+            ))}
+          </ul>
+          <Button className="mt-6" asChild>
+            <Link to="/pricing">Change plan</Link>
+          </Button>
         </div>
-        <ul className="mt-5 grid gap-2 sm:grid-cols-2">
-          {current.features.map((f) => (
-            <li key={f} className="flex gap-2 text-sm text-muted-foreground">
-              <Check className="mt-0.5 h-4 w-4 shrink-0 text-primary" />
-              {f}
-            </li>
-          ))}
-        </ul>
-        <Button className="mt-6" asChild>
-          <Link to="/pricing">Change plan</Link>
-        </Button>
-      </div>
+      ) : (
+        <div className="surface p-6">
+          <p className="text-xs uppercase tracking-wide text-muted-foreground">Your Active Plan</p>
+          <h2 className="mt-1 font-display text-2xl font-bold">No Active Plan</h2>
+          <p className="mt-2 text-sm text-muted-foreground">
+            You don't have an active subscription right now. Choose a plan to start generating
+            content.
+          </p>
+          <Button className="mt-6" asChild>
+            <Link to="/pricing">Choose a plan</Link>
+          </Button>
+        </div>
+      )}
 
       <div className="surface p-6">
         <h2 className="text-sm font-semibold">Subscription history</h2>

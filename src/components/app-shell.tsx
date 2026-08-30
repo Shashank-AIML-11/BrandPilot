@@ -14,6 +14,7 @@ import {
   Menu,
 } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
+import { planById } from "@/lib/plans";
 import { Button } from "@/components/ui/button";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import {
@@ -33,9 +34,26 @@ export function useMe() {
       const { data: userData } = await supabase.auth.getUser();
       const user = userData.user;
       if (!user) return null;
-      const [{ data: profile }, { data: roles }] = await Promise.all([
+      const [{ data: profile }, { data: roles }, { data: activeSub }] = await Promise.all([
         supabase.from("profiles").select("*").eq("id", user.id).maybeSingle(),
         supabase.from("user_roles").select("role").eq("user_id", user.id),
+        /*
+         * The "current plan" a user is on is whatever subscription row is
+         * actually active right now — NOT profiles.plan, which doesn't
+         * get kept in sync with payment status (that's the bug this
+         * fixes: the UI used to always show "Starter" regardless of what
+         * was actually subscribed/active). ordered by created_at so, if
+         * more than one row is ever active at once, the most recent one
+         * wins.
+         */
+        supabase
+          .from("subscriptions")
+          .select("*")
+          .eq("user_id", user.id)
+          .eq("status", "active")
+          .order("created_at", { ascending: false })
+          .limit(1)
+          .maybeSingle(),
       ]);
       const roleList = (roles ?? []).map((r) => r.role as string);
       return {
@@ -45,6 +63,7 @@ export function useMe() {
         isAdmin: roleList.includes("admin") || roleList.includes("root"),
         isEditor:
           roleList.includes("editor") || roleList.includes("admin") || roleList.includes("root"),
+        activeSubscription: activeSub ?? null,
       };
     },
   });
@@ -72,6 +91,8 @@ export function AppShell({ children }: { children: ReactNode }) {
     .slice(0, 2)
     .map((s) => s[0]?.toUpperCase())
     .join("");
+
+  const activePlan = planById(me?.activeSubscription?.plan);
 
   async function signOut() {
     await queryClient.cancelQueries();
@@ -178,12 +199,14 @@ export function AppShell({ children }: { children: ReactNode }) {
           </nav>
 
           <div className="mt-6 rounded-xl border border-sidebar-border bg-card p-4">
-            <p className="text-xs uppercase tracking-wide text-muted-foreground">Current plan</p>
+            <p className="text-xs uppercase tracking-wide text-muted-foreground">
+              {activePlan ? "Your Active Plan" : "Current plan"}
+            </p>
             <p className="mt-1 font-display text-lg font-semibold capitalize">
-              {me?.profile?.plan ?? "starter"}
+              {activePlan ? activePlan.name : "No Active Plan"}
             </p>
             <Button size="sm" variant="outline" className="mt-3 w-full" asChild>
-              <Link to="/pricing">Upgrade</Link>
+              <Link to="/pricing">{activePlan ? "Upgrade" : "Choose a plan"}</Link>
             </Button>
           </div>
         </aside>

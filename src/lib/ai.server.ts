@@ -128,11 +128,23 @@ export async function chatJSON<T>(
 }
 
 /**
- * Image generation via Pollinations.ai — free, no API key, backed by the
- * open-source FLUX model. Change `model=flux` to `model=turbo` for faster,
- * lower-quality results if needed.
+ * Image generation. Two providers, switched by the IMAGE_PROVIDER env var:
+ * - "pollinations" (the default when unset): free, no API key. Used in
+ *   staging — leave this env var unset there, or set it explicitly to
+ *   "pollinations" for clarity.
+ * - "fal": fal.ai's hosted FLUX models. Used in Production. Requires
+ *   FAL_KEY. NOTE: this is written from fal.ai's documented request/
+ *   response shape, not a live-tested call — no FAL_KEY was available
+ *   while writing this. Verify against fal.ai's current docs
+ *   (https://fal.ai/models) the first time this actually runs, since
+ *   hosted-API shapes do shift over time.
  */
 export async function generateImageBytes(prompt: string): Promise<Uint8Array> {
+  const provider = process.env["IMAGE_PROVIDER"] || "pollinations";
+  return provider === "fal" ? generateImageBytesFal(prompt) : generateImageBytesPollinations(prompt);
+}
+
+async function generateImageBytesPollinations(prompt: string): Promise<Uint8Array> {
   const encoded = encodeURIComponent(guard(prompt));
   const seed = Math.floor(Math.random() * 1_000_000);
   const url = `https://image.pollinations.ai/prompt/${encoded}?width=1024&height=1024&model=flux&nologo=true&seed=${seed}`;
@@ -145,6 +157,52 @@ export async function generateImageBytes(prompt: string): Promise<Uint8Array> {
   return new Uint8Array(await res.arrayBuffer());
 }
 
+/**
+ * fal.ai request shape (documented convention): POST to
+ * https://fal.run/<model-id> with `Authorization: Key <FAL_KEY>`,
+ * JSON body { prompt, image_size, num_images }, response
+ * { images: [{ url }], ... }. FAL_MODEL lets you swap models (e.g. to
+ * fal-ai/flux-pro for higher quality, or fal-ai/flux/schnell for
+ * cheaper/faster) without a code change.
+ */
+async function generateImageBytesFal(prompt: string): Promise<Uint8Array> {
+  const apiKey = process.env["FAL_KEY"];
+  if (!apiKey) {
+    throw new Error("Image generation is not configured (missing FAL_KEY).");
+  }
+  const model = process.env["FAL_MODEL"] || "fal-ai/flux/dev";
+
+  const res = await fetch(`https://fal.run/${model}`, {
+    method: "POST",
+    headers: {
+      Authorization: `Key ${apiKey}`,
+      "content-type": "application/json",
+    },
+    body: JSON.stringify({
+      prompt: guard(prompt),
+      image_size: "square_hd",
+      num_images: 1,
+    }),
+  });
+
+  if (!res.ok) {
+    const text = await res.text().catch(() => "");
+    throw new Error(`fal.ai image generation failed [${res.status}]: ${text}`);
+  }
+
+  const json = (await res.json()) as { images?: Array<{ url?: string }> };
+  const imageUrl = json.images?.[0]?.url;
+  if (!imageUrl) {
+    throw new Error("fal.ai did not return an image URL.");
+  }
+
+  const imageRes = await fetch(imageUrl);
+  if (!imageRes.ok) {
+    throw new Error(`Could not download the generated image from fal.ai [${imageRes.status}]`);
+  }
+  return new Uint8Array(await imageRes.arrayBuffer());
+}
+
 export interface VideoJob {
   id: string;
   status: "queued" | "in_progress" | "completed" | "failed" | string;
@@ -152,25 +210,130 @@ export interface VideoJob {
   error?: { code?: string; message?: string } | null;
 }
 
-// Video (and voice-over) are not wired to a provider yet — Lovable Gateway
-// has been fully removed, and no free equivalent exists for video generation.
-// This is fine while video generation stays paused; revisit with a real
-// (likely paid, e.g. fal.ai or Replicate) provider once blogs/images are solid.
-const VIDEO_NOT_CONFIGURED =
-  "Video generation isn't configured yet (Lovable Gateway removed, no replacement set up).";
+/**
+ * Video generation via fal.ai's async Queue API: submit → poll status →
+ * fetch result, matching the VideoJob shape this file already expected
+ * (that shape was clearly designed with an async job-based provider in
+ * mind, which is exactly what fal.ai's Queue API is). Uses the same
+ * FAL_KEY as image generation.
+ *
+ * FAL_VIDEO_MODEL selects the model; defaults to a Kling text-to-video
+ * model as a reasonable starting point for short vertical marketing
+ * clips — check fal.ai/models for current options and pricing (Kling,
+ * Minimax, LTX Video, Luma Dream Machine are common alternatives).
+ *
+ * IMPORTANT: this is written from fal.ai's documented Queue API
+ * convention, not a live-tested call — no FAL_KEY was available while
+ * writing this. Status value casing, the result JSON's field names for
+ * the video URL, and which request parameters a given model actually
+ * accepts all vary by model and can drift from what's coded here.
+ * Verify against that specific model's page on fal.ai/models the first
+ * time a job actually runs, and adjust parseFalVideoStatus() /
+ * downloadVideoBytes()'s result parsing if they don't match.
+ */
+const DEFAULT_FAL_VIDEO_MODEL = "fal-ai/kling-video/v1.6/standard/text-to-video";
 
-export async function createVideoJob(_prompt: string): Promise<VideoJob> {
-  throw new Error(VIDEO_NOT_CONFIGURED);
+function falVideoModel(): string {
+  return process.env["FAL_VIDEO_MODEL"] || DEFAULT_FAL_VIDEO_MODEL;
 }
 
-export async function getVideoJob(_id: string): Promise<VideoJob> {
-  throw new Error(VIDEO_NOT_CONFIGURED);
+function falHeaders(): Record<string, string> {
+  const apiKey = process.env["FAL_KEY"];
+  if (!apiKey) {
+    throw new Error("Video generation is not configured (missing FAL_KEY).");
+  }
+  return { Authorization: `Key ${apiKey}`, "content-type": "application/json" };
 }
 
-export async function downloadVideoBytes(_id: string): Promise<Uint8Array> {
-  throw new Error(VIDEO_NOT_CONFIGURED);
+function parseFalVideoStatus(raw?: string): VideoJob["status"] {
+  const s = (raw || "").toUpperCase();
+  if (s === "COMPLETED") return "completed";
+  if (s === "ERROR" || s === "FAILED") return "failed";
+  if (s === "IN_PROGRESS") return "in_progress";
+  return "queued"; // IN_QUEUE, or anything unrecognized — safe default
 }
+
+export async function createVideoJob(
+  prompt: string,
+  options: { aspectRatio?: "9:16" | "16:9"; durationSeconds?: number } = {},
+): Promise<VideoJob> {
+  const model = falVideoModel();
+  const res = await fetch(`https://queue.fal.run/${model}`, {
+    method: "POST",
+    headers: falHeaders(),
+    body: JSON.stringify({
+      prompt: guard(prompt),
+      aspect_ratio: options.aspectRatio ?? "9:16",
+      duration: String(options.durationSeconds ?? 5),
+    }),
+  });
+
+  if (!res.ok) {
+    const text = await res.text().catch(() => "");
+    throw new Error(`fal.ai video job creation failed [${res.status}]: ${text}`);
+  }
+
+  const json = (await res.json()) as { request_id?: string; status?: string };
+  if (!json.request_id) {
+    throw new Error("fal.ai did not return a request_id for the video job.");
+  }
+  return { id: json.request_id, status: parseFalVideoStatus(json.status) };
+}
+
+export async function getVideoJob(id: string): Promise<VideoJob> {
+  const model = falVideoModel();
+  const res = await fetch(`https://queue.fal.run/${model}/requests/${id}/status`, {
+    headers: falHeaders(),
+  });
+
+  if (!res.ok) {
+    const text = await res.text().catch(() => "");
+    throw new Error(`fal.ai video status check failed [${res.status}]: ${text}`);
+  }
+
+  const json = (await res.json()) as { status?: string; error?: { message?: string } | string };
+  const status = parseFalVideoStatus(json.status);
+  const errorMessage = typeof json.error === "string" ? json.error : json.error?.message;
+
+  return {
+    id,
+    status,
+    error: status === "failed" ? { message: errorMessage || "Video generation failed." } : null,
+  };
+}
+
+export async function downloadVideoBytes(id: string): Promise<Uint8Array> {
+  const model = falVideoModel();
+  const res = await fetch(`https://queue.fal.run/${model}/requests/${id}`, {
+    headers: falHeaders(),
+  });
+
+  if (!res.ok) {
+    const text = await res.text().catch(() => "");
+    throw new Error(`fal.ai video result fetch failed [${res.status}]: ${text}`);
+  }
+
+  // Result shape varies by model — most return { video: { url } }, some
+  // return { video_url } directly. Handle both; adjust if a given
+  // model's actual response uses a different field name.
+  const json = (await res.json()) as { video?: { url?: string }; video_url?: string };
+  const videoUrl = json.video?.url || json.video_url;
+  if (!videoUrl) {
+    throw new Error("fal.ai did not return a video URL in the completed result.");
+  }
+
+  const videoRes = await fetch(videoUrl);
+  if (!videoRes.ok) {
+    throw new Error(`Could not download the generated video from fal.ai [${videoRes.status}]`);
+  }
+  return new Uint8Array(await videoRes.arrayBuffer());
+}
+
+// Voiceover/TTS stays unconfigured — out of scope for now. Video's own
+// narration comes from the video model's generation itself where
+// supported, not a separate voice track.
+const SPEECH_NOT_CONFIGURED = "Voiceover generation isn't configured yet.";
 
 export async function generateSpeechBytes(_text: string): Promise<Uint8Array> {
-  throw new Error(VIDEO_NOT_CONFIGURED);
+  throw new Error(SPEECH_NOT_CONFIGURED);
 }

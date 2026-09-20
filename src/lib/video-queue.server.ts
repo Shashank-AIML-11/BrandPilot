@@ -152,6 +152,7 @@ export async function processVideoQueue(admin: AdminClient, userId?: string) {
             .select("business_name, description, products_services, icp, tone")
             .eq("user_id", item.user_id)
             .maybeSingle();
+          const isLongForm = item.type === "product_service_video";
           const job = await createVideoJob(
             videoPromptFor(
               {
@@ -163,6 +164,10 @@ export async function processVideoQueue(admin: AdminClient, userId?: string) {
               },
               brand,
             ),
+            {
+              aspectRatio: isLongForm ? "16:9" : "9:16",
+              durationSeconds: isLongForm ? 10 : 5,
+            },
           );
           const { error: updateError } = await admin
             .from("content_items")

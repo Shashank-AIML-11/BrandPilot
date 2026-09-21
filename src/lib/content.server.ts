@@ -49,6 +49,44 @@ export const IMAGE_TYPES: ContentType[] = [
   "pinterest",
 ];
 
+/**
+ * These 4 share one generated image (LinkedIn/Instagram/Facebook/Twitter
+ * are all roughly the same square/near-square shape) — cost control
+ * during testing, since each fal.ai image generation costs money.
+ * Pinterest stays out: it's 2:3 vertical, a genuinely different shape.
+ * Captions/titles/hashtags still generate separately per type — this
+ * only shares the visual, not the text.
+ */
+export const SHARED_IMAGE_TYPES: ContentType[] = [
+  "linkedin_post",
+  "instagram_post",
+  "facebook_post",
+  "twitter_post",
+];
+
+/**
+ * These 3 share one generated video — all 9:16 vertical, same 10s
+ * duration. product_service_video stays out: it's 16:9, a genuinely
+ * different shape that can't be cropped from a vertical source.
+ */
+export const SHARED_VIDEO_TYPES: ContentType[] = [
+  "instagram_reel",
+  "youtube_short",
+  "tiktok_video",
+];
+
+/** Deterministic storage path shared by every type in a shared-creative
+ *  group, for one user on one day — same inputs always produce the same
+ *  path, which is what lets a sibling's already-rendered media be found
+ *  and reused instead of regenerated. */
+export function sharedImagePath(userId: string, date: string): string {
+  return `${userId}/${date}-shared-social.png`;
+}
+
+export function sharedVideoPath(userId: string, date: string): string {
+  return `${userId}/${date}-shared-video.mp4`;
+}
+
 export function isVideoType(type: string): boolean {
   return (VIDEO_TYPES as string[]).includes(type);
 }

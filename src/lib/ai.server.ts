@@ -217,21 +217,23 @@ export interface VideoJob {
  * mind, which is exactly what fal.ai's Queue API is). Uses the same
  * FAL_KEY as image generation.
  *
- * FAL_VIDEO_MODEL selects the model; defaults to a Kling text-to-video
- * model as a reasonable starting point for short vertical marketing
- * clips — check fal.ai/models for current options and pricing (Kling,
- * Minimax, LTX Video, Luma Dream Machine are common alternatives).
+ * Default model: fal-ai/ltx-2/text-to-video/fast — $0.04/sec at 1080p
+ * with native audio included at no extra charge, verified against
+ * fal.ai's own docs. Cheapest verified text-to-video option as of when
+ * this was written; check fal.ai/models before assuming that's still
+ * true. Its own docs describe resolution options as "16:9 aspect
+ * ratio" without confirming vertical 9:16 support — worth testing a
+ * 9:16 request in fal.ai's playground before relying on it for the
+ * vertical types (instagram_reel/youtube_short/tiktok_video).
  *
- * IMPORTANT: this is written from fal.ai's documented Queue API
- * convention, not a live-tested call — no FAL_KEY was available while
- * writing this. Status value casing, the result JSON's field names for
- * the video URL, and which request parameters a given model actually
- * accepts all vary by model and can drift from what's coded here.
- * Verify against that specific model's page on fal.ai/models the first
- * time a job actually runs, and adjust parseFalVideoStatus() /
- * downloadVideoBytes()'s result parsing if they don't match.
+ * IMPORTANT: the polling/result-parsing below is written from fal.ai's
+ * documented Queue API convention, not a live-tested call — no FAL_KEY
+ * was available while writing this. Status value casing and the result
+ * JSON's field names can drift from what's coded here; verify the
+ * first time a job actually completes and adjust parseFalVideoStatus()
+ * / downloadVideoBytes()'s result parsing if they don't match.
  */
-const DEFAULT_FAL_VIDEO_MODEL = "fal-ai/kling-video/v1.6/standard/text-to-video";
+const DEFAULT_FAL_VIDEO_MODEL = "fal-ai/ltx-2/text-to-video/fast";
 
 function falVideoModel(): string {
   return process.env["FAL_VIDEO_MODEL"] || DEFAULT_FAL_VIDEO_MODEL;

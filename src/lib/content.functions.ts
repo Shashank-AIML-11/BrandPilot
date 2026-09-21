@@ -1189,6 +1189,18 @@ export const queueMonthGeneration = createServerFn({ method: "POST" })
      */
     const contentPlan = flatDailyQuota(dates);
 
+    /*
+     * COST-CONSCIOUS TESTING: carousel paused for now (multiple image
+     * generations per piece — 3-6 slides — makes it the most expensive
+     * single content type to test with, on top of the per-platform
+     * image sharing below). Remove this block to resume it once past
+     * the cost-sensitive testing phase.
+     */
+    for (const date of dates) {
+      const quota = contentPlan[date];
+      if (quota) quota.carousel = 0;
+    }
+
     const scheduledDates = dates.filter((date) => {
       const quota = contentPlan[date];
       if (!quota) return false;

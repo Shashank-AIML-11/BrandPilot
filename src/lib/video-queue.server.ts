@@ -12,6 +12,10 @@ import {
   carouselSlideImagePromptFor,
   CONTENT_TYPES,
   VIDEO_TYPES,
+  SHARED_IMAGE_TYPES,
+  SHARED_VIDEO_TYPES,
+  sharedImagePath,
+  sharedVideoPath,
 } from "@/lib/content.server";
 
 type AdminClient = SupabaseClient<Database>;
@@ -72,7 +76,7 @@ export async function processVideoQueue(admin: AdminClient, userId?: string) {
   if (videoGenerationEnabled) {
     let activeQuery = admin
       .from("content_items")
-      .select("id, user_id, video_job_id")
+      .select("id, user_id, type, scheduled_date, video_job_id")
       .in("type", VIDEO_TYPES)
       .eq("video_status", "generating")
       .is("video_url", null)
@@ -100,7 +104,10 @@ export async function processVideoQueue(admin: AdminClient, userId?: string) {
         if (job.status !== "completed") continue;
 
         const bytes = await downloadVideoBytes(item.video_job_id);
-        const path = `${item.user_id}/${item.id}.mp4`;
+        const isShared = (SHARED_VIDEO_TYPES as string[]).includes(item.type);
+        const path = isShared
+          ? sharedVideoPath(item.user_id, item.scheduled_date)
+          : `${item.user_id}/${item.id}.mp4`;
         const { error: uploadError } = await admin.storage
           .from("content-media")
           .upload(path, bytes, { contentType: "video/mp4", upsert: true });
@@ -112,6 +119,21 @@ export async function processVideoQueue(admin: AdminClient, userId?: string) {
           .eq("id", item.id);
         if (updateError) throw new Error(updateError.message);
         stored += 1;
+
+        // Propagate to every sibling in the group that was waiting on
+        // this generation — no separate job, no separate cost for them.
+        if (isShared) {
+          const { error: propagateError } = await admin
+            .from("content_items")
+            .update({ video_url: path, video_status: "completed", video_error: null })
+            .eq("user_id", item.user_id)
+            .eq("scheduled_date", item.scheduled_date)
+            .in("type", SHARED_VIDEO_TYPES)
+            .neq("id", item.id)
+            .eq("video_status", "generating")
+            .is("video_url", null);
+          if (propagateError) console.error(propagateError);
+        }
       } catch (error) {
         console.error(error);
         const message = error instanceof Error ? error.message : "Video storage failed.";
@@ -134,7 +156,7 @@ export async function processVideoQueue(admin: AdminClient, userId?: string) {
     if (available > 0) {
       let pendingQuery = admin
         .from("content_items")
-        .select("id, user_id, type, title, summary, video_script, image_prompt")
+        .select("id, user_id, type, scheduled_date, title, summary, video_script, image_prompt")
         .in("type", VIDEO_TYPES)
         .eq("video_status", "none")
         .is("video_url", null)
@@ -147,6 +169,56 @@ export async function processVideoQueue(admin: AdminClient, userId?: string) {
 
       for (const item of pending ?? []) {
         try {
+          // Shared-video group (Reel/Short/TikTok): don't submit a paid
+          // job if a sibling on the same day already has one done or in
+          // progress.
+          if ((SHARED_VIDEO_TYPES as string[]).includes(item.type)) {
+            const { data: siblings } = await admin
+              .from("content_items")
+              .select("video_status, video_url")
+              .eq("user_id", item.user_id)
+              .eq("scheduled_date", item.scheduled_date)
+              .in("type", SHARED_VIDEO_TYPES)
+              .neq("id", item.id);
+
+            const completedSibling = (siblings ?? []).find(
+              (s) => s.video_status === "completed" && s.video_url,
+            );
+            if (completedSibling?.video_url) {
+              // Already finished — copy directly, no job, no cost.
+              const { error: updateError } = await admin
+                .from("content_items")
+                .update({
+                  video_url: completedSibling.video_url,
+                  video_status: "completed",
+                  video_error: null,
+                })
+                .eq("id", item.id)
+                .eq("video_status", "none");
+              if (updateError) throw new Error(updateError.message);
+              started += 1;
+              continue;
+            }
+
+            const inProgressSibling = (siblings ?? []).some((s) => s.video_status === "generating");
+            if (inProgressSibling) {
+              // A sibling's job is already running — mark this row as
+              // waiting (generating, but with no video_job_id of its
+              // own) rather than submit a second paid job. The
+              // completion step above will find and complete every
+              // waiting row in the group once the real job finishes.
+              const { error: updateError } = await admin
+                .from("content_items")
+                .update({ video_status: "generating" })
+                .eq("id", item.id)
+                .eq("video_status", "none");
+              if (updateError) throw new Error(updateError.message);
+              continue;
+            }
+            // No sibling has started yet — this row becomes the real
+            // one and falls through to submit an actual job below.
+          }
+
           const { data: brand } = await admin
             .from("brand_profiles")
             .select("business_name, description, products_services, icp, tone")
@@ -166,7 +238,10 @@ export async function processVideoQueue(admin: AdminClient, userId?: string) {
             ),
             {
               aspectRatio: isLongForm ? "16:9" : "9:16",
-              durationSeconds: isLongForm ? 10 : 5,
+              // Locked at 10s flat for every type during testing, to
+              // keep per-generation cost predictable — raise once
+              // volume/cost is confirmed acceptable.
+              durationSeconds: 10,
             },
           );
           const { error: updateError } = await admin
@@ -188,7 +263,7 @@ export async function processVideoQueue(admin: AdminClient, userId?: string) {
   // makes asset creation continue after the user closes the calendar.
   let pendingImagesQuery = admin
     .from("content_items")
-    .select("id, user_id, type, title, summary, image_prompt")
+    .select("id, user_id, type, scheduled_date, title, summary, image_prompt")
     .in("type", SINGLE_IMAGE_TYPES)
     .is("image_url", null)
     .order("scheduled_date", { ascending: true })
@@ -201,6 +276,58 @@ export async function processVideoQueue(admin: AdminClient, userId?: string) {
   const imageResults: PromiseSettledResult<string>[] = [];
   for (const item of pendingImages ?? []) {
     try {
+      // Shared-image group (LinkedIn/Instagram/Facebook/Twitter): check
+      // whether a sibling type on the same day already rendered the
+      // shared image before paying for a fresh generation.
+      if ((SHARED_IMAGE_TYPES as string[]).includes(item.type)) {
+        const path = sharedImagePath(item.user_id, item.scheduled_date);
+        const { data: sibling } = await admin
+          .from("content_items")
+          .select("id")
+          .eq("user_id", item.user_id)
+          .eq("scheduled_date", item.scheduled_date)
+          .in("type", SHARED_IMAGE_TYPES)
+          .eq("image_url", path)
+          .limit(1)
+          .maybeSingle();
+
+        if (sibling) {
+          // Already rendered by a sibling — just point this row at the
+          // same file. No generation call, no cost.
+          const { error: updateError } = await admin
+            .from("content_items")
+            .update({ image_url: path })
+            .eq("id", item.id)
+            .is("image_url", null);
+          if (updateError) throw new Error(updateError.message);
+          imageResults.push({ status: "fulfilled", value: item.id });
+          continue;
+        }
+
+        // First of the group to render today — generate once, upload to
+        // the SHARED path (not a per-item path) so siblings can find it.
+        const { data: brand } = await admin
+          .from("brand_profiles")
+          .select("business_name, description, products_services, icp, propositions, tone")
+          .eq("user_id", item.user_id)
+          .maybeSingle();
+        const bytes = await generateImageWithRetry(imagePromptFor(item as never, brand));
+        const { error: uploadError } = await admin.storage
+          .from("content-media")
+          .upload(path, bytes, { contentType: "image/png", upsert: true });
+        if (uploadError) throw new Error(uploadError.message);
+        const { error: updateError } = await admin
+          .from("content_items")
+          .update({ image_url: path })
+          .eq("id", item.id)
+          .is("image_url", null);
+        if (updateError) throw new Error(updateError.message);
+        imageResults.push({ status: "fulfilled", value: item.id });
+        continue;
+      }
+
+      // Not in the shared group (pinterest, video thumbnails) — generate
+      // its own unique image as before.
       const { data: brand } = await admin
         .from("brand_profiles")
         .select("business_name, description, products_services, icp, propositions, tone")

@@ -51,12 +51,20 @@ export function ChannelConnections() {
     }
   }, [queryClient]);
 
+  const [pendingChannel, setPendingChannel] = useState<string | null>(null);
+
   const connect = useMutation({
-    mutationFn: async (channel: string) => start({ data: { channel } }),
+    mutationFn: async (channel: string) => {
+      setPendingChannel(channel);
+      return start({ data: { channel } });
+    },
     onSuccess: ({ url }) => {
       window.location.href = url;
     },
-    onError: (e) => toast.error(e instanceof Error ? e.message : "Could not start the connection"),
+    onError: (e) => {
+      setPendingChannel(null);
+      toast.error(e instanceof Error ? e.message : "Could not start the connection");
+    },
   });
 
   const remove = useMutation({
@@ -128,9 +136,14 @@ export function ChannelConnections() {
                     size="sm"
                     variant="secondary"
                     onClick={() => connect.mutate(channel.key)}
-                    disabled={connect.isPending}
+                    disabled={connect.isPending && pendingChannel === channel.key}
                   >
-                    <Link2 className="mr-1.5 h-3.5 w-3.5" /> Connect
+                    {connect.isPending && pendingChannel === channel.key ? (
+                      <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
+                    ) : (
+                      <Link2 className="mr-1.5 h-3.5 w-3.5" />
+                    )}
+                    Connect
                   </Button>
                 )}
               </div>

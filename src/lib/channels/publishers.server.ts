@@ -234,6 +234,30 @@ async function publishFacebook(
 
 /* --------------------------------- Instagram --------------------------------- */
 
+/**
+ * Waits for an Instagram media container to finish processing before it's
+ * published. Meta's API can return the container ID immediately while it's
+ * still ingesting the media server-side — publishing too early fails with
+ * "Media ID is not available... The media is not ready to be published"
+ * (OAuthException code 9007 / subcode 2207027). This used to only run for
+ * video/reel uploads, but plain image containers (and carousel parent
+ * containers) can hit the same race — Meta's own docs recommend checking
+ * status_code before publishing any container type, not just video.
+ */
+async function waitForInstagramContainer(containerId: string, accessToken: string): Promise<void> {
+  for (let attempt = 0; attempt < 20; attempt += 1) {
+    const status = (await jsonOrThrow(
+      "Instagram",
+      await fetch(
+        `https://graph.facebook.com/v21.0/${containerId}?fields=status_code&access_token=${encodeURIComponent(accessToken)}`,
+      ),
+    )) as unknown as { status_code?: string };
+    if (status.status_code === "FINISHED") return;
+    if (status.status_code === "ERROR") throw new Error("Instagram could not process the media.");
+    await new Promise((r) => setTimeout(r, 3000));
+  }
+}
+
 async function publishInstagram(
   admin: Admin,
   conn: LiveConnection,
@@ -278,6 +302,8 @@ async function publishInstagram(
     )) as unknown as { id?: string };
     if (!container.id) throw new Error("Instagram did not return a carousel container.");
 
+    await waitForInstagramContainer(container.id, conn.accessToken);
+
     const published = (await jsonOrThrow(
       "Instagram",
       await fetch(`https://graph.facebook.com/v21.0/${igId}/media_publish`, {
@@ -308,20 +334,9 @@ async function publishInstagram(
   )) as unknown as { id?: string };
   if (!container.id) throw new Error("Instagram did not return a media container.");
 
-  // Video containers need a moment to finish processing before publishing.
-  if (videoLink) {
-    for (let attempt = 0; attempt < 20; attempt += 1) {
-      await new Promise((r) => setTimeout(r, 3000));
-      const status = (await jsonOrThrow(
-        "Instagram",
-        await fetch(
-          `https://graph.facebook.com/v21.0/${container.id}?fields=status_code&access_token=${encodeURIComponent(conn.accessToken)}`,
-        ),
-      )) as unknown as { status_code?: string };
-      if (status.status_code === "FINISHED") break;
-      if (status.status_code === "ERROR") throw new Error("Instagram could not process the video.");
-    }
-  }
+  // Every container type needs a moment to finish processing before
+  // publishing — images included, not just video/reels.
+  await waitForInstagramContainer(container.id, conn.accessToken);
 
   const published = (await jsonOrThrow(
     "Instagram",

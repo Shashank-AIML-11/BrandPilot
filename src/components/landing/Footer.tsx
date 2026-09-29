@@ -1,5 +1,5 @@
 import React from 'react';
-import { playClickSound } from '../utils/audio';
+import { playClickSound } from './audio';
 import { Cpu } from 'lucide-react';
 
 export const Footer: React.FC = () => {

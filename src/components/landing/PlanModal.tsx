@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { X, Check, ShieldCheck, Zap, ArrowRight, Cpu } from 'lucide-react';
-import { PricingPlan } from '../types';
-import { playClickSound, playSuccessSound, triggerConfetti } from '../utils/audio';
+import { PricingPlan } from './types';
+import { playClickSound, playSuccessSound, triggerConfetti } from './audio';
 
 interface PlanModalProps {
   isOpen: boolean;

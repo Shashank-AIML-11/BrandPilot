@@ -1,7 +1,7 @@
 import React from 'react';
-import { CASE_STUDIES } from '../data/mockData';
+import { CASE_STUDIES } from './mockData';
 import { ArrowUpRight, Play, Quote, Zap, ShieldCheck } from 'lucide-react';
-import { playClickSound } from '../utils/audio';
+import { playClickSound } from './audio';
 
 interface VideoShowcaseProps {
   onOpenDemo: () => void;

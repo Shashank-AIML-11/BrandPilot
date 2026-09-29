@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { ArrowRight, Play, CheckCircle2, Cpu, Sparkles, TrendingUp, RefreshCw, Send, Wand2, Layers, Volume2, ShieldCheck, Flame, Zap } from 'lucide-react';
-import { playClickSound, playSuccessSound, triggerConfetti } from '../utils/audio';
+import { playClickSound, playSuccessSound, triggerConfetti } from './audio';
 
 interface HeroProps {
   onScrollToVault: () => void;
@@ -18,7 +18,7 @@ export const Hero: React.FC<HeroProps> = ({ onScrollToVault, onOpenDemo }) => {
     const interval = setInterval(() => {
       setActiveTab((prev) => {
         const nextIndex = (tabs.indexOf(prev) + 1) % tabs.length;
-        return tabs[nextIndex];
+        return tabs[nextIndex]!;
       });
     }, 3500);
     return () => clearInterval(interval);
@@ -42,7 +42,7 @@ export const Hero: React.FC<HeroProps> = ({ onScrollToVault, onOpenDemo }) => {
       badge: '1. AUTO-GENERATE',
       title: 'Infinite Creative Synthesis',
       hook: '"Stop buying 8 skincare bottles until you understand what barrier starvation looks like."',
-      image: '/src/assets/images/loviza_viral_fashion_dtc_1790440795970.jpg',
+      image: '/images/landing/loviza_viral_fashion_dtc_1790440795970.jpg',
       audio: '♫ Clean Girl Acoustic Pop · 122 BPM',
       views: '1.4M Organic FYP',
       metricLabel: 'Daily Autonomous Output',
@@ -54,7 +54,7 @@ export const Hero: React.FC<HeroProps> = ({ onScrollToVault, onOpenDemo }) => {
       badge: '2. AUTO-POST',
       title: 'Omnichannel Peak Dispatch',
       hook: '"If you do this in your morning routine, you\'re shutting off 60% of metabolic burn."',
-      image: '/src/assets/images/loviza_viral_fitness_creative_1790441350420.jpg',
+      image: '/images/landing/loviza_viral_fitness_creative_1790441350420.jpg',
       audio: '♫ Uptempo Dopamine Trap · 128 BPM',
       views: '2.8M FYP Viral',
       metricLabel: 'Peak Algorithmic Window',
@@ -66,7 +66,7 @@ export const Hero: React.FC<HeroProps> = ({ onScrollToVault, onOpenDemo }) => {
       badge: '3. AUTO-LEARN',
       title: 'Closed-Loop Telemetry',
       hook: '"Your engineering team is burning $80k/month waiting on manual PR reviews."',
-      image: '/src/assets/images/loviza_viral_saas_creator_1790440812141.jpg',
+      image: '/images/landing/loviza_viral_saas_creator_1790440812141.jpg',
       audio: '♫ Deep Tech Focus Ambient · 110 BPM',
       views: '890K Dev Reach',
       metricLabel: '3-Sec Hook Retention',
@@ -78,7 +78,7 @@ export const Hero: React.FC<HeroProps> = ({ onScrollToVault, onOpenDemo }) => {
       badge: '4. AUTO-BUILD STRATEGY',
       title: 'Exponential Compounding',
       hook: '"LOVIZA Autonomous Command: 14 high-converting sub-variants deployed."',
-      image: '/src/assets/images/loviza_strategy_intelligence_hub_1790441374391.jpg',
+      image: '/images/landing/loviza_strategy_intelligence_hub_1790441374391.jpg',
       audio: '♫ Cybernetic Intelligence Hub',
       views: '5.2M Ecosystem',
       metricLabel: 'Compounded Viral Lift',

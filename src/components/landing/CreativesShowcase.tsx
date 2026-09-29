@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
-import { CREATIVE_SHOWCASE } from '../data/mockData';
-import { CreativeShowcaseItem } from '../types';
+import { CREATIVE_SHOWCASE } from './mockData';
+import { CreativeShowcaseItem } from './types';
 import { 
   Heart, 
   Share2, 
@@ -15,10 +15,10 @@ import {
   Check,
   Copy
 } from 'lucide-react';
-import { playClickSound, playSuccessSound, triggerConfetti } from '../utils/audio';
+import { playClickSound, playSuccessSound, triggerConfetti } from './audio';
 
 export const CreativesShowcase: React.FC = () => {
-  const [activePlayingId, setActivePlayingId] = useState<string | null>(CREATIVE_SHOWCASE[0].id);
+  const [activePlayingId, setActivePlayingId] = useState<string | null>(CREATIVE_SHOWCASE[0]!.id);
   const [likedMap, setLikedMap] = useState<Record<string, boolean>>({});
   const [copiedId, setCopiedId] = useState<string | null>(null);
 

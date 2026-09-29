@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { ChevronDown, HelpCircle } from 'lucide-react';
-import { FAQS } from '../data/mockData';
-import { playClickSound } from '../utils/audio';
+import { FAQS } from './mockData';
+import { playClickSound } from './audio';
 
 export const FaqSection: React.FC = () => {
   const [openIndex, setOpenIndex] = useState<number | null>(0);

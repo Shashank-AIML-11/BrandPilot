@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { X, Play, Pause, Volume2, VolumeX, Sparkles, CheckCircle2, Cpu } from 'lucide-react';
-import { playClickSound } from '../utils/audio';
+import { playClickSound } from './audio';
 
 interface DemoModalProps {
   isOpen: boolean;
@@ -18,24 +18,26 @@ export const DemoModal: React.FC<DemoModalProps> = ({ isOpen, onClose, onOpenVau
     { 
       title: 'Step 1: Ingest Brand Profile DNA', 
       desc: 'User inputs website URL, product photos, raw video clips, ICP, and focus keywords once. LOVIZA locks the brand DNA permanently.',
-      image: '/src/assets/images/loviza_brand_dna_onboarding_1790441385216.jpg'
+      image: '/images/landing/loviza_brand_dna_onboarding_1790441385216.jpg'
     },
     { 
       title: 'Step 2: Autonomous Auto-Generate', 
       desc: 'LOVIZA synthesizes 60+ multiformat video creatives, AI creator UGC, and kinetic hooks matching brand tone.',
-      image: '/src/assets/images/loviza_viral_fashion_dtc_1790440795970.jpg'
+      image: '/images/landing/loviza_viral_fashion_dtc_1790440795970.jpg'
     },
     { 
       title: 'Step 3: Programmatic Auto-Post', 
       desc: 'Direct omnichannel distribution across TikTok, Instagram Reels, and YouTube Shorts at dynamically computed peak FYP slots.',
-      image: '/src/assets/images/loviza_viral_fitness_creative_1790441350420.jpg'
+      image: '/images/landing/loviza_viral_fitness_creative_1790441350420.jpg'
     },
     { 
       title: 'Step 4: Continuous Auto-Learn & Strategy', 
       desc: 'Feedback loop diagnoses second-by-second dropoffs, acoustic energy, and conversions to self-evolve your ongoing marketing strategy.',
-      image: '/src/assets/images/loviza_strategy_intelligence_hub_1790441374391.jpg'
+      image: '/images/landing/loviza_strategy_intelligence_hub_1790441374391.jpg'
     }
   ];
+
+  const currentStep = demoSteps[activeStep] ?? demoSteps[0]!;
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/85 backdrop-blur-md animate-in fade-in duration-200">
@@ -62,7 +64,7 @@ export const DemoModal: React.FC<DemoModalProps> = ({ isOpen, onClose, onOpenVau
         <div className="p-6 space-y-6">
           <div className="relative aspect-video rounded-2xl overflow-hidden bg-black border border-zinc-800 flex items-center justify-center group">
             <img
-              src={demoSteps[activeStep].image}
+              src={currentStep.image}
               alt="LOVIZA Demo Walkthrough"
               className="w-full h-full object-cover opacity-80"
             />
@@ -84,8 +86,8 @@ export const DemoModal: React.FC<DemoModalProps> = ({ isOpen, onClose, onOpenVau
             {/* Video Lower Third Title */}
             <div className="absolute bottom-4 left-4 right-4 flex items-center justify-between text-xs text-white">
               <div className="space-y-0.5 max-w-md">
-                <div className="font-extrabold text-yellow-400">{demoSteps[activeStep].title}</div>
-                <div className="text-[11px] text-zinc-300 leading-tight">{demoSteps[activeStep].desc}</div>
+                <div className="font-extrabold text-yellow-400">{currentStep.title}</div>
+                <div className="text-[11px] text-zinc-300 leading-tight">{currentStep.desc}</div>
               </div>
               <span className="font-mono bg-black/80 px-2.5 py-1 rounded border border-zinc-700 text-yellow-400 text-xs font-bold">
                 0:{(activeStep + 1) * 15} / 1:00

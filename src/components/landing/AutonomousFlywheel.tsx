@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
-import { AUTONOMOUS_PILLARS } from '../data/mockData';
-import { AutonomousPillar } from '../types';
+import { AUTONOMOUS_PILLARS } from './mockData';
+import { AutonomousPillar } from './types';
 import { 
   Wand2, 
   Send, 
@@ -15,12 +15,12 @@ import {
   Flame,
   Radio
 } from 'lucide-react';
-import { playClickSound } from '../utils/audio';
+import { playClickSound } from './audio';
 
 export const AutonomousFlywheel: React.FC = () => {
-  const [selectedPillarId, setSelectedPillarId] = useState<string>(AUTONOMOUS_PILLARS[0].id);
+  const [selectedPillarId, setSelectedPillarId] = useState<string>(AUTONOMOUS_PILLARS[0]!.id);
 
-  const activePillar = AUTONOMOUS_PILLARS.find((p) => p.id === selectedPillarId) || AUTONOMOUS_PILLARS[0];
+  const activePillar = AUTONOMOUS_PILLARS.find((p) => p.id === selectedPillarId) ?? AUTONOMOUS_PILLARS[0]!;
 
   const getPillarIcon = (name: string) => {
     switch (name) {
@@ -34,28 +34,28 @@ export const AutonomousFlywheel: React.FC = () => {
 
   const pillarVisuals: Record<string, { image: string; tag: string; caption: string }> = {
     'auto-generate': {
-      image: '/src/assets/images/loviza_viral_fashion_dtc_1790440795970.jpg',
+      image: '/images/landing/loviza_viral_fashion_dtc_1790440795970.jpg',
       tag: 'SYNTHESIS ENGINE',
       caption: 'Continuous multi-format creative production matching Brand DNA'
     },
     'auto-post': {
-      image: '/src/assets/images/loviza_viral_fitness_creative_1790441350420.jpg',
+      image: '/images/landing/loviza_viral_fitness_creative_1790441350420.jpg',
       tag: 'OMNICHANNEL DISPATCH',
       caption: 'Direct algorithmic scheduling across TikTok, Reels, and Shorts'
     },
     'auto-learn': {
-      image: '/src/assets/images/loviza_autolearn_flywheel_1790440780063.jpg',
+      image: '/images/landing/loviza_autolearn_flywheel_1790440780063.jpg',
       tag: 'CLOSED-LOOP TELEMETRY',
       caption: 'Sub-second hook analysis, acoustic energy & visual drop-off diagnostic'
     },
     'auto-strategy': {
-      image: '/src/assets/images/loviza_strategy_intelligence_hub_1790441374391.jpg',
+      image: '/images/landing/loviza_strategy_intelligence_hub_1790441374391.jpg',
       tag: 'SELF-EVOLVING BRAIN',
       caption: 'Autonomous brand marketing roadmap pivots based on conversion sales'
     }
   };
 
-  const activeVisual = pillarVisuals[selectedPillarId] || pillarVisuals['auto-generate'];
+  const activeVisual = pillarVisuals[selectedPillarId] ?? pillarVisuals['auto-generate']!;
 
   return (
     <section id="four-pillars" className="py-20 md:py-28 border-t border-zinc-800 relative bg-black overflow-hidden text-zinc-100">
@@ -84,7 +84,7 @@ export const AutonomousFlywheel: React.FC = () => {
         <div className="mb-14 rounded-3xl overflow-hidden border border-zinc-800 bg-zinc-950 shadow-2xl relative group">
           <div className="relative aspect-[21/9] max-h-[380px] w-full overflow-hidden">
             <img
-              src="/src/assets/images/loviza_autolearn_flywheel_1790440780063.jpg"
+              src="/images/landing/loviza_autolearn_flywheel_1790440780063.jpg"
               alt="LOVIZA Autonomous Learning Flywheel"
               className="w-full h-full object-cover opacity-80 group-hover:scale-105 transition-transform duration-700"
               referrerPolicy="no-referrer"

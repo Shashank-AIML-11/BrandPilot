@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
-import { AUTO_LEARN_ITERATIONS } from '../data/mockData';
-import { AutoLearnIteration } from '../types';
+import { AUTO_LEARN_ITERATIONS } from './mockData';
+import { AutoLearnIteration } from './types';
 import { 
   Cpu, 
   TrendingUp, 
@@ -15,14 +15,14 @@ import {
   BarChart3,
   Layers
 } from 'lucide-react';
-import { playClickSound, playSuccessSound, triggerConfetti } from '../utils/audio';
+import { playClickSound, playSuccessSound, triggerConfetti } from './audio';
 
 export const AutoLearnCycleDemo: React.FC = () => {
   const [selectedCycleIndex, setSelectedCycleIndex] = useState(0);
   const [isSimulatingCycle, setIsSimulatingCycle] = useState(false);
   const [simulatedScore, setSimulatedScore] = useState<string | null>(null);
 
-  const activeIteration: AutoLearnIteration = AUTO_LEARN_ITERATIONS[selectedCycleIndex];
+  const activeIteration: AutoLearnIteration = AUTO_LEARN_ITERATIONS[selectedCycleIndex]!;
 
   const handleSimulateNextCycle = () => {
     playClickSound();

@@ -10,8 +10,8 @@ import {
   ArrowRight,
   Cpu
 } from 'lucide-react';
-import { PRESET_BRAND_PROFILES } from '../data/mockData';
-import { BrandProfileState } from '../types';
+import { PRESET_BRAND_PROFILES } from './mockData';
+import { BrandProfileState } from './types';
 
 interface BrandProfileBuilderProps {
   onAutopilotActivated?: () => void;
@@ -19,7 +19,7 @@ interface BrandProfileBuilderProps {
 
 export const BrandProfileBuilder: React.FC<BrandProfileBuilderProps> = () => {
   // Use CyberShield Gear as showcase preset matching the preview
-  const [profile] = useState<BrandProfileState>(PRESET_BRAND_PROFILES[3] || PRESET_BRAND_PROFILES[0]);
+  const [profile] = useState<BrandProfileState>(PRESET_BRAND_PROFILES[3] ?? PRESET_BRAND_PROFILES[0]!);
   const [activeTab, setActiveTab] = useState<'assets' | 'icp' | 'words' | 'tone'>('assets');
 
   // Automatically cycle through the 4 DNA tabs so it lives completely hands-free on autopilot
@@ -28,7 +28,7 @@ export const BrandProfileBuilder: React.FC<BrandProfileBuilderProps> = () => {
     const interval = setInterval(() => {
       setActiveTab((prev) => {
         const nextIndex = (tabs.indexOf(prev) + 1) % tabs.length;
-        return tabs[nextIndex];
+        return tabs[nextIndex]!;
       });
     }, 4000);
     return () => clearInterval(interval);
@@ -147,25 +147,25 @@ export const BrandProfileBuilder: React.FC<BrandProfileBuilderProps> = () => {
                     </div>
                     <div className="grid grid-cols-4 gap-2">
                       <div className="aspect-video rounded-lg overflow-hidden border border-zinc-800 relative">
-                        <img src="/src/assets/images/loviza_brand_dna_onboarding_1790441385216.jpg" alt="Brand Kit" className="w-full h-full object-cover" />
+                        <img src="/images/landing/loviza_brand_dna_onboarding_1790441385216.jpg" alt="Brand Kit" className="w-full h-full object-cover" />
                         <div className="absolute inset-0 bg-black/40 flex items-center justify-center">
                           <span className="text-[9px] bg-black/80 px-1 py-0.5 rounded text-zinc-300 font-mono">Brand Kit</span>
                         </div>
                       </div>
                       <div className="aspect-video rounded-lg overflow-hidden border border-zinc-800 relative">
-                        <img src="/src/assets/images/loviza_brand_dna_vault_1790440762288.jpg" alt="DNA Store" className="w-full h-full object-cover" />
+                        <img src="/images/landing/loviza_brand_dna_vault_1790440762288.jpg" alt="DNA Store" className="w-full h-full object-cover" />
                         <div className="absolute inset-0 bg-black/40 flex items-center justify-center">
                           <span className="text-[9px] bg-black/80 px-1 py-0.5 rounded text-zinc-300 font-mono">DNA Store</span>
                         </div>
                       </div>
                       <div className="aspect-video rounded-lg overflow-hidden border border-zinc-800 relative">
-                        <img src="/src/assets/images/loviza_viral_gadget_creative_1790441361917.jpg" alt="Product B-Roll" className="w-full h-full object-cover" />
+                        <img src="/images/landing/loviza_viral_gadget_creative_1790441361917.jpg" alt="Product B-Roll" className="w-full h-full object-cover" />
                         <div className="absolute inset-0 bg-black/40 flex items-center justify-center">
                           <span className="text-[9px] bg-black/80 px-1 py-0.5 rounded text-zinc-300 font-mono">Product B-Roll</span>
                         </div>
                       </div>
                       <div className="aspect-video rounded-lg overflow-hidden border border-zinc-800 relative">
-                        <img src="/src/assets/images/loviza_viral_fashion_dtc_1790440795970.jpg" alt="Lifestyle Reel" className="w-full h-full object-cover" />
+                        <img src="/images/landing/loviza_viral_fashion_dtc_1790440795970.jpg" alt="Lifestyle Reel" className="w-full h-full object-cover" />
                         <div className="absolute inset-0 bg-black/40 flex items-center justify-center">
                           <span className="text-[9px] bg-black/80 px-1 py-0.5 rounded text-zinc-300 font-mono">Lifestyle</span>
                         </div>

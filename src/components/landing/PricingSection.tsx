@@ -1,8 +1,8 @@
 import React, { useState } from 'react';
-import { PRICING_PLANS } from '../data/mockData';
-import { PricingPlan } from '../types';
+import { PRICING_PLANS } from './mockData';
+import { PricingPlan } from './types';
 import { Check, ArrowRight, Zap, ShieldCheck } from 'lucide-react';
-import { playClickSound, playSuccessSound, triggerConfetti } from '../utils/audio';
+import { playClickSound, playSuccessSound, triggerConfetti } from './audio';
 
 interface PricingSectionProps {
   onSelectPlan: (plan: PricingPlan, isAnnual: boolean) => void;

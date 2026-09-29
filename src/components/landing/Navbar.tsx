@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { Menu, X, ArrowRight, Cpu } from 'lucide-react';
-import { playClickSound } from '../utils/audio';
+import { playClickSound } from './audio';
 
 interface NavbarProps {
   onOpenDemo?: () => void;

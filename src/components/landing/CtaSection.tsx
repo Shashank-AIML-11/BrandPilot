@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { ArrowRight, Sparkles, CheckCircle2, Cpu } from 'lucide-react';
-import { playClickSound, playSuccessSound, triggerConfetti } from '../utils/audio';
+import { playClickSound, playSuccessSound, triggerConfetti } from './audio';
 
 interface CtaSectionProps {
   onStartWithUrl: (url: string) => void;

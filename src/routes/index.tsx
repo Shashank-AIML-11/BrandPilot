@@ -1,7 +1,21 @@
-import { createFileRoute, Link } from "@tanstack/react-router";
-import { CalendarDays, Sparkles, BarChart3, ShieldCheck, ArrowRight } from "lucide-react";
-import { Button } from "@/components/ui/button";
-import { formatINR, PLANS } from "@/lib/plans";
+import { useState } from "react";
+import { createFileRoute, useNavigate } from "@tanstack/react-router";
+import { Navbar } from "@/components/landing/Navbar";
+import { Hero } from "@/components/landing/Hero";
+import { BrandProfileBuilder } from "@/components/landing/BrandProfileBuilder";
+import { AutonomousFlywheel } from "@/components/landing/AutonomousFlywheel";
+import { AutoLearnCycleDemo } from "@/components/landing/AutoLearnCycleDemo";
+import { CreativesShowcase } from "@/components/landing/CreativesShowcase";
+import { VideoShowcase } from "@/components/landing/VideoShowcase";
+import { ComparisonTable } from "@/components/landing/ComparisonTable";
+import { PricingSection } from "@/components/landing/PricingSection";
+import { FaqSection } from "@/components/landing/FaqSection";
+import { CtaSection } from "@/components/landing/CtaSection";
+import { Footer } from "@/components/landing/Footer";
+import { DemoModal } from "@/components/landing/DemoModal";
+import { PlanModal } from "@/components/landing/PlanModal";
+import type { PricingPlan } from "@/components/landing/types";
+import { PRICING_PLANS } from "@/components/landing/mockData";
 
 export const Route = createFileRoute("/")({
   head: () => ({
@@ -23,108 +37,75 @@ export const Route = createFileRoute("/")({
   component: Landing,
 });
 
-const features = [
-  {
-    icon: Sparkles,
-    title: "Brand-aware generation",
-    body: "Website, products, ICP, propositions and tone are stored once and drive every single asset.",
-  },
-  {
-    icon: CalendarDays,
-    title: "A full month, day by day",
-    body: "1 blog, 4 infographics and 2 video packages per day, dropped into a calendar you can open and edit.",
-  },
-  {
-    icon: BarChart3,
-    title: "Performance analytics",
-    body: "Track impressions, clicks and engagement by channel and content type as the month runs.",
-  },
-  {
-    icon: ShieldCheck,
-    title: "Roles & admin control",
-    body: "Grant viewer, editor, admin or root access by email from a dedicated admin portal.",
-  },
-];
-
 function Landing() {
+  const navigate = useNavigate();
+  const [isDemoModalOpen, setIsDemoModalOpen] = useState(false);
+  const [isPlanModalOpen, setIsPlanModalOpen] = useState(false);
+  const [selectedPlan, setSelectedPlan] = useState<PricingPlan | null>(PRICING_PLANS[1] ?? null);
+  const [isAnnualPlan, setIsAnnualPlan] = useState(true);
+
+  const handleScrollToVault = () => {
+    const el = document.getElementById("brand-vault");
+    if (el) el.scrollIntoView({ behavior: "smooth" });
+  };
+
+  const handleOpenPlanModal = (plan?: PricingPlan, annual = true) => {
+    setSelectedPlan(plan || PRICING_PLANS[1] || null);
+    setIsAnnualPlan(annual);
+    setIsPlanModalOpen(true);
+  };
+
   return (
-    <div className="min-h-screen bg-background">
-      <header className="mx-auto flex max-w-6xl items-center justify-between px-6 py-6">
-        <span className="font-display text-lg font-bold tracking-tight">
-          LOVIZA<span className="text-primary">.</span>
-        </span>
-        <nav className="flex items-center gap-2">
-          <Button variant="ghost" asChild>
-            <Link to="/pricing">Pricing</Link>
-          </Button>
-          <Button asChild>
-            <Link to="/auth">Sign in</Link>
-          </Button>
-        </nav>
-      </header>
+    <div
+      className="min-h-screen bg-black text-zinc-100 flex flex-col selection:bg-yellow-400/30 selection:text-white"
+      style={{ fontFamily: "'Plus Jakarta Sans', system-ui, sans-serif" }}
+    >
+      {/* Primary CTA ("Activate Brand Autopilot") goes straight to sign-in,
+          per the request to route it to the Google/Apple auth screen. Every
+          other CTA in this design (pricing cards, demo modal, etc.) keeps
+          its original behavior from the source design untouched. */}
+      <Navbar
+        onOpenDemo={() => setIsDemoModalOpen(true)}
+        onOpenGetStarted={() => navigate({ to: "/auth" })}
+      />
 
-      <section className="grid-noise">
-        <div className="mx-auto max-w-6xl px-6 pb-24 pt-16 text-center">
-          <span className="inline-flex items-center gap-2 rounded-full border border-border bg-card px-3 py-1 text-xs text-muted-foreground">
-            <Sparkles className="h-3.5 w-3.5 text-primary" /> Generate an entire month in one click
-          </span>
-          <h1 className="mx-auto mt-6 max-w-3xl text-5xl font-bold leading-[1.05] sm:text-6xl">
-            <span className="text-gradient">Your marketing calendar,</span>
-            <br />
-            filled before Monday.
-          </h1>
-          <p className="mx-auto mt-6 max-w-xl text-base text-muted-foreground">
-            LOVIZA reads your brand profile and writes the blogs, designs the infographics and
-            scripts the videos — then schedules all of it, day by day, across every channel you use.
-          </p>
-          <div className="mt-8 flex flex-wrap justify-center gap-3">
-            <Button size="lg" asChild>
-              <Link to="/auth">
-                Start free <ArrowRight className="ml-1 h-4 w-4" />
-              </Link>
-            </Button>
-            <Button size="lg" variant="outline" asChild>
-              <Link to="/pricing">See pricing</Link>
-            </Button>
-          </div>
+      <main className="flex-1">
+        <Hero onScrollToVault={handleScrollToVault} onOpenDemo={() => setIsDemoModalOpen(true)} />
 
-          <div className="mx-auto mt-16 grid max-w-5xl gap-4 sm:grid-cols-2 lg:grid-cols-4">
-            {features.map((f) => (
-              <div key={f.title} className="surface p-5 text-left">
-                <f.icon className="h-5 w-5 text-primary" />
-                <h3 className="mt-4 text-sm font-semibold">{f.title}</h3>
-                <p className="mt-2 text-sm text-muted-foreground">{f.body}</p>
-              </div>
-            ))}
-          </div>
-        </div>
-      </section>
+        <BrandProfileBuilder
+          onAutopilotActivated={() => {
+            const el = document.getElementById("auto-learn");
+            if (el) el.scrollIntoView({ behavior: "smooth" });
+          }}
+        />
 
-      <section className="mx-auto max-w-6xl px-6 pb-24">
-        <h2 className="text-center text-3xl font-bold">Simple, predictable pricing</h2>
-        <div className="mt-10 grid gap-5 lg:grid-cols-3">
-          {PLANS.map((plan) => (
-            <div
-              key={plan.id}
-              className={`surface p-6 ${plan.highlight ? "ring-1 ring-primary" : ""}`}
-            >
-              <h3 className="text-lg font-semibold">{plan.name}</h3>
-              <p className="mt-1 text-sm text-muted-foreground">{plan.tagline}</p>
-              <p className="mt-5 font-display text-4xl font-bold">
-                {formatINR(plan.priceMonthly)}
-                <span className="text-sm font-normal text-muted-foreground">/mo</span>
-              </p>
-              <Button className="mt-5 w-full" variant={plan.highlight ? "default" : "outline"} asChild>
-                <Link to="/auth">Choose {plan.name}</Link>
-              </Button>
-            </div>
-          ))}
-        </div>
-      </section>
+        <AutonomousFlywheel />
+        <AutoLearnCycleDemo />
+        <CreativesShowcase />
+        <VideoShowcase onOpenDemo={() => setIsDemoModalOpen(true)} />
+        <ComparisonTable />
 
-      <footer className="border-t border-border py-8 text-center text-xs text-muted-foreground">
-        © {new Date().getFullYear()} LOVIZA. Built for marketers who ship daily.
-      </footer>
+        <PricingSection onSelectPlan={(plan, annual) => handleOpenPlanModal(plan, annual)} />
+
+        <FaqSection />
+
+        <CtaSection onStartWithUrl={() => handleScrollToVault()} />
+      </main>
+
+      <Footer />
+
+      <DemoModal
+        isOpen={isDemoModalOpen}
+        onClose={() => setIsDemoModalOpen(false)}
+        onOpenVault={handleScrollToVault}
+      />
+
+      <PlanModal
+        isOpen={isPlanModalOpen}
+        plan={selectedPlan}
+        isAnnual={isAnnualPlan}
+        onClose={() => setIsPlanModalOpen(false)}
+      />
     </div>
   );
 }

@@ -5,6 +5,7 @@ import {
   CalendarDays,
   BarChart3,
   Building2,
+  LibraryBig,
   ShieldCheck,
   Settings,
   CreditCard,
@@ -72,6 +73,7 @@ export function useMe() {
 const nav = [
   { to: "/brand-profile", label: "Brand Profile", icon: Building2 },
   { to: "/calendar", label: "Content Calendar", icon: CalendarDays },
+  { to: "/content-library", label: "Content Library", icon: LibraryBig },
   { to: "/analytics", label: "Analytics", icon: BarChart3 },
 ] as const;
 

@@ -13,7 +13,29 @@ async function getAccess(context: Ctx) {
     .from("user_roles")
     .select("role")
     .eq("user_id", context.userId);
-  const roles = (data ?? []).map((r) => r.role as string);
+  let roles = (data ?? []).map((r) => r.role as string);
+
+  // Self-healing bootstrap: PRIMARY_ROOT_EMAIL is meant to always have
+  // root access, but nothing ever actually inserted that row — it was
+  // only ever used defensively (to block demoting/deleting it). If this
+  // account has no roles yet and its email matches, grant root now
+  // instead of leaving them permanently locked out of their own portal.
+  // Harmless to repeat: only fires when roles is empty.
+  if (roles.length === 0) {
+    const { data: authUser } = await context.supabase.auth.getUser();
+    const email = authUser.user?.email?.toLowerCase();
+    if (email === PRIMARY_ROOT_EMAIL) {
+      const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+      await supabaseAdmin
+        .from("user_roles")
+        .upsert(
+          { user_id: context.userId, email, role: "root" },
+          { onConflict: "email,role" },
+        );
+      roles = ["root"];
+    }
+  }
+
   return {
     roles,
     isRoot: roles.includes("root"),
@@ -38,6 +60,17 @@ const grantInput = z.object({
   role: z.enum(["viewer", "editor", "admin", "root"]),
 });
 
+/** Rough billing-period length used only to estimate a renewal date for
+ *  display — no exact next-charge date is stored anywhere currently. */
+function estimateRenewal(createdAt: string, billingPeriod: string): string | null {
+  const start = new Date(createdAt);
+  if (Number.isNaN(start.getTime())) return null;
+  const next = new Date(start);
+  if (billingPeriod === "yearly") next.setFullYear(next.getFullYear() + 1);
+  else next.setMonth(next.getMonth() + 1);
+  return next.toISOString();
+}
+
 export const getAdminStats = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .handler(async ({ context }) => {
@@ -47,22 +80,51 @@ export const getAdminStats = createServerFn({ method: "POST" })
 
     const [profiles, subs, content, roles] = await Promise.all([
       supabaseAdmin.from("profiles").select("id, email, full_name, plan, created_at"),
-      supabaseAdmin.from("subscriptions").select("plan, price_cents, status, created_at"),
+      supabaseAdmin
+        .from("subscriptions")
+        .select("user_id, plan, price_cents, billing_period, status, created_at")
+        .order("created_at", { ascending: false }),
       supabaseAdmin.from("content_items").select("id, status, type, impressions, clicks"),
       supabaseAdmin.from("user_roles").select("id, user_id, email, role, created_at"),
     ]);
 
     const subRows = subs.data ?? [];
     const active = subRows.filter((s) => s.status === "active");
+    const expired = subRows.filter((s) => s.status === "cancelled");
     const contentRows = content.data ?? [];
     const profileRows = profiles.data ?? [];
     const roleRows = roles.data ?? [];
+
+    // subRows is already newest-first, so the first match per user is
+    // their current/most recent subscription.
+    const latestSubByUser = new Map<string, (typeof subRows)[number]>();
+    for (const s of subRows) {
+      if (!latestSubByUser.has(s.user_id)) latestSubByUser.set(s.user_id, s);
+    }
+
+    const subscriberRows = profileRows.map((p) => {
+      const sub = latestSubByUser.get(p.id);
+      return {
+        id: p.id,
+        email: p.email,
+        fullName: p.full_name,
+        plan: sub?.plan ?? p.plan ?? "starter",
+        billingPeriod: sub?.billing_period ?? "monthly",
+        status: sub?.status ?? "none",
+        startDate: sub?.created_at ?? null,
+        endDate:
+          sub?.status === "active" && sub.created_at
+            ? estimateRenewal(sub.created_at, sub.billing_period)
+            : null,
+      };
+    });
 
     return {
       isRoot: access.isRoot,
       primaryRootEmail: PRIMARY_ROOT_EMAIL,
       subscribers: profileRows.length,
       activeSubscriptions: active.length,
+      expiredSubscriptions: expired.length,
       mrr: active.reduce((sum, s) => sum + (s.price_cents ?? 0), 0) / 100,
       contentGenerated: contentRows.length,
       contentPosted: contentRows.filter((c) => c.status === "posted").length,
@@ -71,6 +133,11 @@ export const getAdminStats = createServerFn({ method: "POST" })
         plan,
         count: profileRows.filter((p) => p.plan === plan).length,
       })),
+      billingCycleSplit: {
+        monthly: active.filter((s) => s.billing_period !== "yearly").length,
+        yearly: active.filter((s) => s.billing_period === "yearly").length,
+      },
+      subscriberRows,
       recentUsers: [...profileRows]
         .sort((a, b) => (a.created_at < b.created_at ? 1 : -1))
         .slice(0, 8),
@@ -82,6 +149,60 @@ export const getAdminStats = createServerFn({ method: "POST" })
         })),
       roles: roleRows,
     };
+  });
+
+const editSubscriberInput = z.object({
+  userId: z.string().uuid(),
+  plan: z.enum(["starter", "growth", "scale"]),
+  status: z.enum(["active", "cancelled"]),
+});
+
+/**
+ * Admin override for a subscriber's plan/status — e.g. comping an
+ * account, manually extending access, or shutting one off without
+ * going through Razorpay. Follows the same pattern already used for a
+ * real plan switch: cancel every other live subscription for that user,
+ * then write the new one, so "current plan" (derived from the newest
+ * active/pending row, same as the user-facing plan page) stays
+ * unambiguous. price_cents is 0 — this is an admin action, not a
+ * payment.
+ */
+export const editSubscriber = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((input: unknown) => editSubscriberInput.parse(input))
+  .handler(async ({ data, context }) => {
+    await assertAdmin(context);
+
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+
+    const { data: existing, error: existingError } = await supabaseAdmin
+      .from("subscriptions")
+      .select("id")
+      .eq("user_id", data.userId)
+      .in("status", ["pending", "active"]);
+    if (existingError) throw new Error(existingError.message);
+
+    for (const row of existing ?? []) {
+      const { error } = await supabaseAdmin
+        .from("subscriptions")
+        .update({ status: "cancelled" })
+        .eq("id", row.id);
+      if (error) throw new Error(error.message);
+    }
+
+    if (data.status === "active") {
+      const { error } = await supabaseAdmin.from("subscriptions").insert({
+        user_id: data.userId,
+        plan: data.plan,
+        price_cents: 0,
+        billing_period: "monthly",
+        payment_method: "admin",
+        status: "active",
+      } as never);
+      if (error) throw new Error(error.message);
+    }
+
+    return { ok: true };
   });
 
 export const grantRole = createServerFn({ method: "POST" })

@@ -99,8 +99,18 @@ export function AppShell({ children }: { children: ReactNode }) {
   async function signOut() {
     await queryClient.cancelQueries();
     queryClient.clear();
+    // Navigate away from this protected page BEFORE actually signing out.
+    // __root.tsx's global onAuthStateChange listener calls
+    // router.invalidate() the moment SIGNED_OUT fires, which re-runs the
+    // CURRENTLY active route's beforeLoad guard — if that's still a
+    // protected page at that instant, its own guard (see
+    // _authenticated/route.tsx) immediately redirects to /auth itself,
+    // racing with (and beating) the explicit navigate below. Awaiting the
+    // navigate first means the active route is already the public "/"
+    // page by the time signOut() fires, so that guard never gets a
+    // chance to run.
+    await navigate({ to: "/", replace: true });
     await supabase.auth.signOut();
-    navigate({ to: "/", replace: true });
   }
 
   return (

@@ -171,20 +171,22 @@ function AuthPage() {
 
   return (
     <div className="grid min-h-screen lg:grid-cols-2">
-      <div className="grid-noise hidden flex-col justify-between p-12 lg:flex">
+      <div className="grid-noise hidden flex-col p-12 lg:flex">
         <Link to="/" className="font-display text-lg font-bold">
           LOVIZA<span className="text-primary">.</span>
         </Link>
-        <div>
-          <h2 className="max-w-sm text-4xl font-bold leading-tight">
-            One brand profile in.
-            <br />
-            <span className="text-primary">A month of content out.</span>
-          </h2>
-          <p className="mt-4 max-w-sm text-sm text-muted-foreground">
-            Blogs, infographics and video packages generated daily and scheduled across every
-            channel you run.
-          </p>
+        <div className="flex flex-1 items-center justify-center text-center">
+          <div>
+            <h2 className="max-w-sm text-4xl font-bold leading-tight">
+              One brand profile in.
+              <br />
+              <span className="text-primary">A month of content out.</span>
+            </h2>
+            <p className="mx-auto mt-4 max-w-sm text-sm text-muted-foreground">
+              Blogs, infographics and video packages generated daily and scheduled across every
+              channel you run.
+            </p>
+          </div>
         </div>
         <p className="text-xs text-muted-foreground">© {new Date().getFullYear()} LOVIZA</p>
       </div>

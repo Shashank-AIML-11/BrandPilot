@@ -16,6 +16,15 @@ import {
 } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { planById } from "@/lib/plans";
+import { AgencySidebar } from "@/components/agency-sidebar";
+import {
+  NEW_BRAND_ID,
+  agencyPlanFor,
+  resolveActiveBrand,
+  setActiveBrandId,
+  useAgencyBrands,
+  useStoredBrandId,
+} from "@/lib/agency";
 import { Button } from "@/components/ui/button";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import {
@@ -95,6 +104,12 @@ export function AppShell({ children }: { children: ReactNode }) {
     .join("");
 
   const activePlan = planById(me?.activeSubscription?.plan);
+
+  // Scale-plan users get the agency sidebar (brand switcher) instead of the single-brand nav.
+  const agencyPlan = agencyPlanFor(me);
+  const { data: agencyBrands = [] } = useAgencyBrands(!!agencyPlan);
+  const storedBrandId = useStoredBrandId();
+  const activeBrand = resolveActiveBrand(agencyBrands, storedBrandId);
 
   async function signOut() {
     await queryClient.cancelQueries();
@@ -176,10 +191,24 @@ export function AppShell({ children }: { children: ReactNode }) {
       <div className="mx-auto flex max-w-[1600px]">
         <aside
           className={cn(
-            "fixed inset-y-16 left-0 z-20 w-64 shrink-0 border-r border-sidebar-border bg-sidebar p-4 transition-transform lg:sticky lg:top-16 lg:h-[calc(100vh-4rem)] lg:translate-x-0",
+            "fixed inset-y-16 left-0 z-20 w-64 shrink-0 overflow-y-auto border-r border-sidebar-border bg-sidebar p-4 transition-transform lg:sticky lg:top-16 lg:h-[calc(100vh-4rem)] lg:translate-x-0",
             open ? "translate-x-0" : "-translate-x-full",
           )}
         >
+          {agencyPlan ? (
+            <AgencySidebar
+              brands={agencyBrands}
+              activeBrandId={storedBrandId === NEW_BRAND_ID ? null : (activeBrand?.id ?? null)}
+              plan={agencyPlan}
+              showAdmin={!!me?.isAdmin}
+              onSelectBrand={setActiveBrandId}
+              onAddBrand={() => {
+                setActiveBrandId(NEW_BRAND_ID);
+                void navigate({ to: "/brand-profile" });
+              }}
+            />
+          ) : (
+          <>
           <nav className="space-y-1">
             {nav.map((item) => (
               <Link
@@ -221,6 +250,8 @@ export function AppShell({ children }: { children: ReactNode }) {
               <Link to="/pricing">{activePlan ? "Upgrade" : "Choose a plan"}</Link>
             </Button>
           </div>
+          </>
+          )}
         </aside>
 
         <main className="min-w-0 flex-1 px-4 py-6 sm:px-8">{children}</main>

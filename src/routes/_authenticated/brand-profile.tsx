@@ -2,9 +2,18 @@ import { useEffect, useState } from "react";
 import { createFileRoute } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { Loader2, Save } from "lucide-react";
+import { ChevronRight, Link2, Loader2, Save } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { ChannelConnections } from "@/components/channel-connections";
+import { useMe } from "@/components/app-shell";
+import {
+  NEW_BRAND_ID,
+  agencyPlanFor,
+  resolveActiveBrand,
+  setActiveBrandId,
+  useAgencyBrands,
+  useStoredBrandId,
+} from "@/lib/agency";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -72,14 +81,30 @@ function BrandProfilePage() {
   const queryClient = useQueryClient();
   const [form, setForm] = useState<FormState>(EMPTY);
 
+  // Scale-plan (agency) users can own several brands; everyone else keeps the single-brand behaviour.
+  const { data: me, isLoading: meLoading } = useMe();
+  const isAgency = !!agencyPlanFor(me);
+  const { data: brands, isLoading: brandsLoading } = useAgencyBrands(isAgency);
+  const storedBrandId = useStoredBrandId();
+  const isNewBrand = isAgency && storedBrandId === NEW_BRAND_ID;
+  const activeBrand = isNewBrand ? undefined : resolveActiveBrand(brands, storedBrandId);
+  const profileKey = [
+    "brand-profile",
+    isAgency ? (isNewBrand ? NEW_BRAND_ID : (activeBrand?.id ?? "none")) : "self",
+  ];
+
   const { data, isLoading } = useQuery({
-    queryKey: ["brand-profile"],
+    queryKey: profileKey,
+    enabled: !meLoading && !(isAgency && brandsLoading) && !isNewBrand,
     queryFn: async () => {
       const { data: userData } = await supabase.auth.getUser();
-      const { data: row, error } = await supabase
-        .from("brand_profiles")
-        .select("*")
-        .eq("user_id", userData.user!.id)
+      const base = supabase.from("brand_profiles").select("*");
+      const scoped =
+        isAgency && activeBrand ? base.eq("id", activeBrand.id) : base.eq("user_id", userData.user!.id);
+      // order + limit(1) keeps maybeSingle() safe even if a user ever has more than one row.
+      const { data: row, error } = await scoped
+        .order("created_at", { ascending: true })
+        .limit(1)
         .maybeSingle();
       if (error) throw error;
       return row;
@@ -87,6 +112,10 @@ function BrandProfilePage() {
   });
 
   useEffect(() => {
+    if (isNewBrand) {
+      setForm(EMPTY);
+      return;
+    }
     if (!data) return;
     setForm({
       business_name: data.business_name ?? "",
@@ -100,7 +129,7 @@ function BrandProfilePage() {
       google_drive_folder: data.google_drive_folder ?? "",
       social_handles: (data.social_handles as Record<string, string>) ?? {},
     });
-  }, [data]);
+  }, [data, isNewBrand]);
 
   const save = useMutation({
     mutationFn: async () => {
@@ -129,9 +158,13 @@ function BrandProfilePage() {
         updated_at: new Date().toISOString(),
       };
 
-      const { data: saved, error } = await supabase
-        .from("brand_profiles")
-        .upsert(payload, { onConflict: "user_id" })
+      const table = supabase.from("brand_profiles");
+      const { data: saved, error } = await (isAgency && isNewBrand
+        ? table.insert(payload)
+        : isAgency && activeBrand
+          ? table.update(payload).eq("id", activeBrand.id)
+          : table.upsert(payload, { onConflict: "user_id" })
+      )
         .select()
         .single();
       if (error) throw error;
@@ -139,7 +172,12 @@ function BrandProfilePage() {
     },
     onSuccess: (saved) => {
       toast.success("Brand profile saved — future content will use it");
-      queryClient.setQueryData(["brand-profile"], saved);
+      if (isAgency) {
+        setActiveBrandId(saved.id);
+        queryClient.invalidateQueries({ queryKey: ["agency-brands"] });
+      } else {
+        queryClient.setQueryData(profileKey, saved);
+      }
       queryClient.invalidateQueries({ queryKey: ["brand-profile"] });
     },
   //  onError: (e) => toast.error(e instanceof Error ? e.message : "Could not save"),
@@ -153,7 +191,7 @@ function BrandProfilePage() {
 
   const set = (key: keyof FormState, value: string) => setForm((f) => ({ ...f, [key]: value }));
 
-  if (isLoading) {
+  if (meLoading || (isAgency && brandsLoading) || isLoading) {
     return (
       <div className="flex h-64 items-center justify-center">
         <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
@@ -165,19 +203,39 @@ function BrandProfilePage() {
     <div className="mx-auto max-w-4xl space-y-6">
       <div className="sticky top-16 z-10 -mx-4 flex flex-wrap items-end justify-between gap-4 border-b border-border bg-background/95 px-4 py-4 backdrop-blur sm:-mx-8 sm:px-8">
         <div>
+          {isAgency && (
+            <nav
+              aria-label="Breadcrumb"
+              className="mb-2 flex items-center gap-1.5 text-xs text-muted-foreground"
+            >
+              <span>Brands</span>
+              <ChevronRight className="h-3.5 w-3.5" />
+              <span className="text-foreground">
+                {isNewBrand ? "New brand" : (activeBrand?.name ?? "Your brand")}
+              </span>
+            </nav>
+          )}
           <h1 className="text-2xl font-bold">Brand Profile</h1>
           <p className="mt-1 text-sm text-muted-foreground">
             Everything here feeds the generator. The richer this page, the sharper the content.
           </p>
         </div>
-        <Button onClick={() => save.mutate()} disabled={save.isPending}>
-          {save.isPending ? (
-            <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-          ) : (
-            <Save className="mr-2 h-4 w-4" />
+        <div className="flex flex-wrap gap-3">
+          {isAgency && (
+            <Button variant="outline" disabled title="Client intake links are coming in the next update">
+              <Link2 className="mr-2 h-4 w-4" />
+              Send client intake link
+            </Button>
           )}
-          Save profile
-        </Button>
+          <Button onClick={() => save.mutate()} disabled={save.isPending}>
+            {save.isPending ? (
+              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+            ) : (
+              <Save className="mr-2 h-4 w-4" />
+            )}
+            Save profile
+          </Button>
+        </div>
       </div>
 
       <section className="surface space-y-4 p-6">

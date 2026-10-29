@@ -295,6 +295,22 @@ export interface StrategyDirective {
   week_end: string;
   insights: string;
   directives: string;
+  /** Stored weekly metrics; only top/worst hooks are surfaced to the generator. */
+  metrics?: {
+    top_performers?: Array<{ hook?: string; type?: string; channels?: string[] }>;
+    worst_performers?: Array<{ hook?: string; type?: string; channels?: string[] }>;
+  } | null;
+}
+
+function exampleHooks(
+  list: Array<{ hook?: string; type?: string; channels?: string[] }> | undefined,
+  n: number,
+): string {
+  return (list ?? [])
+    .filter((p) => p.hook)
+    .slice(0, n)
+    .map((p) => `- [${p.type ?? "post"}${p.channels?.length ? ` on ${p.channels.join("/")}` : ""}] "${p.hook}"`)
+    .join("\n");
 }
 
 export function strategyContext(strategy?: StrategyDirective | null): string {
@@ -305,7 +321,15 @@ export function strategyContext(strategy?: StrategyDirective | null): string {
 These are measured results from content already posted for this brand. They OVERRIDE your default instincts.
 What we learned: ${strategy.insights}
 Strategy to apply to every piece you now write: ${strategy.directives}
-Double down on the formats, hooks, channels and posting times that performed. Drop or rework what underperformed.
+Double down on the formats, hooks, channels and posting times that performed. Drop or rework what underperformed.${
+    exampleHooks(strategy.metrics?.top_performers, 3)
+      ? `\nOpenings that WORKED (match their angle and style, never copy the wording):\n${exampleHooks(strategy.metrics?.top_performers, 3)}`
+      : ""
+  }${
+    exampleHooks(strategy.metrics?.worst_performers, 2)
+      ? `\nOpenings that FLOPPED (avoid this style):\n${exampleHooks(strategy.metrics?.worst_performers, 2)}`
+      : ""
+  }
 === END PERFORMANCE LEARNINGS ===`;
 }
 

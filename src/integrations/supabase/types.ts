@@ -185,6 +185,8 @@ export type Database = {
           autopost: boolean
           body: string | null
           caption: string | null
+          carousel_image_urls: string[]
+          carousel_slides: Json
           clicks: number
           created_at: string
           enabled: boolean
@@ -194,6 +196,7 @@ export type Database = {
           image_prompt: string | null
           image_url: string | null
           impressions: number
+          metrics_updated_at: string | null
           platforms: string[]
           posted_at: string | null
           publish_attempts: number
@@ -217,6 +220,8 @@ export type Database = {
           autopost?: boolean
           body?: string | null
           caption?: string | null
+          carousel_image_urls?: string[]
+          carousel_slides?: Json
           clicks?: number
           created_at?: string
           enabled?: boolean
@@ -226,6 +231,7 @@ export type Database = {
           image_prompt?: string | null
           image_url?: string | null
           impressions?: number
+          metrics_updated_at?: string | null
           platforms?: string[]
           posted_at?: string | null
           publish_attempts?: number
@@ -249,6 +255,8 @@ export type Database = {
           autopost?: boolean
           body?: string | null
           caption?: string | null
+          carousel_image_urls?: string[]
+          carousel_slides?: Json
           clicks?: number
           created_at?: string
           enabled?: boolean
@@ -258,6 +266,7 @@ export type Database = {
           image_prompt?: string | null
           image_url?: string | null
           impressions?: number
+          metrics_updated_at?: string | null
           platforms?: string[]
           posted_at?: string | null
           publish_attempts?: number
@@ -335,6 +344,69 @@ export type Database = {
           source?: string
         }
         Relationships: []
+      }
+      post_metric_snapshots: {
+        Row: {
+          bucket: string
+          channel: string
+          clicks: number
+          content_item_id: string
+          engagements: number
+          external_id: string
+          fetched_at: string
+          id: string
+          impressions: number
+          ok: boolean
+          publish_log_id: string
+          raw: Json
+          user_id: string
+        }
+        Insert: {
+          bucket: string
+          channel: string
+          clicks?: number
+          content_item_id: string
+          engagements?: number
+          external_id?: string
+          fetched_at?: string
+          id?: string
+          impressions?: number
+          ok?: boolean
+          publish_log_id: string
+          raw?: Json
+          user_id: string
+        }
+        Update: {
+          bucket?: string
+          channel?: string
+          clicks?: number
+          content_item_id?: string
+          engagements?: number
+          external_id?: string
+          fetched_at?: string
+          id?: string
+          impressions?: number
+          ok?: boolean
+          publish_log_id?: string
+          raw?: Json
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "post_metric_snapshots_content_item_id_fkey"
+            columns: ["content_item_id"]
+            isOneToOne: false
+            referencedRelation: "content_items"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "post_metric_snapshots_publish_log_id_fkey"
+            columns: ["publish_log_id"]
+            isOneToOne: false
+            referencedRelation: "publish_log"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       profiles: {
         Row: {
@@ -543,8 +615,6 @@ export type Database = {
         | "twitter_post"
         | "carousel"
         | "blog"
-        | "email"
-        | "ad_image"
         | "product_service_video"
         | "tiktok_video"
         | "pinterest"
@@ -689,8 +759,6 @@ export const Constants = {
         "twitter_post",
         "carousel",
         "blog",
-        "email",
-        "ad_image",
         "product_service_video",
         "tiktok_video",
         "pinterest",

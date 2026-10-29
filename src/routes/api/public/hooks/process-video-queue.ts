@@ -24,7 +24,17 @@ async function runQueuePump(request: Request) {
   const { processVideoQueue } = await import("@/lib/video-queue.server");
   const { processStrategyQueue } = await import("@/lib/strategy-queue.server");
 
-  // Weekly learning loop first: it may re-queue the rest of the month so the
+  // Pull real performance numbers for already-posted content first, so the learning
+  // loop below always reasons from fresh data.
+  let metrics: Awaited<ReturnType<typeof import("@/lib/channels/metrics.server").syncPostMetrics>> | null = null;
+  try {
+    const { syncPostMetrics } = await import("@/lib/channels/metrics.server");
+    metrics = await syncPostMetrics(supabaseAdmin as never);
+  } catch (error) {
+    console.error(error);
+  }
+
+  // Weekly learning loop: it may re-queue the rest of the month so the
   // generator below immediately rebuilds it against the new strategy.
   let strategy: Awaited<ReturnType<typeof processStrategyQueue>> | null = null;
   try {
@@ -53,7 +63,7 @@ async function runQueuePump(request: Request) {
     console.error(error);
   }
 
-  return Response.json({ success: true, strategy, generation, ...result, ...publishing });
+  return Response.json({ success: true, metrics, strategy, generation, ...result, ...publishing });
 }
 
 export const Route = createFileRoute("/api/public/hooks/process-video-queue")({

@@ -30,11 +30,19 @@ interface Row {
   scheduled_time: string | null;
   type: string;
   title: string | null;
+  caption: string | null;
+  body: string | null;
   status: string | null;
   platforms: string[] | null;
   impressions: number | null;
   clicks: number | null;
   engagements: number | null;
+}
+
+/** First line a reader sees: the thing the model should learn to repeat or avoid. */
+function hookOf(r: Row) {
+  const text = (r.caption || r.body || r.title || "").trim().split(/\n+/)[0] ?? "";
+  return text.slice(0, 140);
 }
 
 function score(r: Row) {
@@ -66,14 +74,27 @@ function summarise(rows: Row[]) {
         map[k].engagements += r.engagements ?? 0;
       }),
     );
-    return map;
+    // Rates make groups comparable even when one format simply got posted more often.
+    return Object.fromEntries(
+      Object.entries(map).map(([k, v]) => [
+        k,
+        {
+          ...v,
+          engagement_rate: v.impressions ? +(v.engagements / v.impressions).toFixed(4) : null,
+          ctr: v.impressions ? +(v.clicks / v.impressions).toFixed(4) : null,
+        },
+      ]),
+    );
   };
 
   const ranked = [...rows].sort((a, b) => score(b) - score(a));
   const brief = (r: Row) => ({
     title: r.title ?? "",
+    hook: hookOf(r),
     type: r.type,
+    channels: r.platforms ?? [],
     time: r.scheduled_time,
+    engagement_rate: r.impressions ? +((r.engagements ?? 0) / r.impressions).toFixed(4) : null,
     impressions: r.impressions ?? 0,
     clicks: r.clicks ?? 0,
     engagements: r.engagements ?? 0,
@@ -101,12 +122,19 @@ export async function processStrategyQueue(admin: AdminClient) {
   const weekEnd = addDays(today, -1);
   const weekStart = addDays(weekEnd, -6);
 
-  const { data: rowsData, error } = await admin
+  // Learn from a 14-day window so a post is judged on its 3-7 day numbers, not only its first
+  // hours, and ONLY from posts a platform actually returned numbers for (metrics_updated_at set).
+  // A post we could not measure is unknown, never a failure.
+  const loose = admin as unknown as SupabaseClient;
+  const dataStart = addDays(weekEnd, -13);
+  const { data: rowsData, error } = await loose
     .from("content_items")
     .select(
-      "user_id, scheduled_date, scheduled_time, type, title, status, platforms, impressions, clicks, engagements",
+      "user_id, scheduled_date, scheduled_time, type, title, caption, body, status, platforms, impressions, clicks, engagements",
     )
-    .gte("scheduled_date", iso(weekStart))
+    .eq("status", "posted")
+    .not("metrics_updated_at", "is", null)
+    .gte("scheduled_date", iso(dataStart))
     .lte("scheduled_date", iso(weekEnd));
   if (error) throw new Error(error.message);
 
@@ -140,13 +168,23 @@ export async function processStrategyQueue(admin: AdminClient) {
       if (!brand || !brand.business_name) continue;
 
       const metrics = summarise(list);
+      const previous = await latestStrategy(admin, userId);
       const analysis = await chatJSON<{ insights?: string; directives?: string }>(
         STRATEGY_SYSTEM,
         `${brandContext(brand as never)}
 
-Here is the measured performance of this brand's content for ${iso(weekStart)} to ${iso(weekEnd)} (JSON):
+Here is the measured performance of this brand's posted content for ${iso(dataStart)} to ${iso(weekEnd)} (JSON). Only posts with real platform numbers are included; engagement_rate = engagements / impressions:
 ${JSON.stringify(metrics)}
-
+${
+  previous?.directives
+    ? `
+Last cycle you instructed the generator (${previous.week_start} to ${previous.week_end}):
+"${previous.directives}"
+Judge whether the posts above show that advice worked. Keep what worked, reverse what did not, and say which it was in "insights".
+`
+    : ""
+}
+Small samples are noisy: with fewer than 3 posts in a group, call the pattern tentative instead of firm.
 Analyse reach (impressions), user adoption (clicks) and engagement. Then decide how next week's content must change.
 
 Return JSON shaped exactly as:
@@ -233,7 +271,7 @@ export async function latestStrategy(
 ): Promise<StrategyDirective | null> {
   const { data } = await admin
     .from("content_strategies")
-    .select("week_start, week_end, insights, directives")
+    .select("week_start, week_end, insights, directives, metrics")
     .eq("user_id", userId)
     .order("week_start", { ascending: false })
     .limit(1)

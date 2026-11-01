@@ -1,3 +1,4 @@
+import { useBrandScope } from "@/lib/brand-scope";
 import { useMemo, useState } from "react";
 import { createFileRoute } from "@tanstack/react-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
@@ -70,12 +71,16 @@ function ContentLibraryPage() {
    * for the current generation volume (44 pieces/month in production
    * cadence), revisit with real pagination if that stops being enough.
    */
+  const scope = useBrandScope();
   const { data: items = [], isLoading } = useQuery({
-    queryKey: ["content-library"],
+    queryKey: ["content-library", scope.brandId],
+    enabled: !scope.loading,
     queryFn: async () => {
       const { data, error } = await supabase
         .from("content_items")
         .select("*")
+        // One brand at a time on the agency plan; no filter for single-brand accounts.
+        .match(scope.brandId ? { brand_id: scope.brandId } : {})
         .order("scheduled_date", { ascending: false })
         .order("scheduled_time", { ascending: false })
         .limit(500);

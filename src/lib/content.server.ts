@@ -50,9 +50,9 @@ export const IMAGE_TYPES: ContentType[] = [
 ];
 
 /**
- * These 4 share one generated image, made at 4:5 portrait — a shape LinkedIn,
- * Instagram, Facebook and X all accept (4:5 is Instagram's tallest feed shape and shows
- * largest there) — cost control, since each fal.ai image generation costs money.
+ * These 4 share one generated image (LinkedIn/Instagram/Facebook/Twitter
+ * are all roughly the same square/near-square shape) — cost control
+ * during testing, since each fal.ai image generation costs money.
  * Pinterest stays out: it's 2:3 vertical, a genuinely different shape.
  * Captions/titles/hashtags still generate separately per type — this
  * only shares the visual, not the text.
@@ -79,25 +79,14 @@ export const SHARED_VIDEO_TYPES: ContentType[] = [
  *  group, for one user on one day — same inputs always produce the same
  *  path, which is what lets a sibling's already-rendered media be found
  *  and reused instead of regenerated. */
-export function sharedImagePath(userId: string, date: string): string {
-  return `${userId}/${date}-shared-social.png`;
+export function sharedImagePath(userId: string, date: string, brandId?: string | null): string {
+  // The brand is part of the path so two brands of one account never share a picture.
+  return `${userId}/${date}${brandId ? `-${brandId}` : ""}-shared-social.png`;
 }
 
-export function sharedVideoPath(userId: string, date: string): string {
-  return `${userId}/${date}-shared-video.mp4`;
+export function sharedVideoPath(userId: string, date: string, brandId?: string | null): string {
+  return `${userId}/${date}${brandId ? `-${brandId}` : ""}-shared-video.mp4`;
 }
-
-/** The shape each content type's image is generated at. One place, so every caller agrees. */
-export function aspectForType(type: string): "1:1" | "4:5" | "2:3" | "9:16" | "16:9" {
-  if (type === "pinterest") return "2:3";
-  if (type === "product_service_video") return "16:9";
-  if (isVideoType(type)) return "9:16";
-  return "4:5"; // linkedin/instagram/facebook/twitter posts and every carousel slide
-}
-
-/** Crop-safety wording: platforms crop previews, so text must never sit near an edge. */
-const SAFE_ZONE =
-  "Keep every word of text and the main subject well inside the frame with a generous margin on all sides, nothing touching or near the edges, because platforms crop previews.";
 
 export function isVideoType(type: string): boolean {
   return (VIDEO_TYPES as string[]).includes(type);
@@ -307,22 +296,6 @@ export interface StrategyDirective {
   week_end: string;
   insights: string;
   directives: string;
-  /** Stored weekly metrics; only top/worst hooks are surfaced to the generator. */
-  metrics?: {
-    top_performers?: Array<{ hook?: string; type?: string; channels?: string[] }>;
-    worst_performers?: Array<{ hook?: string; type?: string; channels?: string[] }>;
-  } | null;
-}
-
-function exampleHooks(
-  list: Array<{ hook?: string; type?: string; channels?: string[] }> | undefined,
-  n: number,
-): string {
-  return (list ?? [])
-    .filter((p) => p.hook)
-    .slice(0, n)
-    .map((p) => `- [${p.type ?? "post"}${p.channels?.length ? ` on ${p.channels.join("/")}` : ""}] "${p.hook}"`)
-    .join("\n");
 }
 
 export function strategyContext(strategy?: StrategyDirective | null): string {
@@ -333,15 +306,7 @@ export function strategyContext(strategy?: StrategyDirective | null): string {
 These are measured results from content already posted for this brand. They OVERRIDE your default instincts.
 What we learned: ${strategy.insights}
 Strategy to apply to every piece you now write: ${strategy.directives}
-Double down on the formats, hooks, channels and posting times that performed. Drop or rework what underperformed.${
-    exampleHooks(strategy.metrics?.top_performers, 3)
-      ? `\nOpenings that WORKED (match their angle and style, never copy the wording):\n${exampleHooks(strategy.metrics?.top_performers, 3)}`
-      : ""
-  }${
-    exampleHooks(strategy.metrics?.worst_performers, 2)
-      ? `\nOpenings that FLOPPED (avoid this style):\n${exampleHooks(strategy.metrics?.worst_performers, 2)}`
-      : ""
-  }
+Double down on the formats, hooks, channels and posting times that performed. Drop or rework what underperformed.
 === END PERFORMANCE LEARNINGS ===`;
 }
 
@@ -547,6 +512,8 @@ Return JSON shaped exactly as:
 
 interface RowInput {
   userId: string;
+  /** The brand these rows belong to (Scale plan: a user can own several). */
+  brandId?: string | null;
   date: string;
   platforms: string[];
   autopost?: boolean;
@@ -588,6 +555,7 @@ function baseRow(input: RowInput) {
   // NOT NULL columns.
   return {
     user_id: input.userId,
+    brand_id: input.brandId ?? null,
     scheduled_date: input.date,
     platforms: input.platforms,
     summary: "",
@@ -699,10 +667,10 @@ export function imagePromptFor(
 
   if (isVideoType(item.type)) {
     const aspect = item.type === "product_service_video" ? "16:9" : "9:16 vertical";
-    return `${aspect} thumbnail/cover frame, bold legible headline text, high contrast, professional marketing design. ${SAFE_ZONE} ${base}${brandLine}${SAFETY_IMAGE_SUFFIX}`;
+    return `${aspect} thumbnail/cover frame, bold legible headline text, high contrast, professional marketing design. ${base}${brandLine}${SAFETY_IMAGE_SUFFIX}`;
   }
 
-  const aspect = item.type === "pinterest" ? "2:3 vertical" : "4:5 portrait";
+  const aspect = item.type === "pinterest" ? "2:3 vertical" : "square 1:1";
   return [
     `Premium, agency-grade marketing poster for social media, ${aspect}.`,
     "Art direction: strong visual hierarchy with one bold headline, 3-5 short supporting points in a clean grid,",
@@ -710,7 +678,6 @@ export function imagePromptFor(
     "crisp custom vector iconography (not clipart), tasteful data visualisation where numbers appear,",
     "modern geometric sans-serif typography, perfect kerning, all text sharp, correctly spelled and fully legible at small sizes,",
     "print-quality sharpness, no watermark, no stock-photo collage, no gibberish text, no clipped letters.",
-    SAFE_ZONE,
     base,
     brandLine,
     SAFETY_IMAGE_SUFFIX,
@@ -733,8 +700,7 @@ export function carouselSlideImagePromptFor(
       }" as a small clean wordmark in a corner.`
     : "";
   return [
-    `Carousel slide ${index + 1} of ${total}, 4:5 portrait, part of one connected visual sequence — consistent colour palette, typography and layout grid across all slides in the set.`,
-    SAFE_ZONE,
+    `Carousel slide ${index + 1} of ${total}, square 1:1, part of one connected visual sequence — consistent colour palette, typography and layout grid across all slides in the set.`,
     `Headline text to render: "${slide.headline || ""}".`,
     slide.subtext ? `Supporting line: "${slide.subtext}".` : "",
     slide.image_prompt || "",

@@ -44,6 +44,7 @@ const VIDEO_TYPES = ["instagram_reel", "youtube_short", "tiktok_video", "product
 const IMAGE_TYPES = ["linkedin_post", "instagram_post", "facebook_post", "twitter_post", "pinterest"];
 
 export interface ContentItem {
+  brand_id?: string | null;
   id: string;
   scheduled_date: string;
   scheduled_time: string | null;
@@ -109,14 +110,19 @@ export function ContentDetailDialog({
   const invalidate = () => queryClient.invalidateQueries({ queryKey: ["content"] });
 
   const { data: brand } = useQuery({
-    queryKey: ["brand-profile-handles"],
+    queryKey: ["brand-profile-handles", item?.brand_id ?? null],
     queryFn: async () => {
       const { data: userData } = await supabase.auth.getUser();
       if (!userData.user) return null;
-      const { data: row } = await supabase
+      let query = supabase
         .from("brand_profiles")
         .select("social_handles, website")
-        .eq("user_id", userData.user.id)
+        .eq("user_id", userData.user.id);
+      // The brand this piece belongs to (an account can own several).
+      if (item?.brand_id) query = query.eq("id", item.brand_id);
+      const { data: row } = await query
+        .order("created_at", { ascending: true })
+        .limit(1)
         .maybeSingle();
       return row;
     },

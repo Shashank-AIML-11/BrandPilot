@@ -52,6 +52,8 @@ export default defineTool({
       .from("brand_profiles")
       .select("id")
       .eq("user_id", userId)
+      .order("created_at", { ascending: true })
+      .limit(1)
       .maybeSingle();
     if (readError) return { content: [{ type: "text", text: readError.message }], isError: true };
 

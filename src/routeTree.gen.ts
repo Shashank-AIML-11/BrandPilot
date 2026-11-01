@@ -17,11 +17,13 @@ import { Route as PricingRouteImport } from './routes/pricing'
 import { Route as ResetPasswordRouteImport } from './routes/reset-password'
 import { Route as Char91DotmcpChar93ListToolsRouteImport } from './routes/[.mcp]/list-tools'
 import { Route as Char91DotwellKnownChar93OauthProtectedResourceRouteImport } from './routes/[.well-known]/oauth-protected-resource'
+import { Route as AuthenticatedAddBrandRouteImport } from './routes/_authenticated/add-brand'
 import { Route as AuthenticatedAdminRouteImport } from './routes/_authenticated/admin'
 import { Route as AuthenticatedAnalyticsRouteImport } from './routes/_authenticated/analytics'
 import { Route as AuthenticatedBrandProfileRouteImport } from './routes/_authenticated/brand-profile'
 import { Route as AuthenticatedCalendarRouteImport } from './routes/_authenticated/calendar'
 import { Route as AuthenticatedCheckoutRouteImport } from './routes/_authenticated/checkout'
+import { Route as AuthenticatedContentLibraryRouteImport } from './routes/_authenticated/content-library'
 import { Route as AuthenticatedFaqRouteImport } from './routes/_authenticated/faq'
 import { Route as AuthenticatedHelpRouteImport } from './routes/_authenticated/help'
 import { Route as AuthenticatedPlanRouteImport } from './routes/_authenticated/plan'
@@ -74,6 +76,11 @@ const Char91DotwellKnownChar93OauthProtectedResourceRoute =
     path: '/.well-known/oauth-protected-resource',
     getParentRoute: () => rootRouteImport,
   } as any)
+const AuthenticatedAddBrandRoute = AuthenticatedAddBrandRouteImport.update({
+  id: '/add-brand',
+  path: '/add-brand',
+  getParentRoute: () => AuthenticatedRouteRoute,
+} as any)
 const AuthenticatedAdminRoute = AuthenticatedAdminRouteImport.update({
   id: '/admin',
   path: '/admin',
@@ -100,6 +107,12 @@ const AuthenticatedCheckoutRoute = AuthenticatedCheckoutRouteImport.update({
   path: '/checkout',
   getParentRoute: () => AuthenticatedRouteRoute,
 } as any)
+const AuthenticatedContentLibraryRoute =
+  AuthenticatedContentLibraryRouteImport.update({
+    id: '/content-library',
+    path: '/content-library',
+    getParentRoute: () => AuthenticatedRouteRoute,
+  } as any)
 const AuthenticatedFaqRoute = AuthenticatedFaqRouteImport.update({
   id: '/faq',
   path: '/faq',
@@ -162,11 +175,13 @@ export interface FileRoutesByFullPath {
   '/reset-password': typeof ResetPasswordRoute
   '/.mcp/list-tools': typeof Char91DotmcpChar93ListToolsRoute
   '/.well-known/oauth-protected-resource': typeof Char91DotwellKnownChar93OauthProtectedResourceRoute
+  '/add-brand': typeof AuthenticatedAddBrandRoute
   '/admin': typeof AuthenticatedAdminRoute
   '/analytics': typeof AuthenticatedAnalyticsRoute
   '/brand-profile': typeof AuthenticatedBrandProfileRoute
   '/calendar': typeof AuthenticatedCalendarRoute
   '/checkout': typeof AuthenticatedCheckoutRoute
+  '/content-library': typeof AuthenticatedContentLibraryRoute
   '/faq': typeof AuthenticatedFaqRoute
   '/help': typeof AuthenticatedHelpRoute
   '/plan': typeof AuthenticatedPlanRoute
@@ -186,11 +201,13 @@ export interface FileRoutesByTo {
   '/reset-password': typeof ResetPasswordRoute
   '/.mcp/list-tools': typeof Char91DotmcpChar93ListToolsRoute
   '/.well-known/oauth-protected-resource': typeof Char91DotwellKnownChar93OauthProtectedResourceRoute
+  '/add-brand': typeof AuthenticatedAddBrandRoute
   '/admin': typeof AuthenticatedAdminRoute
   '/analytics': typeof AuthenticatedAnalyticsRoute
   '/brand-profile': typeof AuthenticatedBrandProfileRoute
   '/calendar': typeof AuthenticatedCalendarRoute
   '/checkout': typeof AuthenticatedCheckoutRoute
+  '/content-library': typeof AuthenticatedContentLibraryRoute
   '/faq': typeof AuthenticatedFaqRoute
   '/help': typeof AuthenticatedHelpRoute
   '/plan': typeof AuthenticatedPlanRoute
@@ -212,11 +229,13 @@ export interface FileRoutesById {
   '/reset-password': typeof ResetPasswordRoute
   '/.mcp/list-tools': typeof Char91DotmcpChar93ListToolsRoute
   '/.well-known/oauth-protected-resource': typeof Char91DotwellKnownChar93OauthProtectedResourceRoute
+  '/_authenticated/add-brand': typeof AuthenticatedAddBrandRoute
   '/_authenticated/admin': typeof AuthenticatedAdminRoute
   '/_authenticated/analytics': typeof AuthenticatedAnalyticsRoute
   '/_authenticated/brand-profile': typeof AuthenticatedBrandProfileRoute
   '/_authenticated/calendar': typeof AuthenticatedCalendarRoute
   '/_authenticated/checkout': typeof AuthenticatedCheckoutRoute
+  '/_authenticated/content-library': typeof AuthenticatedContentLibraryRoute
   '/_authenticated/faq': typeof AuthenticatedFaqRoute
   '/_authenticated/help': typeof AuthenticatedHelpRoute
   '/_authenticated/plan': typeof AuthenticatedPlanRoute
@@ -238,11 +257,13 @@ export interface FileRouteTypes {
     | '/reset-password'
     | '/.mcp/list-tools'
     | '/.well-known/oauth-protected-resource'
+    | '/add-brand'
     | '/admin'
     | '/analytics'
     | '/brand-profile'
     | '/calendar'
     | '/checkout'
+    | '/content-library'
     | '/faq'
     | '/help'
     | '/plan'
@@ -262,11 +283,13 @@ export interface FileRouteTypes {
     | '/reset-password'
     | '/.mcp/list-tools'
     | '/.well-known/oauth-protected-resource'
+    | '/add-brand'
     | '/admin'
     | '/analytics'
     | '/brand-profile'
     | '/calendar'
     | '/checkout'
+    | '/content-library'
     | '/faq'
     | '/help'
     | '/plan'
@@ -287,11 +310,13 @@ export interface FileRouteTypes {
     | '/reset-password'
     | '/.mcp/list-tools'
     | '/.well-known/oauth-protected-resource'
+    | '/_authenticated/add-brand'
     | '/_authenticated/admin'
     | '/_authenticated/analytics'
     | '/_authenticated/brand-profile'
     | '/_authenticated/calendar'
     | '/_authenticated/checkout'
+    | '/_authenticated/content-library'
     | '/_authenticated/faq'
     | '/_authenticated/help'
     | '/_authenticated/plan'
@@ -378,6 +403,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof Char91DotwellKnownChar93OauthProtectedResourceRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/_authenticated/add-brand': {
+      id: '/_authenticated/add-brand'
+      path: '/add-brand'
+      fullPath: '/add-brand'
+      preLoaderRoute: typeof AuthenticatedAddBrandRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
     '/_authenticated/admin': {
       id: '/_authenticated/admin'
       path: '/admin'
@@ -411,6 +443,13 @@ declare module '@tanstack/react-router' {
       path: '/checkout'
       fullPath: '/checkout'
       preLoaderRoute: typeof AuthenticatedCheckoutRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
+    '/_authenticated/content-library': {
+      id: '/_authenticated/content-library'
+      path: '/content-library'
+      fullPath: '/content-library'
+      preLoaderRoute: typeof AuthenticatedContentLibraryRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
     '/_authenticated/faq': {
@@ -487,11 +526,13 @@ declare module '@tanstack/react-router' {
 }
 
 interface AuthenticatedRouteRouteChildren {
+  AuthenticatedAddBrandRoute: typeof AuthenticatedAddBrandRoute
   AuthenticatedAdminRoute: typeof AuthenticatedAdminRoute
   AuthenticatedAnalyticsRoute: typeof AuthenticatedAnalyticsRoute
   AuthenticatedBrandProfileRoute: typeof AuthenticatedBrandProfileRoute
   AuthenticatedCalendarRoute: typeof AuthenticatedCalendarRoute
   AuthenticatedCheckoutRoute: typeof AuthenticatedCheckoutRoute
+  AuthenticatedContentLibraryRoute: typeof AuthenticatedContentLibraryRoute
   AuthenticatedFaqRoute: typeof AuthenticatedFaqRoute
   AuthenticatedHelpRoute: typeof AuthenticatedHelpRoute
   AuthenticatedPlanRoute: typeof AuthenticatedPlanRoute
@@ -499,11 +540,13 @@ interface AuthenticatedRouteRouteChildren {
 }
 
 const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
+  AuthenticatedAddBrandRoute: AuthenticatedAddBrandRoute,
   AuthenticatedAdminRoute: AuthenticatedAdminRoute,
   AuthenticatedAnalyticsRoute: AuthenticatedAnalyticsRoute,
   AuthenticatedBrandProfileRoute: AuthenticatedBrandProfileRoute,
   AuthenticatedCalendarRoute: AuthenticatedCalendarRoute,
   AuthenticatedCheckoutRoute: AuthenticatedCheckoutRoute,
+  AuthenticatedContentLibraryRoute: AuthenticatedContentLibraryRoute,
   AuthenticatedFaqRoute: AuthenticatedFaqRoute,
   AuthenticatedHelpRoute: AuthenticatedHelpRoute,
   AuthenticatedPlanRoute: AuthenticatedPlanRoute,

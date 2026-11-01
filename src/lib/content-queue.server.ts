@@ -12,6 +12,7 @@ import {
   type DailyContentQuota,
 } from "@/lib/content.server";
 import { getGenerationEntitlement } from "@/lib/generation-entitlements";
+import { isPrimaryBrand, loadBrand } from "@/lib/brand.server";
 
 type AdminClient = SupabaseClient<Database>;
 
@@ -56,17 +57,16 @@ export async function processGenerationQueue(admin: AdminClient, userId?: string
   await admin.from("content_generation_jobs").update({ status: "running" }).eq("id", job.id);
 
   try {
-    const { data: brand } = await admin
-      .from("brand_profiles")
-      .select("*")
-      .eq("user_id", job.user_id)
-      .maybeSingle();
+    // The job belongs to one brand (a Scale-plan user can own several).
+    const brand = await loadBrand(admin, job.user_id, job.brand_id);
 
     if (!brand || !brand.business_name) {
       throw new Error("Complete your Brand Profile before generating content.");
     }
 
     const entitlement = await getGenerationEntitlement(admin, job.user_id);
+    // Channels are still per account: only the primary brand auto-posts.
+    const primary = await isPrimaryBrand(admin, job.user_id, brand.id);
     const platforms = activePlatforms(brand as never).slice(
       0,
       entitlement.plan.channelLimit ?? undefined,
@@ -78,7 +78,7 @@ export async function processGenerationQueue(admin: AdminClient, userId?: string
     ) as Record<string, DailyContentQuota>;
 
     const { latestStrategy } = await import("@/lib/strategy-queue.server");
-    const strategy = await latestStrategy(admin, job.user_id);
+    const strategy = await latestStrategy(admin, job.user_id, brand.id);
 
     // Only ask for (and only require in the schema) the types that
     // actually have quota somewhere in this batch — asking the model to
@@ -118,7 +118,13 @@ export async function processGenerationQueue(admin: AdminClient, userId?: string
       const day = days.find((d) => (d as { date?: string }).date === date) ?? days[index] ?? {};
       return rowsForDay(
         day as never,
-        { userId: job.user_id, date, platforms, autopost: entitlement.plan.autoPost },
+        {
+          userId: job.user_id,
+          brandId: brand.id,
+          date,
+          platforms,
+          autopost: entitlement.plan.autoPost && primary,
+        },
         quotas[date]!,
       );
     });
@@ -138,6 +144,7 @@ export async function processGenerationQueue(admin: AdminClient, userId?: string
       .from("content_items")
       .select("id, scheduled_date, type, scheduled_time")
       .eq("user_id", job.user_id)
+      .eq("brand_id", brand.id)
       .in("scheduled_date", pending)
       .eq("status", "draft")
       .order("scheduled_date", { ascending: true })

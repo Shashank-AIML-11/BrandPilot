@@ -3,6 +3,7 @@ import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import { z } from "zod";
 
 const weekInput = z.object({
+  brandId: z.string().uuid().optional(),
   month: z.string().regex(/^\d{4}-\d{2}$/),
   dates: z
     .array(z.string().regex(/^\d{4}-\d{2}-\d{2}$/))
@@ -11,6 +12,7 @@ const weekInput = z.object({
 });
 
 const monthInput = z.object({
+  brandId: z.string().uuid().optional(),
   month: z.string().regex(/^\d{4}-\d{2}$/),
   dates: z
     .array(z.string().regex(/^\d{4}-\d{2}-\d{2}$/))
@@ -46,15 +48,9 @@ export const generateWeek = createServerFn({
         context.userId,
       );
 
-    const { data: brand } =
-      await context.supabase
-        .from("brand_profiles")
-        .select("*")
-        .eq(
-          "user_id",
-          context.userId,
-        )
-        .maybeSingle();
+    const { loadBrand, isPrimaryBrand } = await import("@/lib/brand.server");
+    const brand = await loadBrand(context.supabase, context.userId, data.brandId);
+    const primary = brand ? await isPrimaryBrand(context.supabase, context.userId, brand.id) : false;
 
     if (
       !brand ||
@@ -102,6 +98,7 @@ export const generateWeek = createServerFn({
       await latestStrategy(
         supabaseAdmin,
         context.userId,
+        brand.id,
       );
 
     const result =
@@ -140,11 +137,13 @@ export const generateWeek = createServerFn({
             {
               userId:
                 context.userId,
+              brandId: brand.id,
               date,
               platforms,
+              // Channels are still per account: only the primary brand auto-posts.
               autopost:
                 entitlement.plan
-                  .autoPost,
+                  .autoPost && primary,
             },
             quotaSchedule[
               date
@@ -166,6 +165,7 @@ export const generateWeek = createServerFn({
         "user_id",
         context.userId,
       )
+      .eq("brand_id", brand.id)
       .in(
         "scheduled_date",
         data.dates,
@@ -228,7 +228,6 @@ export const generateMediaBatch =
         const {
           imagePromptFor,
           carouselSlideImagePromptFor,
-          aspectForType,
         } =
           await import(
             "@/lib/content.server"
@@ -238,7 +237,7 @@ export const generateMediaBatch =
           await context.supabase
             .from("content_items")
             .select(
-              "id, type, title, summary, image_prompt, image_url, carousel_slides, carousel_image_urls",
+              "id, brand_id, type, title, summary, image_prompt, image_url, carousel_slides, carousel_image_urls",
             )
             .eq(
               "user_id",
@@ -249,17 +248,15 @@ export const generateMediaBatch =
               data.ids,
             );
 
-        const { data: brand } =
-          await context.supabase
-            .from("brand_profiles")
-            .select(
-              "business_name, description, products_services, tone, propositions, icp",
-            )
-            .eq(
-              "user_id",
-              context.userId,
-            )
-            .maybeSingle();
+        // A user can own several brands: load them once and use each item's own brand.
+        const { data: brandRows } = await context.supabase
+          .from("brand_profiles")
+          .select("id, business_name, description, products_services, tone, propositions, icp")
+          .eq("user_id", context.userId)
+          .order("created_at", { ascending: true });
+        const brandById = new Map((brandRows ?? []).map((b) => [b.id, b]));
+        const brandFor = (itemBrandId: string | null | undefined) =>
+          (itemBrandId ? brandById.get(itemBrandId) : undefined) ?? brandRows?.[0] ?? null;
 
         // Blog never has an image. Carousel needs one image per slide
         // instead of a single image_url — handled separately below.
@@ -280,9 +277,8 @@ export const generateMediaBatch =
                     await generateImageBytes(
                       imagePromptFor(
                         item as never,
-                        brand as never,
+                        brandFor(item.brand_id) as never,
                       ),
-                      aspectForType(item.type),
                     );
 
                   const path = `${context.userId}/${item.id}.png`;
@@ -348,8 +344,7 @@ export const generateMediaBatch =
             for (let i = 0; i < slides.length; i += 1) {
               if (existingUrls[i]) continue; // already rendered
               const bytes = await generateImageBytes(
-                carouselSlideImagePromptFor(slides[i]!, i, slides.length, brand as never),
-                aspectForType("carousel"),
+                carouselSlideImagePromptFor(slides[i]!, i, slides.length, brandFor(item.brand_id) as never),
               );
               const path = `${context.userId}/${item.id}-slide-${i}.png`;
               const { error: uploadError } = await context.supabase.storage
@@ -407,7 +402,6 @@ export const generateItemImage =
 
         const {
           imagePromptFor,
-          aspectForType,
         } =
           await import(
             "@/lib/content.server"
@@ -420,7 +414,7 @@ export const generateItemImage =
           await context.supabase
             .from("content_items")
             .select(
-              "id, type, title, summary, image_prompt",
+              "id, brand_id, type, title, summary, image_prompt",
             )
             .eq(
               "id",
@@ -447,19 +441,8 @@ export const generateItemImage =
           );
         }
 
-        const {
-          data: brand,
-        } =
-          await context.supabase
-            .from("brand_profiles")
-            .select(
-              "business_name, description, products_services, tone",
-            )
-            .eq(
-              "user_id",
-              context.userId,
-            )
-            .maybeSingle();
+        const { loadBrand } = await import("@/lib/brand.server");
+        const brand = await loadBrand(context.supabase, context.userId, item.brand_id);
 
         const bytes =
           await generateImageBytes(
@@ -467,7 +450,6 @@ export const generateItemImage =
               item as never,
               brand as never,
             ),
-            aspectForType(item.type),
           );
 
         const path = `${context.userId}/${item.id}.png`;
@@ -1113,11 +1095,9 @@ export const queueMonthGeneration = createServerFn({ method: "POST" })
     /*
      * Verify Brand Profile.
      */
-    const { data: brand } = await context.supabase
-      .from("brand_profiles")
-      .select("business_name")
-      .eq("user_id", context.userId)
-      .maybeSingle();
+    const { loadBrand, isPrimaryBrand } = await import("@/lib/brand.server");
+    const brand = await loadBrand(context.supabase, context.userId, data.brandId);
+    const primary = brand ? await isPrimaryBrand(context.supabase, context.userId, brand.id) : false;
 
     if (!brand || !brand.business_name) {
       throw new Error("Complete your Brand Profile before generating content.");
@@ -1169,6 +1149,7 @@ export const queueMonthGeneration = createServerFn({ method: "POST" })
       .from("content_items")
       .select("scheduled_date")
       .eq("user_id", context.userId)
+      .eq("brand_id", brand.id)
       .eq("status", "posted")
       .in("scheduled_date", futureDates);
 
@@ -1219,6 +1200,7 @@ export const queueMonthGeneration = createServerFn({ method: "POST" })
       .from("content_generation_jobs")
       .delete()
       .eq("user_id", context.userId)
+      .eq("brand_id", brand.id)
       .eq("month", data.month);
 
     /*
@@ -1242,6 +1224,7 @@ export const queueMonthGeneration = createServerFn({ method: "POST" })
       .from("content_items")
       .delete()
       .eq("user_id", context.userId)
+      .eq("brand_id", brand.id)
       .in("scheduled_date", scheduledDates)
       .neq("status", "posted");
 
@@ -1258,6 +1241,7 @@ export const queueMonthGeneration = createServerFn({ method: "POST" })
       .from("content_generation_jobs")
       .insert({
         user_id: context.userId,
+        brand_id: brand.id,
         month: data.month,
         pending_dates: scheduledDates,
         days_total: scheduledDates.length,
@@ -1287,7 +1271,14 @@ export const queueMonthGeneration = createServerFn({ method: "POST" })
       const quota = contentPlan[date];
       if (!quota) return [];
       return renderingRowsForDay(
-        { userId: context.userId, date, platforms: activeChannelList, autopost: entitlement.plan.autoPost },
+        {
+          userId: context.userId,
+          brandId: brand.id,
+          date,
+          platforms: activeChannelList,
+          // Channels are still per account: only the primary brand auto-posts.
+          autopost: entitlement.plan.autoPost && primary,
+        },
         quota,
       );
     });

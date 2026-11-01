@@ -121,12 +121,25 @@ export const publishContentItem = createServerFn({ method: "POST" })
 
 export const publishAllContent = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .handler(async ({ context }) => {
+  .inputValidator((input: { brandId?: string } | undefined) => input ?? {})
+  .handler(async ({ data, context }) => {
     const { getGenerationEntitlement } = await import("@/lib/generation-entitlements");
     await getGenerationEntitlement(context.supabase, context.userId);
 
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
     const { CHANNELS_BY_TYPE } = await import("@/lib/content.server");
+    const { loadBrand, isPrimaryBrand } = await import("@/lib/brand.server");
+
+    const brand = await loadBrand(supabaseAdmin, context.userId, data.brandId);
+    if (!brand) throw new Error("Create your brand profile first.");
+    // Channel connections belong to the account, not to a brand (yet), so only the
+    // first brand may publish to them. This stops one client's posts going out on
+    // another client's accounts.
+    if (!(await isPrimaryBrand(supabaseAdmin, context.userId, brand.id))) {
+      throw new Error(
+        "Publishing for additional brands needs their own connected channels, which is coming next. Nothing was posted.",
+      );
+    }
 
     // Only text blogs are posted for now — infographic/video posting is on
     // hold while we validate the blog pipeline end-to-end.
@@ -135,6 +148,7 @@ export const publishAllContent = createServerFn({ method: "POST" })
       .from("content_items")
       .select("id, scheduled_date")
       .eq("user_id", context.userId)
+      .eq("brand_id", brand.id)
       .eq("type", "blog")
       .eq("enabled", true)
       .neq("status", "posted")
@@ -156,11 +170,6 @@ export const publishAllContent = createServerFn({ method: "POST" })
       (connectionsRaw ?? []).map((c) => (c as unknown as { channel: string }).channel),
     );
 
-    const { data: brand } = await supabaseAdmin
-      .from("brand_profiles")
-      .select("social_handles")
-      .eq("user_id", context.userId)
-      .maybeSingle();
     const handles = (brand?.social_handles as Record<string, string> | null) ?? {};
     const hasManualHandle = (channel: string) => Boolean((handles[channel] ?? "").trim());
 

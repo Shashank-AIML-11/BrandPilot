@@ -7,7 +7,6 @@ import { supabase } from "@/integrations/supabase/client";
 import { ChannelConnections } from "@/components/channel-connections";
 import { useMe } from "@/components/app-shell";
 import {
-  NEW_BRAND_ID,
   agencyPlanFor,
   resolveActiveBrand,
   setActiveBrandId,
@@ -86,16 +85,17 @@ function BrandProfilePage() {
   const isAgency = !!agencyPlanFor(me);
   const { data: brands, isLoading: brandsLoading } = useAgencyBrands(isAgency);
   const storedBrandId = useStoredBrandId();
-  const isNewBrand = isAgency && storedBrandId === NEW_BRAND_ID;
-  const activeBrand = isNewBrand ? undefined : resolveActiveBrand(brands, storedBrandId);
+  const activeBrand = resolveActiveBrand(brands, storedBrandId);
+  // Channel connections are per account for now, so they belong to the first brand only.
+  const isPrimary = !isAgency || (!!activeBrand && brands?.[0]?.id === activeBrand.id);
   const profileKey = [
     "brand-profile",
-    isAgency ? (isNewBrand ? NEW_BRAND_ID : (activeBrand?.id ?? "none")) : "self",
+    isAgency ? (activeBrand?.id ?? "none") : "self",
   ];
 
   const { data, isLoading } = useQuery({
     queryKey: profileKey,
-    enabled: !meLoading && !(isAgency && brandsLoading) && !isNewBrand,
+    enabled: !meLoading && !(isAgency && brandsLoading),
     queryFn: async () => {
       const { data: userData } = await supabase.auth.getUser();
       const base = supabase.from("brand_profiles").select("*");
@@ -112,10 +112,6 @@ function BrandProfilePage() {
   });
 
   useEffect(() => {
-    if (isNewBrand) {
-      setForm(EMPTY);
-      return;
-    }
     if (!data) return;
     setForm({
       business_name: data.business_name ?? "",
@@ -129,7 +125,7 @@ function BrandProfilePage() {
       google_drive_folder: data.google_drive_folder ?? "",
       social_handles: (data.social_handles as Record<string, string>) ?? {},
     });
-  }, [data, isNewBrand]);
+  }, [data]);
 
   const save = useMutation({
     mutationFn: async () => {
@@ -158,12 +154,23 @@ function BrandProfilePage() {
         updated_at: new Date().toISOString(),
       };
 
+      // Save to the brand being edited. Without one (a first-ever save, or a
+      // single-brand account) update the user's existing brand, else create it.
+      let targetId: string | undefined = isAgency ? activeBrand?.id : undefined;
+      if (!targetId) {
+        const { data: existing, error: lookupError } = await supabase
+          .from("brand_profiles")
+          .select("id")
+          .eq("user_id", userData.user.id)
+          .order("created_at", { ascending: true })
+          .limit(1)
+          .maybeSingle();
+        if (lookupError) throw lookupError;
+        targetId = existing?.id;
+      }
       const table = supabase.from("brand_profiles");
-      const { data: saved, error } = await (isAgency && isNewBrand
-        ? table.insert(payload)
-        : isAgency && activeBrand
-          ? table.update(payload).eq("id", activeBrand.id)
-          : table.upsert(payload, { onConflict: "user_id" })
+      const { data: saved, error } = await (
+        targetId ? table.update(payload).eq("id", targetId) : table.insert(payload)
       )
         .select()
         .single();
@@ -211,7 +218,7 @@ function BrandProfilePage() {
               <span>Brands</span>
               <ChevronRight className="h-3.5 w-3.5" />
               <span className="text-foreground">
-                {isNewBrand ? "New brand" : (activeBrand?.name ?? "Your brand")}
+                {activeBrand?.name ?? "Your brand"}
               </span>
             </nav>
           )}
@@ -376,7 +383,18 @@ function BrandProfilePage() {
         </div>
       </section>
 
-      <ChannelConnections />
+      {isPrimary ? (
+        <ChannelConnections />
+      ) : (
+        <section className="rounded-xl border border-border bg-card p-6">
+          <h2 className="text-lg font-semibold">Channels</h2>
+          <p className="mt-1 text-sm text-muted-foreground">
+            Connecting social accounts for additional brands is coming next. Until then, content for
+            this brand is created and kept in its calendar and library, and nothing is posted
+            automatically.
+          </p>
+        </section>
+      )}
     </div>
   );
 }

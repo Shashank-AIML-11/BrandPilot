@@ -2,7 +2,7 @@ import { Link } from "@tanstack/react-router";
 import { BarChart3, Building2, CalendarDays, LibraryBig, Plus, ShieldCheck } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
-import { MULTI_BRAND_ENABLED, type AgencyBrand } from "@/lib/agency";
+import type { AgencyBrand } from "@/lib/agency";
 import type { Plan } from "@/lib/plans";
 
 const WORKSPACE = [
@@ -30,7 +30,6 @@ interface Props {
   plan: Plan;
   showAdmin: boolean;
   onSelectBrand: (id: string) => void;
-  onAddBrand: () => void;
 }
 
 /** Sidebar for Scale-plan (agency) users: brand switcher + per-brand workspace. */
@@ -40,12 +39,10 @@ export function AgencySidebar({
   plan,
   showAdmin,
   onSelectBrand,
-  onAddBrand,
 }: Props) {
   const used = brands.length;
   const limit = plan.brandProfileLimit;
   const atLimit = used >= limit;
-  const canAdd = MULTI_BRAND_ENABLED && !atLimit;
   const activeBrand = brands.find((b) => b.id === activeBrandId);
   const pct = limit > 0 ? Math.min(100, (used / limit) * 100) : 0;
 
@@ -94,25 +91,30 @@ export function AgencySidebar({
           );
         })}
 
-        <button
-          type="button"
-          onClick={onAddBrand}
-          disabled={!canAdd}
-          title={
-            atLimit
-              ? `Your ${plan.name} plan includes ${limit} brands`
-              : !MULTI_BRAND_ENABLED
-                ? "Adding more brands is rolling out soon"
-                : undefined
-          }
-          className={cn(
-            rowBase,
-            "mt-2 border border-dashed border-border text-amber-300 disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:bg-transparent",
-          )}
-        >
-          <Plus className="h-4 w-4" />
-          {atLimit ? "Brand limit reached" : "Add brand"}
-        </button>
+        {atLimit ? (
+          <div
+            aria-disabled="true"
+            title={`Your ${plan.name} plan includes ${limit} brands`}
+            className={cn(
+              rowBase,
+              "mt-2 cursor-not-allowed border border-dashed border-border text-amber-300 opacity-50 hover:bg-transparent",
+            )}
+          >
+            <Plus className="h-4 w-4" />
+            Brand limit reached
+          </div>
+        ) : (
+          <Link
+            to="/add-brand"
+            className={cn(rowBase, "mt-2 border border-dashed border-border text-amber-300")}
+            activeProps={{
+              className: cn(rowBase, "mt-2 border border-dashed border-primary text-amber-300"),
+            }}
+          >
+            <Plus className="h-4 w-4" />
+            Add brand
+          </Link>
+        )}
       </nav>
 
       {activeBrand && (

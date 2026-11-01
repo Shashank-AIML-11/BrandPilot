@@ -140,6 +140,7 @@ export type Database = {
       }
       content_generation_jobs: {
         Row: {
+          brand_id: string | null
           content_plan: Json
           created_at: string
           days_done: number
@@ -153,6 +154,7 @@ export type Database = {
           user_id: string
         }
         Insert: {
+          brand_id?: string | null
           content_plan?: Json
           created_at?: string
           days_done?: number
@@ -166,6 +168,7 @@ export type Database = {
           user_id: string
         }
         Update: {
+          brand_id?: string | null
           content_plan?: Json
           created_at?: string
           days_done?: number
@@ -182,11 +185,12 @@ export type Database = {
       }
       content_items: {
         Row: {
+          carousel_image_urls: string[]
+          carousel_slides: Json
+          brand_id: string | null
           autopost: boolean
           body: string | null
           caption: string | null
-          carousel_image_urls: string[]
-          carousel_slides: Json
           clicks: number
           created_at: string
           enabled: boolean
@@ -196,7 +200,6 @@ export type Database = {
           image_prompt: string | null
           image_url: string | null
           impressions: number
-          metrics_updated_at: string | null
           platforms: string[]
           posted_at: string | null
           publish_attempts: number
@@ -217,11 +220,12 @@ export type Database = {
           voiceover_url: string | null
         }
         Insert: {
+          carousel_image_urls?: string[]
+          carousel_slides?: Json
+          brand_id?: string | null
           autopost?: boolean
           body?: string | null
           caption?: string | null
-          carousel_image_urls?: string[]
-          carousel_slides?: Json
           clicks?: number
           created_at?: string
           enabled?: boolean
@@ -231,7 +235,6 @@ export type Database = {
           image_prompt?: string | null
           image_url?: string | null
           impressions?: number
-          metrics_updated_at?: string | null
           platforms?: string[]
           posted_at?: string | null
           publish_attempts?: number
@@ -252,11 +255,12 @@ export type Database = {
           voiceover_url?: string | null
         }
         Update: {
+          carousel_image_urls?: string[]
+          carousel_slides?: Json
+          brand_id?: string | null
           autopost?: boolean
           body?: string | null
           caption?: string | null
-          carousel_image_urls?: string[]
-          carousel_slides?: Json
           clicks?: number
           created_at?: string
           enabled?: boolean
@@ -266,7 +270,6 @@ export type Database = {
           image_prompt?: string | null
           image_url?: string | null
           impressions?: number
-          metrics_updated_at?: string | null
           platforms?: string[]
           posted_at?: string | null
           publish_attempts?: number
@@ -290,6 +293,7 @@ export type Database = {
       }
       content_strategies: {
         Row: {
+          brand_id: string | null
           created_at: string
           directives: string
           id: string
@@ -301,6 +305,7 @@ export type Database = {
           week_start: string
         }
         Insert: {
+          brand_id?: string | null
           created_at?: string
           directives?: string
           id?: string
@@ -312,6 +317,7 @@ export type Database = {
           week_start: string
         }
         Update: {
+          brand_id?: string | null
           created_at?: string
           directives?: string
           id?: string
@@ -344,69 +350,6 @@ export type Database = {
           source?: string
         }
         Relationships: []
-      }
-      post_metric_snapshots: {
-        Row: {
-          bucket: string
-          channel: string
-          clicks: number
-          content_item_id: string
-          engagements: number
-          external_id: string
-          fetched_at: string
-          id: string
-          impressions: number
-          ok: boolean
-          publish_log_id: string
-          raw: Json
-          user_id: string
-        }
-        Insert: {
-          bucket: string
-          channel: string
-          clicks?: number
-          content_item_id: string
-          engagements?: number
-          external_id?: string
-          fetched_at?: string
-          id?: string
-          impressions?: number
-          ok?: boolean
-          publish_log_id: string
-          raw?: Json
-          user_id: string
-        }
-        Update: {
-          bucket?: string
-          channel?: string
-          clicks?: number
-          content_item_id?: string
-          engagements?: number
-          external_id?: string
-          fetched_at?: string
-          id?: string
-          impressions?: number
-          ok?: boolean
-          publish_log_id?: string
-          raw?: Json
-          user_id?: string
-        }
-        Relationships: [
-          {
-            foreignKeyName: "post_metric_snapshots_content_item_id_fkey"
-            columns: ["content_item_id"]
-            isOneToOne: false
-            referencedRelation: "content_items"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "post_metric_snapshots_publish_log_id_fkey"
-            columns: ["publish_log_id"]
-            isOneToOne: false
-            referencedRelation: "publish_log"
-            referencedColumns: ["id"]
-          },
-        ]
       }
       profiles: {
         Row: {
@@ -615,6 +558,8 @@ export type Database = {
         | "twitter_post"
         | "carousel"
         | "blog"
+        | "email"
+        | "ad_image"
         | "product_service_video"
         | "tiktok_video"
         | "pinterest"
@@ -759,6 +704,8 @@ export const Constants = {
         "twitter_post",
         "carousel",
         "blog",
+        "email",
+        "ad_image",
         "product_service_video",
         "tiktok_video",
         "pinterest",

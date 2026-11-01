@@ -1,3 +1,4 @@
+import { useBrandScope } from "@/lib/brand-scope";
 import { createFileRoute } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
 import { format, subDays } from "date-fns";
@@ -66,13 +67,17 @@ function Stat({
 }
 
 function AnalyticsPage() {
+  const scope = useBrandScope();
+  const brandFilter = scope.brandId ? { brand_id: scope.brandId } : {};
   const { data, isLoading } = useQuery({
-    queryKey: ["analytics"],
+    queryKey: ["analytics", scope.brandId],
+    enabled: !scope.loading,
     queryFn: async () => {
       const from = format(subDays(new Date(), 29), "yyyy-MM-dd");
       const { data: rows, error } = await supabase
         .from("content_items")
         .select("scheduled_date, type, status, platforms, impressions, clicks, engagements")
+        .match(brandFilter)
         .gte("scheduled_date", from)
         .order("scheduled_date");
       if (error) throw error;
@@ -81,11 +86,13 @@ function AnalyticsPage() {
   });
 
   const { data: strategies } = useQuery({
-    queryKey: ["strategies"],
+    queryKey: ["strategies", scope.brandId],
+    enabled: !scope.loading,
     queryFn: async () => {
       const { data: rows, error } = await supabase
         .from("content_strategies")
         .select("id, week_start, week_end, insights, directives, rebuilt_dates")
+        .match(brandFilter)
         .order("week_start", { ascending: false })
         .limit(4);
       if (error) throw error;

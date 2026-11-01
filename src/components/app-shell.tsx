@@ -18,7 +18,6 @@ import { supabase } from "@/integrations/supabase/client";
 import { planById } from "@/lib/plans";
 import { AgencySidebar } from "@/components/agency-sidebar";
 import {
-  NEW_BRAND_ID,
   agencyPlanFor,
   resolveActiveBrand,
   setActiveBrandId,
@@ -198,14 +197,10 @@ export function AppShell({ children }: { children: ReactNode }) {
           {agencyPlan ? (
             <AgencySidebar
               brands={agencyBrands}
-              activeBrandId={storedBrandId === NEW_BRAND_ID ? null : (activeBrand?.id ?? null)}
+              activeBrandId={activeBrand?.id ?? null}
               plan={agencyPlan}
               showAdmin={!!me?.isAdmin}
               onSelectBrand={setActiveBrandId}
-              onAddBrand={() => {
-                setActiveBrandId(NEW_BRAND_ID);
-                void navigate({ to: "/brand-profile" });
-              }}
             />
           ) : (
           <>

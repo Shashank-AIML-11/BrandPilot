@@ -1,3 +1,4 @@
+import { loadBrand } from "@/lib/brand.server";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Database } from "@/integrations/supabase/types";
 import { chatJSON } from "@/lib/ai.server";
@@ -10,30 +11,9 @@ const USERS_PER_CYCLE = 3;
 const STRATEGY_SYSTEM = `You are a senior performance-marketing strategist reviewing one brand's own weekly content analytics.
 You only reason from the numbers and the brand profile you are given. Never invent data.
 Be specific and operational: name the formats, hooks, channels, posting times and topics to double down on, and the ones to drop.
-
-Evidence rules (strict):
-- Every group in the data has a "pieces" count. A group with fewer than 3 pieces is NOT evidence. Never tell the generator to drop, cut or stop a format, channel or time slot backed by fewer than 3 pieces; at most say "test it again". Only groups with 3 or more pieces may be called winners or losers.
-- Rates in the data are fractions: 0.162 means 16.2%. Always write them as percentages, never as 162%.
-- Platforms count "impressions" differently, so do not rank one channel against another by raw rate. Compare formats within the same channel first.
-- This product schedules and posts content; it does not manage ad spend. Never mention budget, spend or paid promotion.
-- Only mention formats, channels and times that appear in the data.
 Answer with a single valid JSON object and nothing else.
 
 ${SAFETY_RULES}`;
-
-/**
- * Same strict JSON-schema mode the content generator already uses with this model.
- * The loose "any JSON object" mode was rejected by Groq with HTTP 400.
- */
-const STRATEGY_SCHEMA = {
-  type: "object",
-  properties: {
-    insights: { type: "string" },
-    directives: { type: "string" },
-  },
-  required: ["insights", "directives"],
-  additionalProperties: false,
-} as const;
 
 function iso(d: Date) {
   return d.toISOString().slice(0, 10);
@@ -47,23 +27,16 @@ function addDays(date: Date, days: number) {
 
 interface Row {
   user_id: string;
+  brand_id: string | null;
   scheduled_date: string;
   scheduled_time: string | null;
   type: string;
   title: string | null;
-  caption: string | null;
-  body: string | null;
   status: string | null;
   platforms: string[] | null;
   impressions: number | null;
   clicks: number | null;
   engagements: number | null;
-}
-
-/** First line a reader sees: the thing the model should learn to repeat or avoid. */
-function hookOf(r: Row) {
-  const text = (r.caption || r.body || r.title || "").trim().split(/\n+/)[0] ?? "";
-  return text.slice(0, 140);
 }
 
 function score(r: Row) {
@@ -95,27 +68,14 @@ function summarise(rows: Row[]) {
         map[k].engagements += r.engagements ?? 0;
       }),
     );
-    // Rates make groups comparable even when one format simply got posted more often.
-    return Object.fromEntries(
-      Object.entries(map).map(([k, v]) => [
-        k,
-        {
-          ...v,
-          engagement_rate: v.impressions ? +(v.engagements / v.impressions).toFixed(4) : null,
-          ctr: v.impressions ? +(v.clicks / v.impressions).toFixed(4) : null,
-        },
-      ]),
-    );
+    return map;
   };
 
   const ranked = [...rows].sort((a, b) => score(b) - score(a));
   const brief = (r: Row) => ({
     title: r.title ?? "",
-    hook: hookOf(r),
     type: r.type,
-    channels: r.platforms ?? [],
     time: r.scheduled_time,
-    engagement_rate: r.impressions ? +((r.engagements ?? 0) / r.impressions).toFixed(4) : null,
     impressions: r.impressions ?? 0,
     clicks: r.clicks ?? 0,
     engagements: r.engagements ?? 0,
@@ -143,19 +103,12 @@ export async function processStrategyQueue(admin: AdminClient) {
   const weekEnd = addDays(today, -1);
   const weekStart = addDays(weekEnd, -6);
 
-  // Learn from a 14-day window so a post is judged on its 3-7 day numbers, not only its first
-  // hours, and ONLY from posts a platform actually returned numbers for (metrics_updated_at set).
-  // A post we could not measure is unknown, never a failure.
-  const loose = admin as unknown as SupabaseClient;
-  const dataStart = addDays(weekEnd, -13);
-  const { data: rowsData, error } = await loose
+  const { data: rowsData, error } = await admin
     .from("content_items")
     .select(
-      "user_id, scheduled_date, scheduled_time, type, title, caption, body, status, platforms, impressions, clicks, engagements",
+      "user_id, brand_id, scheduled_date, scheduled_time, type, title, status, platforms, impressions, clicks, engagements",
     )
-    .eq("status", "posted")
-    .not("metrics_updated_at", "is", null)
-    .gte("scheduled_date", iso(dataStart))
+    .gte("scheduled_date", iso(weekStart))
     .lte("scheduled_date", iso(weekEnd));
   if (error) throw new Error(error.message);
 
@@ -164,48 +117,37 @@ export async function processStrategyQueue(admin: AdminClient) {
 
   const byUser: Record<string, Row[]> = {};
   rows.forEach((r) => {
-    (byUser[r.user_id] ??= []).push(r);
+    // One review per brand, not per account.
+    (byUser[`${r.user_id}|${r.brand_id ?? ""}`] ??= []).push(r);
   });
 
   const { data: existing } = await admin
     .from("content_strategies")
-    .select("user_id")
+    .select("user_id, brand_id")
     .eq("week_start", iso(weekStart));
-  const done = new Set((existing ?? []).map((r) => r.user_id));
+  const done = new Set((existing ?? []).map((r) => `${r.user_id}|${r.brand_id ?? ""}`));
 
   const candidates = Object.entries(byUser)
-    .filter(([userId, list]) => !done.has(userId) && list.some((r) => score(r) > 0))
+    .filter(([key, list]) => !done.has(key) && list.some((r) => score(r) > 0))
     .slice(0, USERS_PER_CYCLE);
 
   let reviewed = 0;
 
-  for (const [userId, list] of candidates) {
+  for (const [key, list] of candidates) {
+    const [userId = "", brandKey = ""] = key.split("|");
+    const brandId = brandKey || null;
     try {
-      const { data: brand } = await admin
-        .from("brand_profiles")
-        .select("*")
-        .eq("user_id", userId)
-        .maybeSingle();
+      const brand = await loadBrand(admin, userId, brandId);
       if (!brand || !brand.business_name) continue;
 
       const metrics = summarise(list);
-      const previous = await latestStrategy(admin, userId);
       const analysis = await chatJSON<{ insights?: string; directives?: string }>(
         STRATEGY_SYSTEM,
         `${brandContext(brand as never)}
 
-Here is the measured performance of this brand's posted content for ${iso(dataStart)} to ${iso(weekEnd)} (JSON). Only posts with real platform numbers are included; engagement_rate = engagements / impressions:
+Here is the measured performance of this brand's content for ${iso(weekStart)} to ${iso(weekEnd)} (JSON):
 ${JSON.stringify(metrics)}
-${
-  previous?.directives
-    ? `
-Last cycle you instructed the generator (${previous.week_start} to ${previous.week_end}):
-"${previous.directives}"
-Judge whether the posts above show that advice worked. Keep what worked, reverse what did not, and say which it was in "insights".
-`
-    : ""
-}
-Small samples are noisy. Follow the evidence rules: groups with fewer than 3 pieces are tentative and must never be cut. If no group has 3 or more pieces yet, say plainly in "insights" that there is not enough data for firm conclusions, and keep "directives" to light-touch guidance (what to try next, what to keep testing) with nothing to drop.
+
 Analyse reach (impressions), user adoption (clicks) and engagement. Then decide how next week's content must change.
 
 Return JSON shaped exactly as:
@@ -213,7 +155,6 @@ Return JSON shaped exactly as:
   "insights": "3-5 sentences of concrete findings: which content types, channels, posting times, topics and hook styles won or lost, with the numbers that prove it.",
   "directives": "A single operational brief (max 200 words) written as instructions to the content generator: the exact formats to increase, formats to cut, channels to prioritise, best posting time windows, hook and topic angles to repeat, and what to stop doing."
 }`,
-        STRATEGY_SCHEMA as unknown as Record<string, unknown>,
       );
 
       const insights = (analysis.insights ?? "").trim();
@@ -227,6 +168,7 @@ Return JSON shaped exactly as:
         .from("content_items")
         .select("scheduled_date")
         .eq("user_id", userId)
+        .filter("brand_id", brandId ? "eq" : "is", brandId)
         .gte("scheduled_date", tomorrow)
         .lte("scheduled_date", monthEnd)
         .neq("status", "posted");
@@ -234,6 +176,7 @@ Return JSON shaped exactly as:
 
       await admin.from("content_strategies").insert({
         user_id: userId,
+        brand_id: brand.id,
         week_start: iso(weekStart),
         week_end: iso(weekEnd),
         metrics: metrics as never,
@@ -265,9 +208,11 @@ Return JSON shaped exactly as:
           .from("content_generation_jobs")
           .delete()
           .eq("user_id", userId)
+          .eq("brand_id", brand.id)
           .eq("month", month);
         await admin.from("content_generation_jobs").insert({
           user_id: userId,
+          brand_id: brand.id,
           month,
           pending_dates: rebuildDates,
           days_total: rebuildDates.length,
@@ -290,11 +235,14 @@ Return JSON shaped exactly as:
 export async function latestStrategy(
   admin: AdminClient,
   userId: string,
+  brandId?: string | null,
 ): Promise<StrategyDirective | null> {
-  const { data } = await admin
+  let query = admin
     .from("content_strategies")
-    .select("week_start, week_end, insights, directives, metrics")
-    .eq("user_id", userId)
+    .select("week_start, week_end, insights, directives")
+    .eq("user_id", userId);
+  if (brandId) query = query.eq("brand_id", brandId);
+  const { data } = await query
     .order("week_start", { ascending: false })
     .limit(1)
     .maybeSingle();

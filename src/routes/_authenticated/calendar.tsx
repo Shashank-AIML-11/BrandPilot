@@ -1,3 +1,4 @@
+import { useBrandScope } from "@/lib/brand-scope";
 import { useEffect, useMemo, useState, useRef, } from "react";
 import { createFileRoute } from "@tanstack/react-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
@@ -84,6 +85,9 @@ function CalendarPage() {
   const processingMedia = useRef(false);
 
   const monthKey = format(cursor, "yyyy-MM");
+  // Agency (Scale) accounts work on one brand at a time; single-brand accounts have no filter.
+  const scope = useBrandScope();
+  const brandFilter = scope.brandId ? { brand_id: scope.brandId } : {};
   const monthStart = startOfMonth(cursor);
   const monthEnd = endOfMonth(cursor);
 
@@ -100,12 +104,14 @@ function CalendarPage() {
    * LOAD CURRENT MONTH CONTENT
    */
   const { data: items = [], isLoading } = useQuery({
-    queryKey: ["content", monthKey],
+    queryKey: ["content", monthKey, scope.brandId],
+    enabled: !scope.loading,
 
     queryFn: async () => {
       const { data, error } = await supabase
         .from("content_items")
         .select("*")
+        .match(brandFilter)
         .gte(
           "scheduled_date",
           format(monthStart, "yyyy-MM-dd"),
@@ -153,7 +159,8 @@ function CalendarPage() {
    * CURRENT GENERATION JOB
    */
   const { data: activeJob } = useQuery({
-    queryKey: ["generation-job", monthKey],
+    queryKey: ["generation-job", monthKey, scope.brandId],
+    enabled: !scope.loading,
 
     queryFn: async () => {
       const { data, error } = await supabase
@@ -161,6 +168,7 @@ function CalendarPage() {
         .select(
           "id, status, days_done, days_total, error",
         )
+        .match(brandFilter)
         .eq("month", monthKey)
         .in("status", ["pending", "running"])
         .maybeSingle();
@@ -447,6 +455,7 @@ function CalendarPage() {
           data: {
             month: monthKey,
             dates: monthDays,
+            ...(scope.brandId ? { brandId: scope.brandId } : {}),
           },
         });
 
@@ -526,6 +535,7 @@ function CalendarPage() {
         .from("content_generation_jobs")
         .delete()
         .eq("user_id", userData.user.id)
+        .match(brandFilter)
         .eq("month", monthKey);
 
       if (jobError) {
@@ -541,6 +551,7 @@ function CalendarPage() {
         .from("content_items")
         .delete()
         .eq("user_id", userData.user.id)
+        .match(brandFilter)
         .gte(
           "scheduled_date",
           format(monthStart, "yyyy-MM-dd"),
@@ -603,7 +614,7 @@ function CalendarPage() {
     setPosting(true);
 
     try {
-      const result = await publishAllContent();
+      const result = await publishAllContent({ data: scope.brandId ? { brandId: scope.brandId } : {} });
 
       await queryClient.invalidateQueries({
         queryKey: ["content", monthKey],

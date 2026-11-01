@@ -4,20 +4,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { ROOT_EMAIL } from "@/lib/generation-entitlements";
 import { planById, type Plan } from "@/lib/plans";
 
-/**
- * Agency view (Scale plan).
- *
- * MULTI_BRAND_ENABLED gates the "Add brand" button. It stays off until the
- * database migration (drop UNIQUE(user_id) on brand_profiles) AND the
- * brand-scoping of generation, channels and publishing are done — every
- * server query that does `.eq("user_id", ...).maybeSingle()` on
- * brand_profiles would otherwise fail the moment a user has two brands.
- * Turn it on with VITE_MULTI_BRAND_ENABLED=true.
- */
-export const MULTI_BRAND_ENABLED = import.meta.env["VITE_MULTI_BRAND_ENABLED"] === "true";
-
-/** Sentinel stored as the active brand while the "new brand" form is open. */
-export const NEW_BRAND_ID = "new";
+/** Agency view (Scale plan): brand list, active-brand store and plan check. */
 
 type MeLike =
   | {

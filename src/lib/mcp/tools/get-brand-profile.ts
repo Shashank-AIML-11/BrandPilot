@@ -20,6 +20,8 @@ export default defineTool({
         "business_name, website, description, products_services, icp, propositions, tone, keywords, social_handles, google_drive_folder, updated_at",
       )
       .eq("user_id", ctx.getUserId())
+      .order("created_at", { ascending: true })
+      .limit(1)
       .maybeSingle();
 
     if (error) return { content: [{ type: "text", text: error.message }], isError: true };

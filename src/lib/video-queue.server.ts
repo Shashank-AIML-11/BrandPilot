@@ -8,7 +8,6 @@ import {
 } from "@/lib/ai.server";
 import {
   imagePromptFor,
-  aspectForType,
   videoPromptFor,
   carouselSlideImagePromptFor,
   CONTENT_TYPES,
@@ -18,8 +17,12 @@ import {
   sharedImagePath,
   sharedVideoPath,
 } from "@/lib/content.server";
+import { loadBrand } from "@/lib/brand.server";
 
 type AdminClient = SupabaseClient<Database>;
+
+// Items of different brands must never share media: scope sibling lookups to the brand.
+const brandOp = (id: string | null | undefined) => (id ? "eq" : "is") as "eq" | "is";
 
 const ACTIVE_LIMIT = 2;
 // Kept intentionally tiny: each processVideoQueue call does at most ONE
@@ -43,13 +46,12 @@ function sleep(ms: number) {
 // specifically on 429s instead of failing the item immediately.
 async function generateImageWithRetry(
   prompt: Parameters<typeof generateImageBytes>[0],
-  aspect: Parameters<typeof generateImageBytes>[1] = "1:1",
   maxAttempts = 3,
 ): Promise<Awaited<ReturnType<typeof generateImageBytes>>> {
   let lastError: unknown;
   for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
     try {
-      return await generateImageBytes(prompt, aspect);
+      return await generateImageBytes(prompt);
     } catch (error) {
       lastError = error;
       const message = error instanceof Error ? error.message : String(error);
@@ -78,7 +80,7 @@ export async function processVideoQueue(admin: AdminClient, userId?: string) {
   if (videoGenerationEnabled) {
     let activeQuery = admin
       .from("content_items")
-      .select("id, user_id, type, scheduled_date, video_job_id")
+      .select("id, user_id, brand_id, type, scheduled_date, video_job_id")
       .in("type", VIDEO_TYPES)
       .eq("video_status", "generating")
       .is("video_url", null)
@@ -108,7 +110,7 @@ export async function processVideoQueue(admin: AdminClient, userId?: string) {
         const bytes = await downloadVideoBytes(item.video_job_id);
         const isShared = (SHARED_VIDEO_TYPES as string[]).includes(item.type);
         const path = isShared
-          ? sharedVideoPath(item.user_id, item.scheduled_date)
+          ? sharedVideoPath(item.user_id, item.scheduled_date, item.brand_id)
           : `${item.user_id}/${item.id}.mp4`;
         const { error: uploadError } = await admin.storage
           .from("content-media")
@@ -129,6 +131,7 @@ export async function processVideoQueue(admin: AdminClient, userId?: string) {
             .from("content_items")
             .update({ video_url: path, video_status: "completed", video_error: null })
             .eq("user_id", item.user_id)
+            .filter("brand_id", brandOp(item.brand_id), item.brand_id ?? null)
             .eq("scheduled_date", item.scheduled_date)
             .in("type", SHARED_VIDEO_TYPES)
             .neq("id", item.id)
@@ -158,7 +161,7 @@ export async function processVideoQueue(admin: AdminClient, userId?: string) {
     if (available > 0) {
       let pendingQuery = admin
         .from("content_items")
-        .select("id, user_id, type, scheduled_date, title, summary, video_script, image_prompt")
+        .select("id, user_id, brand_id, type, scheduled_date, title, summary, video_script, image_prompt")
         .in("type", VIDEO_TYPES)
         .eq("video_status", "none")
         .is("video_url", null)
@@ -179,6 +182,7 @@ export async function processVideoQueue(admin: AdminClient, userId?: string) {
               .from("content_items")
               .select("video_status, video_url")
               .eq("user_id", item.user_id)
+              .filter("brand_id", brandOp(item.brand_id), item.brand_id ?? null)
               .eq("scheduled_date", item.scheduled_date)
               .in("type", SHARED_VIDEO_TYPES)
               .neq("id", item.id);
@@ -221,11 +225,7 @@ export async function processVideoQueue(admin: AdminClient, userId?: string) {
             // one and falls through to submit an actual job below.
           }
 
-          const { data: brand } = await admin
-            .from("brand_profiles")
-            .select("business_name, description, products_services, icp, tone")
-            .eq("user_id", item.user_id)
-            .maybeSingle();
+          const brand = await loadBrand(admin, item.user_id, item.brand_id);
           const isLongForm = item.type === "product_service_video";
           const job = await createVideoJob(
             videoPromptFor(
@@ -236,7 +236,7 @@ export async function processVideoQueue(admin: AdminClient, userId?: string) {
                 video_script: item.video_script ?? "",
                 image_prompt: item.image_prompt ?? "",
               },
-              brand,
+              brand as never,
             ),
             {
               aspectRatio: isLongForm ? "16:9" : "9:16",
@@ -265,7 +265,7 @@ export async function processVideoQueue(admin: AdminClient, userId?: string) {
   // makes asset creation continue after the user closes the calendar.
   let pendingImagesQuery = admin
     .from("content_items")
-    .select("id, user_id, type, scheduled_date, title, summary, image_prompt")
+    .select("id, user_id, brand_id, type, scheduled_date, title, summary, image_prompt")
     .in("type", SINGLE_IMAGE_TYPES)
     .is("image_url", null)
     .order("scheduled_date", { ascending: true })
@@ -282,11 +282,12 @@ export async function processVideoQueue(admin: AdminClient, userId?: string) {
       // whether a sibling type on the same day already rendered the
       // shared image before paying for a fresh generation.
       if ((SHARED_IMAGE_TYPES as string[]).includes(item.type)) {
-        const path = sharedImagePath(item.user_id, item.scheduled_date);
+        const path = sharedImagePath(item.user_id, item.scheduled_date, item.brand_id);
         const { data: sibling } = await admin
           .from("content_items")
           .select("id")
           .eq("user_id", item.user_id)
+          .filter("brand_id", brandOp(item.brand_id), item.brand_id ?? null)
           .eq("scheduled_date", item.scheduled_date)
           .in("type", SHARED_IMAGE_TYPES)
           .eq("image_url", path)
@@ -308,15 +309,8 @@ export async function processVideoQueue(admin: AdminClient, userId?: string) {
 
         // First of the group to render today — generate once, upload to
         // the SHARED path (not a per-item path) so siblings can find it.
-        const { data: brand } = await admin
-          .from("brand_profiles")
-          .select("business_name, description, products_services, icp, propositions, tone")
-          .eq("user_id", item.user_id)
-          .maybeSingle();
-        const bytes = await generateImageWithRetry(
-          imagePromptFor(item as never, brand),
-          aspectForType(item.type),
-        );
+        const brand = await loadBrand(admin, item.user_id, item.brand_id);
+        const bytes = await generateImageWithRetry(imagePromptFor(item as never, brand as never));
         const { error: uploadError } = await admin.storage
           .from("content-media")
           .upload(path, bytes, { contentType: "image/png", upsert: true });
@@ -333,15 +327,8 @@ export async function processVideoQueue(admin: AdminClient, userId?: string) {
 
       // Not in the shared group (pinterest, video thumbnails) — generate
       // its own unique image as before.
-      const { data: brand } = await admin
-        .from("brand_profiles")
-        .select("business_name, description, products_services, icp, propositions, tone")
-        .eq("user_id", item.user_id)
-        .maybeSingle();
-      const bytes = await generateImageWithRetry(
-          imagePromptFor(item as never, brand),
-          aspectForType(item.type),
-        );
+      const brand = await loadBrand(admin, item.user_id, item.brand_id);
+      const bytes = await generateImageWithRetry(imagePromptFor(item as never, brand as never));
       const path = `${item.user_id}/${item.id}.png`;
       const { error: uploadError } = await admin.storage
         .from("content-media")
@@ -371,7 +358,7 @@ export async function processVideoQueue(admin: AdminClient, userId?: string) {
   // on a future call can never discard already-completed ones.
   let pendingCarouselsQuery = admin
     .from("content_items")
-    .select("id, user_id, carousel_slides, carousel_image_urls")
+    .select("id, user_id, brand_id, carousel_slides, carousel_image_urls")
     .eq("type", "carousel")
     .order("scheduled_date", { ascending: true })
     .order("scheduled_time", { ascending: true })
@@ -391,11 +378,7 @@ export async function processVideoQueue(admin: AdminClient, userId?: string) {
   const carouselResults: PromiseSettledResult<string>[] = [];
   for (const item of pendingCarousels) {
     try {
-      const { data: brand } = await admin
-        .from("brand_profiles")
-        .select("business_name, description, products_services, icp, propositions, tone")
-        .eq("user_id", item.user_id)
-        .maybeSingle();
+      const brand = await loadBrand(admin, item.user_id, item.brand_id);
 
       const slides = (item.carousel_slides as Array<{
         headline?: string;
@@ -408,8 +391,7 @@ export async function processVideoQueue(admin: AdminClient, userId?: string) {
       if (nextIndex === -1) continue; // shouldn't happen given the filter above, but be safe
 
       const bytes = await generateImageWithRetry(
-        carouselSlideImagePromptFor(slides[nextIndex]!, nextIndex, slides.length, brand),
-        aspectForType("carousel"),
+        carouselSlideImagePromptFor(slides[nextIndex]!, nextIndex, slides.length, brand as never),
       );
       const path = `${item.user_id}/${item.id}-slide-${nextIndex}.png`;
       const { error: uploadError } = await admin.storage

@@ -14,6 +14,20 @@ Answer with a single valid JSON object and nothing else.
 
 ${SAFETY_RULES}`;
 
+/**
+ * Same strict JSON-schema mode the content generator already uses with this model.
+ * The loose "any JSON object" mode was rejected by Groq with HTTP 400.
+ */
+const STRATEGY_SCHEMA = {
+  type: "object",
+  properties: {
+    insights: { type: "string" },
+    directives: { type: "string" },
+  },
+  required: ["insights", "directives"],
+  additionalProperties: false,
+} as const;
+
 function iso(d: Date) {
   return d.toISOString().slice(0, 10);
 }
@@ -192,6 +206,7 @@ Return JSON shaped exactly as:
   "insights": "3-5 sentences of concrete findings: which content types, channels, posting times, topics and hook styles won or lost, with the numbers that prove it.",
   "directives": "A single operational brief (max 200 words) written as instructions to the content generator: the exact formats to increase, formats to cut, channels to prioritise, best posting time windows, hook and topic angles to repeat, and what to stop doing."
 }`,
+        STRATEGY_SCHEMA as unknown as Record<string, unknown>,
       );
 
       const insights = (analysis.insights ?? "").trim();

@@ -8,6 +8,7 @@ import {
 } from "@/lib/ai.server";
 import {
   imagePromptFor,
+  aspectForType,
   videoPromptFor,
   carouselSlideImagePromptFor,
   CONTENT_TYPES,
@@ -42,12 +43,13 @@ function sleep(ms: number) {
 // specifically on 429s instead of failing the item immediately.
 async function generateImageWithRetry(
   prompt: Parameters<typeof generateImageBytes>[0],
+  aspect: Parameters<typeof generateImageBytes>[1] = "1:1",
   maxAttempts = 3,
 ): Promise<Awaited<ReturnType<typeof generateImageBytes>>> {
   let lastError: unknown;
   for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
     try {
-      return await generateImageBytes(prompt);
+      return await generateImageBytes(prompt, aspect);
     } catch (error) {
       lastError = error;
       const message = error instanceof Error ? error.message : String(error);
@@ -311,7 +313,10 @@ export async function processVideoQueue(admin: AdminClient, userId?: string) {
           .select("business_name, description, products_services, icp, propositions, tone")
           .eq("user_id", item.user_id)
           .maybeSingle();
-        const bytes = await generateImageWithRetry(imagePromptFor(item as never, brand));
+        const bytes = await generateImageWithRetry(
+          imagePromptFor(item as never, brand),
+          aspectForType(item.type),
+        );
         const { error: uploadError } = await admin.storage
           .from("content-media")
           .upload(path, bytes, { contentType: "image/png", upsert: true });
@@ -333,7 +338,10 @@ export async function processVideoQueue(admin: AdminClient, userId?: string) {
         .select("business_name, description, products_services, icp, propositions, tone")
         .eq("user_id", item.user_id)
         .maybeSingle();
-      const bytes = await generateImageWithRetry(imagePromptFor(item as never, brand));
+      const bytes = await generateImageWithRetry(
+          imagePromptFor(item as never, brand),
+          aspectForType(item.type),
+        );
       const path = `${item.user_id}/${item.id}.png`;
       const { error: uploadError } = await admin.storage
         .from("content-media")
@@ -401,6 +409,7 @@ export async function processVideoQueue(admin: AdminClient, userId?: string) {
 
       const bytes = await generateImageWithRetry(
         carouselSlideImagePromptFor(slides[nextIndex]!, nextIndex, slides.length, brand),
+        aspectForType("carousel"),
       );
       const path = `${item.user_id}/${item.id}-slide-${nextIndex}.png`;
       const { error: uploadError } = await admin.storage

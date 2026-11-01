@@ -139,15 +139,42 @@ export async function chatJSON<T>(
  *   (https://fal.ai/models) the first time this actually runs, since
  *   hosted-API shapes do shift over time.
  */
-export async function generateImageBytes(prompt: string): Promise<Uint8Array> {
+/**
+ * Shapes platforms actually want. Pixel sizes are multiples of 16 (image models need that).
+ *   1:1  square          LinkedIn/X also accept it
+ *   4:5  portrait feed   Instagram, Facebook, LinkedIn, X (the shared master for those four)
+ *   2:3  tall pin        Pinterest
+ *   9:16 vertical        Reel / Short / TikTok cover frames
+ *   16:9 wide            YouTube / website video cover frames
+ */
+export type ImageAspect = "1:1" | "4:5" | "2:3" | "9:16" | "16:9";
+
+export const IMAGE_SIZES: Record<ImageAspect, { width: number; height: number }> = {
+  "1:1": { width: 1024, height: 1024 },
+  "4:5": { width: 1024, height: 1280 },
+  "2:3": { width: 1024, height: 1536 },
+  "9:16": { width: 864, height: 1536 },
+  "16:9": { width: 1536, height: 864 },
+};
+
+export async function generateImageBytes(
+  prompt: string,
+  aspect: ImageAspect = "1:1",
+): Promise<Uint8Array> {
   const provider = process.env["IMAGE_PROVIDER"] || "pollinations";
-  return provider === "fal" ? generateImageBytesFal(prompt) : generateImageBytesPollinations(prompt);
+  return provider === "fal"
+    ? generateImageBytesFal(prompt, aspect)
+    : generateImageBytesPollinations(prompt, aspect);
 }
 
-async function generateImageBytesPollinations(prompt: string): Promise<Uint8Array> {
+async function generateImageBytesPollinations(
+  prompt: string,
+  aspect: ImageAspect,
+): Promise<Uint8Array> {
   const encoded = encodeURIComponent(guard(prompt));
   const seed = Math.floor(Math.random() * 1_000_000);
-  const url = `https://image.pollinations.ai/prompt/${encoded}?width=1024&height=1024&model=flux&nologo=true&seed=${seed}`;
+  const { width, height } = IMAGE_SIZES[aspect];
+  const url = `https://image.pollinations.ai/prompt/${encoded}?width=${width}&height=${height}&model=flux&nologo=true&seed=${seed}`;
 
   const res = await fetch(url);
   if (!res.ok) {
@@ -165,7 +192,7 @@ async function generateImageBytesPollinations(prompt: string): Promise<Uint8Arra
  * fal-ai/flux-pro for higher quality, or fal-ai/flux/schnell for
  * cheaper/faster) without a code change.
  */
-async function generateImageBytesFal(prompt: string): Promise<Uint8Array> {
+async function generateImageBytesFal(prompt: string, aspect: ImageAspect): Promise<Uint8Array> {
   const apiKey = process.env["FAL_KEY"];
   if (!apiKey) {
     throw new Error("Image generation is not configured (missing FAL_KEY).");
@@ -180,7 +207,9 @@ async function generateImageBytesFal(prompt: string): Promise<Uint8Array> {
     },
     body: JSON.stringify({
       prompt: guard(prompt),
-      image_size: "square_hd",
+      // Square keeps the proven preset. Other shapes use fal's custom {width,height} size,
+      // written from fal's docs and not live-tested: verify on the first real fal run.
+      image_size: aspect === "1:1" ? "square_hd" : IMAGE_SIZES[aspect],
       num_images: 1,
     }),
   });

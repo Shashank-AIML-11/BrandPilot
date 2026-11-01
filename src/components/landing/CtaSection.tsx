@@ -1,22 +1,16 @@
-import React, { useState } from 'react';
-import { ArrowRight, Sparkles, CheckCircle2, Cpu } from 'lucide-react';
-import { playClickSound, playSuccessSound, triggerConfetti } from './audio';
+import React from 'react';
+import { Link } from '@tanstack/react-router';
+import { ArrowRight, CheckCircle2, Cpu } from 'lucide-react';
+import { playClickSound } from './audio';
 
+// The CTA now routes straight to the sign-in page, so this callback is no
+// longer used here. It stays optional so the existing <CtaSection ... /> usage
+// in routes/index.tsx keeps compiling unchanged.
 interface CtaSectionProps {
-  onStartWithUrl: (url: string) => void;
+  onStartWithUrl?: (url: string) => void;
 }
 
-export const CtaSection: React.FC<CtaSectionProps> = ({ onStartWithUrl }) => {
-  const [url, setUrl] = useState('');
-
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!url.trim()) return;
-    playSuccessSound();
-    triggerConfetti();
-    onStartWithUrl(url);
-  };
-
+export const CtaSection: React.FC<CtaSectionProps> = () => {
   return (
     <section className="py-20 md:py-28 relative bg-black border-t border-zinc-800 overflow-hidden text-zinc-100">
       {/* Background glow */}
@@ -35,28 +29,20 @@ export const CtaSection: React.FC<CtaSectionProps> = ({ onStartWithUrl }) => {
           </h2>
 
           <p className="mt-4 text-zinc-400 text-sm sm:text-base max-w-xl mx-auto leading-relaxed">
-            Enter your website URL to initialize your Brand Profile Vault. LOVIZA will auto-generate, auto-post, and auto-learn continuously on 100% autopilot.
+            Activate your Brand Profile Vault. LOVIZA will auto-generate, auto-post, and auto-learn continuously on 100% autopilot.
           </p>
 
-          {/* Quick Lead Capture Input */}
-          <form onSubmit={handleSubmit} className="mt-8 max-w-lg mx-auto flex flex-col sm:flex-row gap-2.5">
-            <input
-              type="url"
-              required
-              value={url}
-              onChange={(e) => setUrl(e.target.value)}
-              placeholder="https://yourbrand.com or https://yourstore.com"
-              className="flex-1 px-4 py-3 bg-black border border-zinc-800 focus:border-yellow-400 rounded-xl text-white text-sm placeholder:text-zinc-500 focus:outline-none"
-            />
-            <button
-              type="submit"
+          {/* Primary CTA: same button as the navbar, routes to the LOVIZA sign-in page */}
+          <div className="mt-8 flex justify-center">
+            <Link
+              to="/auth"
               onClick={() => playClickSound()}
-              className="px-6 py-3.5 bg-yellow-400 hover:bg-yellow-300 text-black font-extrabold text-xs uppercase tracking-wider rounded-xl shadow-lg shadow-yellow-400/25 flex items-center justify-center gap-2 transition-all cursor-pointer whitespace-nowrap active:scale-95"
+              className="flex items-center gap-1.5 px-4 py-2 text-xs font-black text-black bg-yellow-400 hover:bg-yellow-300 rounded-lg shadow-md shadow-yellow-500/25 hover:shadow-yellow-500/40 transition-all duration-150 whitespace-nowrap active:scale-[0.98] cursor-pointer"
             >
-              <span>Build Brand Vault</span>
-              <ArrowRight className="w-4 h-4 text-black stroke-[3]" />
-            </button>
-          </form>
+              Activate Brand Autopilot
+              <ArrowRight className="w-3.5 h-3.5 text-black stroke-[3]" />
+            </Link>
+          </div>
 
           {/* Guarantee markers */}
           <div className="mt-6 flex flex-wrap items-center justify-center gap-6 text-xs text-zinc-400">

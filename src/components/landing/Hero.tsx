@@ -1,15 +1,17 @@
 import React, { useState, useEffect } from 'react';
-import { ArrowRight, Play, CheckCircle2, Cpu, Sparkles, TrendingUp, RefreshCw, Send, Wand2, Layers, Volume2, ShieldCheck, Flame, Zap } from 'lucide-react';
-import { playClickSound, playSuccessSound, triggerConfetti } from './audio';
+import { Link } from '@tanstack/react-router';
+import { ArrowRight, Play, CheckCircle2, Cpu, Sparkles, TrendingUp, Send, Wand2, Layers, Volume2, ShieldCheck, Flame, Zap } from 'lucide-react';
+import { playClickSound } from './audio';
 
+// The hero CTA now routes straight to the sign-in page, so these callbacks are
+// no longer used here. They stay optional so the existing <Hero ... /> usage in
+// routes/index.tsx keeps compiling unchanged.
 interface HeroProps {
-  onScrollToVault: () => void;
-  onOpenDemo: () => void;
+  onScrollToVault?: () => void;
+  onOpenDemo?: () => void;
 }
 
-export const Hero: React.FC<HeroProps> = ({ onScrollToVault, onOpenDemo }) => {
-  const [quickUrl, setQuickUrl] = useState('');
-  const [isAnalyzing, setIsAnalyzing] = useState(false);
+export const Hero: React.FC<HeroProps> = () => {
   const [activeTab, setActiveTab] = useState<'generate' | 'post' | 'learn' | 'strategy'>('generate');
 
   // Automatically cycle through autonomous phases so preview is live without requiring any clicks
@@ -23,19 +25,6 @@ export const Hero: React.FC<HeroProps> = ({ onScrollToVault, onOpenDemo }) => {
     }, 3500);
     return () => clearInterval(interval);
   }, []);
-
-  const handleQuickLaunch = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!quickUrl.trim()) return;
-    playClickSound();
-    setIsAnalyzing(true);
-    setTimeout(() => {
-      setIsAnalyzing(false);
-      playSuccessSound();
-      triggerConfetti();
-      onScrollToVault();
-    }, 900);
-  };
 
   const previewData = {
     generate: {
@@ -112,34 +101,17 @@ export const Hero: React.FC<HeroProps> = ({ onScrollToVault, onOpenDemo }) => {
             Feed LOVIZA your website, product images, raw videos, ICP, and focus keywords once. Our self-learning engine continuously generates high-converting short videos, tests posting windows, diagnoses performance telemetry, and auto-builds your exponential marketing strategy forever.
           </p>
 
-          {/* Quick Setup Form */}
-          <form onSubmit={handleQuickLaunch} className="mt-8 max-w-xl mx-auto flex flex-col sm:flex-row items-center gap-2 p-1.5 bg-zinc-950 border border-zinc-800 rounded-2xl shadow-2xl shadow-black/80">
-            <input
-              type="url"
-              required
-              value={quickUrl}
-              onChange={(e) => setQuickUrl(e.target.value)}
-              placeholder="Enter your website: https://yourbrand.com"
-              className="w-full sm:flex-1 px-4 py-3 bg-transparent text-white text-sm placeholder:text-zinc-500 focus:outline-none"
-            />
-            <button
-              type="submit"
-              disabled={isAnalyzing}
-              className="w-full sm:w-auto px-6 py-3.5 bg-yellow-400 hover:bg-yellow-300 text-black font-black text-xs uppercase tracking-wider rounded-xl shadow-lg shadow-yellow-400/20 flex items-center justify-center gap-2 transition-all cursor-pointer whitespace-nowrap active:scale-95 disabled:opacity-50"
+          {/* Primary CTA: same button as the navbar, routes to the LOVIZA sign-in page */}
+          <div className="mt-8 flex justify-center">
+            <Link
+              to="/auth"
+              onClick={() => playClickSound()}
+              className="flex items-center gap-1.5 px-4 py-2 text-xs font-black text-black bg-yellow-400 hover:bg-yellow-300 rounded-lg shadow-md shadow-yellow-500/25 hover:shadow-yellow-500/40 transition-all duration-150 whitespace-nowrap active:scale-[0.98] cursor-pointer"
             >
-              {isAnalyzing ? (
-                <>
-                  <RefreshCw className="w-4 h-4 animate-spin text-black" />
-                  <span>Extracting Brand DNA...</span>
-                </>
-              ) : (
-                <>
-                  <span>Activate Brand DNA</span>
-                  <ArrowRight className="w-4 h-4 text-black stroke-[3]" />
-                </>
-              )}
-            </button>
-          </form>
+              Activate Brand Autopilot
+              <ArrowRight className="w-3.5 h-3.5 text-black stroke-[3]" />
+            </Link>
+          </div>
 
           {/* Trust points */}
           <div className="mt-5 flex flex-wrap items-center justify-center gap-x-6 gap-y-2 text-xs text-zinc-400">

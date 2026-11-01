@@ -38,17 +38,6 @@ export const Footer: React.FC = () => {
             </ul>
           </div>
 
-{/*           {/* Solutions Col */}
-          <div className="space-y-2.5">
-            <div className="font-bold text-white uppercase text-[11px] tracking-wider">Solutions</div>
-            <ul className="space-y-2">
-              <li><a href="#wall-of-proof" onClick={playClickSound} className="hover:text-yellow-400 transition-colors">DTC E-Commerce</a></li>
-              <li><a href="#wall-of-proof" onClick={playClickSound} className="hover:text-yellow-400 transition-colors">B2B SaaS & DevTools</a></li>
-              <li><a href="#wall-of-proof" onClick={playClickSound} className="hover:text-yellow-400 transition-colors">Mobile Consumer Apps</a></li>
-              <li><a href="#wall-of-proof" onClick={playClickSound} className="hover:text-yellow-400 transition-colors">Consumer Tech & Hardware</a></li>
-              <li><a href="#wall-of-proof" onClick={playClickSound} className="hover:text-yellow-400 transition-colors">Marketing Agencies</a></li>
-            </ul>
-          </div> */}
 
           {/* Legal & Compliance Col */}
           <div className="space-y-2.5">

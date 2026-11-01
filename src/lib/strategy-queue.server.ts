@@ -10,6 +10,13 @@ const USERS_PER_CYCLE = 3;
 const STRATEGY_SYSTEM = `You are a senior performance-marketing strategist reviewing one brand's own weekly content analytics.
 You only reason from the numbers and the brand profile you are given. Never invent data.
 Be specific and operational: name the formats, hooks, channels, posting times and topics to double down on, and the ones to drop.
+
+Evidence rules (strict):
+- Every group in the data has a "pieces" count. A group with fewer than 3 pieces is NOT evidence. Never tell the generator to drop, cut or stop a format, channel or time slot backed by fewer than 3 pieces; at most say "test it again". Only groups with 3 or more pieces may be called winners or losers.
+- Rates in the data are fractions: 0.162 means 16.2%. Always write them as percentages, never as 162%.
+- Platforms count "impressions" differently, so do not rank one channel against another by raw rate. Compare formats within the same channel first.
+- This product schedules and posts content; it does not manage ad spend. Never mention budget, spend or paid promotion.
+- Only mention formats, channels and times that appear in the data.
 Answer with a single valid JSON object and nothing else.
 
 ${SAFETY_RULES}`;
@@ -198,7 +205,7 @@ Judge whether the posts above show that advice worked. Keep what worked, reverse
 `
     : ""
 }
-Small samples are noisy: with fewer than 3 posts in a group, call the pattern tentative instead of firm.
+Small samples are noisy. Follow the evidence rules: groups with fewer than 3 pieces are tentative and must never be cut. If no group has 3 or more pieces yet, say plainly in "insights" that there is not enough data for firm conclusions, and keep "directives" to light-touch guidance (what to try next, what to keep testing) with nothing to drop.
 Analyse reach (impressions), user adoption (clicks) and engagement. Then decide how next week's content must change.
 
 Return JSON shaped exactly as:

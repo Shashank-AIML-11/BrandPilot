@@ -13,9 +13,6 @@ import { FaqSection } from "@/components/landing/FaqSection";
 import { CtaSection } from "@/components/landing/CtaSection";
 import { Footer } from "@/components/landing/Footer";
 import { DemoModal } from "@/components/landing/DemoModal";
-import { PlanModal } from "@/components/landing/PlanModal";
-import type { PricingPlan } from "@/components/landing/types";
-import { PRICING_PLANS } from "@/components/landing/mockData";
 
 export const Route = createFileRoute("/")({
   head: () => ({
@@ -40,19 +37,10 @@ export const Route = createFileRoute("/")({
 function Landing() {
   const navigate = useNavigate();
   const [isDemoModalOpen, setIsDemoModalOpen] = useState(false);
-  const [isPlanModalOpen, setIsPlanModalOpen] = useState(false);
-  const [selectedPlan, setSelectedPlan] = useState<PricingPlan | null>(PRICING_PLANS[1] ?? null);
-  const [isAnnualPlan, setIsAnnualPlan] = useState(true);
 
   const handleScrollToVault = () => {
     const el = document.getElementById("brand-vault");
     if (el) el.scrollIntoView({ behavior: "smooth" });
-  };
-
-  const handleOpenPlanModal = (plan?: PricingPlan, annual = true) => {
-    setSelectedPlan(plan || PRICING_PLANS[1] || null);
-    setIsAnnualPlan(annual);
-    setIsPlanModalOpen(true);
   };
 
   return (
@@ -85,7 +73,7 @@ function Landing() {
         <VideoShowcase onOpenDemo={() => setIsDemoModalOpen(true)} />
         <ComparisonTable />
 
-        <PricingSection onSelectPlan={(plan, annual) => handleOpenPlanModal(plan, annual)} />
+        <PricingSection />
 
         <FaqSection />
 
@@ -98,13 +86,6 @@ function Landing() {
         isOpen={isDemoModalOpen}
         onClose={() => setIsDemoModalOpen(false)}
         onOpenVault={handleScrollToVault}
-      />
-
-      <PlanModal
-        isOpen={isPlanModalOpen}
-        plan={selectedPlan}
-        isAnnual={isAnnualPlan}
-        onClose={() => setIsPlanModalOpen(false)}
       />
     </div>
   );

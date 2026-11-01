@@ -303,7 +303,7 @@ export const CASE_STUDIES: CaseStudy[] = [
     category: 'DTC E-Commerce',
     headline: '$148,000 in Revenue Generated on 100% Autopilot in 60 Days',
     views: '4.8M Organic Views',
-    conversions: '4,120 Orders ($148K GMV)',
+    conversions: '4,120 Orders,
     period: '60 Days Hands-Off',
     videoUrl: '',
     influencerName: 'Mia Chen',

@@ -38,7 +38,7 @@ export const Footer: React.FC = () => {
             </ul>
           </div>
 
-          {/* Solutions Col */}
+{/*           {/* Solutions Col */}
           <div className="space-y-2.5">
             <div className="font-bold text-white uppercase text-[11px] tracking-wider">Solutions</div>
             <ul className="space-y-2">
@@ -48,7 +48,7 @@ export const Footer: React.FC = () => {
               <li><a href="#wall-of-proof" onClick={playClickSound} className="hover:text-yellow-400 transition-colors">Consumer Tech & Hardware</a></li>
               <li><a href="#wall-of-proof" onClick={playClickSound} className="hover:text-yellow-400 transition-colors">Marketing Agencies</a></li>
             </ul>
-          </div>
+          </div> */}
 
           {/* Legal & Compliance Col */}
           <div className="space-y-2.5">
@@ -58,7 +58,7 @@ export const Footer: React.FC = () => {
               <li><a href="#" onClick={playClickSound} className="hover:text-yellow-400 transition-colors">Terms of Service</a></li>
               <li><a href="#" onClick={playClickSound} className="hover:text-yellow-400 transition-colors">Privacy Policy</a></li>
               <li><a href="#" onClick={playClickSound} className="hover:text-yellow-400 transition-colors">Commercial Rights</a></li>
-              <li><a href="#" onClick={playClickSound} className="hover:text-yellow-400 transition-colors">SOC2 Type II Ready</a></li>
+              <li><a href="#" onClick={playClickSound} className="hover:text-yellow-400 transition-colors"></a></li>
             </ul>
           </div>
 

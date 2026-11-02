@@ -8,7 +8,7 @@ import {
   weekPrompt,
   emptyQuota,
   buildWeekResponseSchema,
-  CONTENT_TYPES,
+  packGenerationBatch,
   type DailyContentQuota,
 } from "@/lib/content.server";
 import { getGenerationEntitlement } from "@/lib/generation-entitlements";
@@ -72,26 +72,40 @@ export async function processGenerationQueue(admin: AdminClient, userId?: string
       entitlement.plan.channelLimit ?? undefined,
     );
 
+    // content_plan is the REMAINING quota per date. Each pass writes what fits in one AI call
+    // and subtracts it, so a day with many content types is finished over a few passes instead
+    // of asking for everything at once (which overflows the model's output limit).
     const contentPlan = (job.content_plan ?? {}) as unknown as Record<string, DailyContentQuota>;
-    const quotas = Object.fromEntries(
+    const remainingQuotas = Object.fromEntries(
       pending.map((date) => [date, contentPlan[date] ?? emptyQuota()]),
     ) as Record<string, DailyContentQuota>;
+
+    const batch = packGenerationBatch(pending, remainingQuotas);
+    const batchDates = batch.dates;
+    const quotas = batch.quotas;
+    const batchActiveTypes = batch.types;
 
     const { latestStrategy } = await import("@/lib/strategy-queue.server");
     const strategy = await latestStrategy(admin, job.user_id, brand.id);
 
-    // Only ask for (and only require in the schema) the types that
-    // actually have quota somewhere in this batch — asking the model to
-    // also emit empty arrays for 8 unused types on every day, and
-    // building schema branches for them, is pure waste when testing
-    // has most types zeroed out.
-    const batchActiveTypes = CONTENT_TYPES.filter((t) =>
-      pending.some((date) => (quotas[date]?.[t] ?? 0) > 0),
-    );
+    // Nothing left to write for these days (all quotas already used or zero): just close them.
+    if (!batchDates.length) {
+      const rest = (job.pending_dates ?? []).slice(pending.length);
+      await admin
+        .from("content_generation_jobs")
+        .update({
+          pending_dates: rest,
+          days_done: job.days_done + pending.length,
+          status: rest.length ? "running" : "completed",
+          error: null,
+        })
+        .eq("id", job.id);
+      return { job: job.id, generated: 0 };
+    }
 
     const result = await chatJSON<{ days?: Array<Record<string, unknown>> }>(
       SYSTEM_PROMPT,
-      weekPrompt(brand as never, pending, strategy, quotas, batchActiveTypes),
+      weekPrompt(brand as never, batchDates, strategy, quotas, batchActiveTypes),
       buildWeekResponseSchema(batchActiveTypes),
     );
 
@@ -114,7 +128,7 @@ export async function processGenerationQueue(admin: AdminClient, userId?: string
       return { job: job.id, generated: 0, cancelled: true };
     }
 
-    const rows = pending.flatMap((date, index) => {
+    const rows = batchDates.flatMap((date, index) => {
       const day = days.find((d) => (d as { date?: string }).date === date) ?? days[index] ?? {};
       return rowsForDay(
         day as never,
@@ -145,7 +159,7 @@ export async function processGenerationQueue(admin: AdminClient, userId?: string
       .select("id, scheduled_date, type, scheduled_time")
       .eq("user_id", job.user_id)
       .eq("brand_id", brand.id)
-      .in("scheduled_date", pending)
+      .in("scheduled_date", batchDates)
       .eq("status", "draft")
       .order("scheduled_date", { ascending: true })
       .order("scheduled_time", { ascending: true });
@@ -167,6 +181,11 @@ export async function processGenerationQueue(admin: AdminClient, userId?: string
       const list = placeholderMap.get(key) ?? [];
       list.push(item);
       placeholderMap.set(key, list);
+    }
+    // Only this pass's share of each slot; the rest stay "rendering" for the next pass.
+    for (const [key, list] of placeholderMap) {
+      const [date, type] = key.split(":") as [string, keyof DailyContentQuota];
+      placeholderMap.set(key, list.slice(0, quotas[date]?.[type] ?? 0));
     }
 
     /*
@@ -227,21 +246,33 @@ export async function processGenerationQueue(admin: AdminClient, userId?: string
       }
     }
 
-    // Days left to generate after this batch — this was the missing
-    // declaration that broke the build.
-    const remaining = (job.pending_dates ?? []).slice(pending.length);
+    // Subtract what this pass wrote; a date is finished once its remaining quota is empty.
+    const newPlan: Record<string, DailyContentQuota> = { ...contentPlan };
+    for (const date of batchDates) {
+      const left = { ...(contentPlan[date] ?? emptyQuota()) } as DailyContentQuota;
+      for (const type of Object.keys(left) as Array<keyof DailyContentQuota>) {
+        left[type] = Math.max(0, (left[type] ?? 0) - (quotas[date]?.[type] ?? 0));
+      }
+      newPlan[date] = left;
+    }
+    const hasQuotaLeft = (date: string) =>
+      Object.values(newPlan[date] ?? {}).some((n) => (n ?? 0) > 0);
+    const stillOpen = pending.filter(hasQuotaLeft);
+    const finished = pending.length - stillOpen.length;
+    const remaining = [...stillOpen, ...(job.pending_dates ?? []).slice(pending.length)];
 
     await admin
       .from("content_generation_jobs")
       .update({
         pending_dates: remaining,
-        days_done: job.days_done + pending.length,
+        days_done: job.days_done + finished,
+        content_plan: newPlan as never,
         status: remaining.length ? "running" : "completed",
         error: null,
       })
       .eq("id", job.id);
 
-    return { job: job.id, generated: pending.length };
+    return { job: job.id, generated: finished };
   } catch (error) {
     console.error("Generation queue error:", error);
     const message = error instanceof Error ? error.message : "Content generation failed.";

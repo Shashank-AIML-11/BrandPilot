@@ -113,8 +113,11 @@ export const generateWeek = createServerFn({
           data.dates,
           strategy,
           quotaSchedule,
+          helpers.activeTypesForBatch(data.dates, quotaSchedule),
         ),
-        helpers.buildWeekResponseSchema(quotaSchedule),
+        helpers.buildWeekResponseSchema(
+          helpers.activeTypesForBatch(data.dates, quotaSchedule),
+        ),
       );
 
     const days =
@@ -228,6 +231,7 @@ export const generateMediaBatch =
         const {
           imagePromptFor,
           carouselSlideImagePromptFor,
+          aspectForType,
         } =
           await import(
             "@/lib/content.server"
@@ -279,6 +283,7 @@ export const generateMediaBatch =
                         item as never,
                         brandFor(item.brand_id) as never,
                       ),
+                      aspectForType(item.type),
                     );
 
                   const path = `${context.userId}/${item.id}.png`;
@@ -345,6 +350,7 @@ export const generateMediaBatch =
               if (existingUrls[i]) continue; // already rendered
               const bytes = await generateImageBytes(
                 carouselSlideImagePromptFor(slides[i]!, i, slides.length, brandFor(item.brand_id) as never),
+                aspectForType("carousel"),
               );
               const path = `${context.userId}/${item.id}-slide-${i}.png`;
               const { error: uploadError } = await context.supabase.storage
@@ -402,6 +408,7 @@ export const generateItemImage =
 
         const {
           imagePromptFor,
+          aspectForType,
         } =
           await import(
             "@/lib/content.server"
@@ -450,6 +457,7 @@ export const generateItemImage =
               item as never,
               brand as never,
             ),
+            aspectForType(item.type),
           );
 
         const path = `${context.userId}/${item.id}.png`;

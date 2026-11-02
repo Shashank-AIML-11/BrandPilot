@@ -110,6 +110,12 @@ export function AppShell({ children }: { children: ReactNode }) {
   const storedBrandId = useStoredBrandId();
   const activeBrand = resolveActiveBrand(agencyBrands, storedBrandId);
 
+  /** Picking a brand shows that brand's pages straight away, even from the Add brand screen. */
+  function selectBrand(id: string) {
+    setActiveBrandId(id);
+    if (pathname === "/add-brand") void navigate({ to: "/brand-profile" });
+  }
+
   async function signOut() {
     await queryClient.cancelQueries();
     queryClient.clear();
@@ -200,7 +206,7 @@ export function AppShell({ children }: { children: ReactNode }) {
               activeBrandId={activeBrand?.id ?? null}
               plan={agencyPlan}
               showAdmin={!!me?.isAdmin}
-              onSelectBrand={setActiveBrandId}
+              onSelectBrand={selectBrand}
             />
           ) : (
           <>

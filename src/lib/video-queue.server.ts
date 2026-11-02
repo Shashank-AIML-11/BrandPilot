@@ -8,6 +8,7 @@ import {
 } from "@/lib/ai.server";
 import {
   imagePromptFor,
+  aspectForType,
   videoPromptFor,
   carouselSlideImagePromptFor,
   CONTENT_TYPES,
@@ -46,12 +47,13 @@ function sleep(ms: number) {
 // specifically on 429s instead of failing the item immediately.
 async function generateImageWithRetry(
   prompt: Parameters<typeof generateImageBytes>[0],
+  aspect: Parameters<typeof generateImageBytes>[1] = "1:1",
   maxAttempts = 3,
 ): Promise<Awaited<ReturnType<typeof generateImageBytes>>> {
   let lastError: unknown;
   for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
     try {
-      return await generateImageBytes(prompt);
+      return await generateImageBytes(prompt, aspect);
     } catch (error) {
       lastError = error;
       const message = error instanceof Error ? error.message : String(error);
@@ -310,7 +312,10 @@ export async function processVideoQueue(admin: AdminClient, userId?: string) {
         // First of the group to render today — generate once, upload to
         // the SHARED path (not a per-item path) so siblings can find it.
         const brand = await loadBrand(admin, item.user_id, item.brand_id);
-        const bytes = await generateImageWithRetry(imagePromptFor(item as never, brand as never));
+        const bytes = await generateImageWithRetry(
+        imagePromptFor(item as never, brand as never),
+        aspectForType(item.type),
+      );
         const { error: uploadError } = await admin.storage
           .from("content-media")
           .upload(path, bytes, { contentType: "image/png", upsert: true });
@@ -328,7 +333,10 @@ export async function processVideoQueue(admin: AdminClient, userId?: string) {
       // Not in the shared group (pinterest, video thumbnails) — generate
       // its own unique image as before.
       const brand = await loadBrand(admin, item.user_id, item.brand_id);
-      const bytes = await generateImageWithRetry(imagePromptFor(item as never, brand as never));
+      const bytes = await generateImageWithRetry(
+        imagePromptFor(item as never, brand as never),
+        aspectForType(item.type),
+      );
       const path = `${item.user_id}/${item.id}.png`;
       const { error: uploadError } = await admin.storage
         .from("content-media")
@@ -392,6 +400,7 @@ export async function processVideoQueue(admin: AdminClient, userId?: string) {
 
       const bytes = await generateImageWithRetry(
         carouselSlideImagePromptFor(slides[nextIndex]!, nextIndex, slides.length, brand as never),
+        aspectForType("carousel"),
       );
       const path = `${item.user_id}/${item.id}-slide-${nextIndex}.png`;
       const { error: uploadError } = await admin.storage

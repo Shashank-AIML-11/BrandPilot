@@ -157,11 +157,39 @@ export const IMAGE_SIZES: Record<ImageAspect, { width: number; height: number }>
   "16:9": { width: 1536, height: 864 },
 };
 
+type ImageProvider = "fal" | "pollinations";
+
+const DEFAULT_FAL_IMAGE_MODEL = "fal-ai/flux/dev";
+const falImageModel = () => process.env["FAL_MODEL"]?.trim() || DEFAULT_FAL_IMAGE_MODEL;
+
+/**
+ * Which image service to use, from IMAGE_PROVIDER ("fal" or "pollinations";
+ * unset means pollinations). The value is trimmed and case-insensitive, and
+ * anything else throws. Previously any other value (for example "Fal" or a
+ * stray space) silently fell back to the free Pollinations service, which made
+ * a mistyped setting look like fal was "not working".
+ */
+function imageProvider(): ImageProvider {
+  const raw = (process.env["IMAGE_PROVIDER"] ?? "")
+    .trim()
+    .replace(/^["']|["']$/g, "")
+    .toLowerCase();
+  if (raw === "" || raw === "pollinations") return "pollinations";
+  if (raw === "fal") return "fal";
+  throw new Error(
+    `Unknown IMAGE_PROVIDER "${raw}". Use "fal" or "pollinations" (or leave it unset for pollinations).`,
+  );
+}
+
 export async function generateImageBytes(
   prompt: string,
   aspect: ImageAspect = "1:1",
 ): Promise<Uint8Array> {
-  const provider = process.env["IMAGE_PROVIDER"] || "pollinations";
+  const provider = imageProvider();
+  // One line per image, so the Vercel logs show which service really made it.
+  console.log(
+    `[image] provider=${provider}${provider === "fal" ? ` model=${falImageModel()}` : ""} aspect=${aspect}`,
+  );
   return provider === "fal"
     ? generateImageBytesFal(prompt, aspect)
     : generateImageBytesPollinations(prompt, aspect);
@@ -193,11 +221,11 @@ async function generateImageBytesPollinations(
  * cheaper/faster) without a code change.
  */
 async function generateImageBytesFal(prompt: string, aspect: ImageAspect): Promise<Uint8Array> {
-  const apiKey = process.env["FAL_KEY"];
+  const apiKey = process.env["FAL_KEY"]?.trim();
   if (!apiKey) {
     throw new Error("Image generation is not configured (missing FAL_KEY).");
   }
-  const model = process.env["FAL_MODEL"] || "fal-ai/flux/dev";
+  const model = falImageModel();
 
   const res = await fetch(`https://fal.run/${model}`, {
     method: "POST",
@@ -269,7 +297,7 @@ function falVideoModel(): string {
 }
 
 function falHeaders(): Record<string, string> {
-  const apiKey = process.env["FAL_KEY"];
+  const apiKey = process.env["FAL_KEY"]?.trim();
   if (!apiKey) {
     throw new Error("Video generation is not configured (missing FAL_KEY).");
   }

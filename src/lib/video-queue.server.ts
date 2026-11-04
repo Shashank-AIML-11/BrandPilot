@@ -93,7 +93,37 @@ export async function processVideoQueue(admin: AdminClient, userId?: string) {
     if (activeError) throw new Error(activeError.message);
 
     for (const item of active ?? []) {
-      if (!item.video_job_id) continue;
+      if (!item.video_job_id) {
+        // A "waiting" row (generating, no job of its own) is only valid while a
+        // sibling in the same group really has a job or a finished file. If none
+        // does (the job failed, was deleted, or the state is left over), put it
+        // back in the queue so it can submit its own job instead of waiting forever.
+        const isSharedWaiter = (SHARED_VIDEO_TYPES as string[]).includes(item.type);
+        if (isSharedWaiter) {
+          const { data: group } = await admin
+            .from("content_items")
+            .select("video_job_id, video_status, video_url")
+            .eq("user_id", item.user_id)
+            .filter("brand_id", brandOp(item.brand_id), item.brand_id ?? null)
+            .eq("scheduled_date", item.scheduled_date)
+            .in("type", SHARED_VIDEO_TYPES)
+            .neq("id", item.id);
+          const hasLive = (group ?? []).some(
+            (g) =>
+              Boolean(g.video_url) ||
+              (g.video_status === "generating" && Boolean(g.video_job_id)),
+          );
+          if (!hasLive) {
+            await admin
+              .from("content_items")
+              .update({ video_status: "none", video_error: null })
+              .eq("id", item.id)
+              .eq("video_status", "generating")
+              .is("video_job_id", null);
+          }
+        }
+        continue;
+      }
       try {
         const job = await getVideoJob(item.video_job_id);
         if (job.status === "failed") {

@@ -73,6 +73,7 @@ export const SHARED_VIDEO_TYPES: ContentType[] = [
   "instagram_reel",
   "youtube_short",
   "tiktok_video",
+  "product_service_video",
 ];
 
 /** Deterministic storage path shared by every type in a shared-creative

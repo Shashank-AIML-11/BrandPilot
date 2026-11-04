@@ -176,7 +176,7 @@ export async function processVideoQueue(admin: AdminClient, userId?: string) {
 
       for (const item of pending ?? []) {
         try {
-          // Shared-video group (Reel/Short/TikTok): don't submit a paid
+          // Shared-video group (Reel/Short/TikTok/Product video): don't submit a paid
           // job if a sibling on the same day already has one done or in
           // progress.
           if ((SHARED_VIDEO_TYPES as string[]).includes(item.type)) {
@@ -228,7 +228,6 @@ export async function processVideoQueue(admin: AdminClient, userId?: string) {
           }
 
           const brand = await loadBrand(admin, item.user_id, item.brand_id);
-          const isLongForm = item.type === "product_service_video";
           const job = await createVideoJob(
             videoPromptFor(
               {
@@ -241,7 +240,9 @@ export async function processVideoQueue(admin: AdminClient, userId?: string) {
               brand as never,
             ),
             {
-              aspectRatio: isLongForm ? "16:9" : "9:16",
+              // ONE video per brand per day, always vertical 9:16; every video
+              // channel reuses this same file.
+              aspectRatio: "9:16",
               // Locked at 10s flat for every type during testing, to
               // keep per-generation cost predictable — raise once
               // volume/cost is confirmed acceptable.

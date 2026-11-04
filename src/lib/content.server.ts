@@ -98,6 +98,8 @@ export function aspectForType(type: string): "1:1" | "4:5" | "2:3" | "9:16" | "1
 }
 
 /** Crop-safety wording: platforms crop previews, so text must never sit near an edge. */
+const NO_TEXT_IMAGE =
+  "IMPORTANT: the image must contain NO text, NO letters, NO numbers, NO words, NO logos, NO captions and NO watermark anywhere — a pure visual illustration/photo only. Any English wording is added separately by the app.";
 const SAFE_ZONE =
   "Keep every word of text and the main subject well inside the frame with a generous margin on all sides, nothing touching or near the edges, because platforms crop previews.";
 
@@ -267,7 +269,9 @@ export const SAFETY_IMAGE_SUFFIX =
  */
 export const BLOG_WORD_TARGET = "100-150";
 
-export const SYSTEM_PROMPT = `You are an award-winning content director and direct-response copywriter working in-house for ONE specific brand.
+export const SYSTEM_PROMPT = `LANGUAGE: Write EVERYTHING in clear, natural English only (titles, captions, hashtags, scripts, image prompts, blog text), even if the brand profile contains words from another language. Never output non-English text.
+
+You are an award-winning content director and direct-response copywriter working in-house for ONE specific brand.
 Your work has to be good enough that a stranger stops scrolling, reads to the end, and wants to buy.
 Every single word must be traceable to the brand profile you are given.
 
@@ -748,20 +752,16 @@ export function imagePromptFor(
 
   if (isVideoType(item.type)) {
     const aspect = item.type === "product_service_video" ? "16:9" : "9:16 vertical";
-    return `${aspect} thumbnail/cover frame, bold legible headline text, high contrast, professional marketing design. ${SAFE_ZONE} ${base}${brandLine}${SAFETY_IMAGE_SUFFIX}`;
+    return `${aspect} thumbnail/cover frame, high contrast, cinematic professional marketing visual about: ${item.title}. ${NO_TEXT_IMAGE} ${SAFE_ZONE} ${base}${SAFETY_IMAGE_SUFFIX}`;
   }
 
   const aspect = item.type === "pinterest" ? "2:3 vertical" : "4:5 portrait";
   return [
-    `Premium, agency-grade marketing poster for social media, ${aspect}.`,
-    "Art direction: strong visual hierarchy with one bold headline, 3-5 short supporting points in a clean grid,",
-    "generous whitespace, a disciplined 3-colour palette with one accent, subtle depth via soft shadows and layered cards,",
-    "crisp custom vector iconography (not clipart), tasteful data visualisation where numbers appear,",
-    "modern geometric sans-serif typography, perfect kerning, all text sharp, correctly spelled and fully legible at small sizes,",
-    "print-quality sharpness, no watermark, no stock-photo collage, no gibberish text, no clipped letters.",
+    `Premium, agency-grade editorial marketing visual for social media, ${aspect}.`,
+    "Art direction: one clear focal subject, clean modern composition, generous whitespace, a disciplined 3-colour palette with one accent, soft shadows and subtle depth, crisp custom vector or photoreal style, print-quality sharpness, no stock-photo collage.",
+    `Topic to illustrate visually (do NOT write it as text): ${item.title}. ${item.summary}`,
+    NO_TEXT_IMAGE,
     SAFE_ZONE,
-    base,
-    brandLine,
     SAFETY_IMAGE_SUFFIX,
   ]
     .filter(Boolean)
@@ -784,10 +784,8 @@ export function carouselSlideImagePromptFor(
   return [
     `Carousel slide ${index + 1} of ${total}, 4:5 portrait, part of one connected visual sequence — consistent colour palette, typography and layout grid across all slides in the set.`,
     SAFE_ZONE,
-    `Headline text to render: "${slide.headline || ""}".`,
-    slide.subtext ? `Supporting line: "${slide.subtext}".` : "",
-    slide.image_prompt || "",
-    brandLine,
+    `Render ONLY this short English headline, spelled exactly, in large clean sans-serif type: "${(slide.headline || "").split(/\s+/).slice(0, 6).join(" ")}". No other text, numbers or logos anywhere.`,
+    `Visual theme (illustrate, do not write as text): ${slide.subtext || ""}`,
     SAFETY_IMAGE_SUFFIX,
   ]
     .filter(Boolean)
@@ -816,7 +814,7 @@ export function videoPromptFor(
       vertical ? "fast cuts every 1-2 seconds" : "2-3 quick scene cuts"
     }, colour grade matching a ${tone} brand feel.`,
     `Include natural ambient sound and an upbeat background music bed. Confident spoken voice-over narrating the key message.`,
-    `No captions burned in, no logos other than a subtle "${business}" wordmark at the end, no distorted text.`,
+    `English language only. No captions burned in, no on-screen text, no logos, no distorted text.`,
     SAFETY_IMAGE_SUFFIX.trim(),
   ]
     .filter(Boolean)

@@ -272,7 +272,7 @@ export function ContentDetailDialog({
                 poster={imageUrl ?? undefined}
                 controls
                 playsInline
-                className="w-full rounded-xl border border-border bg-black"
+                className="mx-auto max-h-[70vh] w-auto max-w-full rounded-xl border border-border bg-black"
               />
             ) : (
               <div className="relative overflow-hidden rounded-xl border border-border bg-black">

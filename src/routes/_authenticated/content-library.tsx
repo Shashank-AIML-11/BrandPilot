@@ -1,5 +1,5 @@
 import { useBrandScope } from "@/lib/brand-scope";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { createFileRoute } from "@tanstack/react-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { format } from "date-fns";
@@ -87,7 +87,20 @@ function ContentLibraryPage() {
       if (error) throw error;
       return data as unknown as ContentItem[];
     },
+    // Keep checking while any video is still rendering so it appears
+    // (and becomes playable) without a manual reload.
+    refetchInterval: (query) => {
+      const current = (query.state.data ?? []) as ContentItem[];
+      return current.some((i) => i.video_status === "generating") ? 8000 : false;
+    },
   });
+
+  // Keep an opened item in sync with the latest data (e.g. video finished).
+  useEffect(() => {
+    if (!detail) return;
+    const fresh = items.find((i) => i.id === detail.id);
+    if (fresh && fresh !== detail) setDetail(fresh);
+  }, [items, detail]);
 
   const byBucket = useMemo(() => {
     const map = new Map<string, ContentItem[]>();

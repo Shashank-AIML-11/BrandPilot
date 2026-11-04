@@ -290,7 +290,9 @@ export interface VideoJob {
  * first time a job actually completes and adjust parseFalVideoStatus()
  * / downloadVideoBytes()'s result parsing if they don't match.
  */
-const DEFAULT_FAL_VIDEO_MODEL = "fal-ai/ltx-2/text-to-video/fast";
+// "fal-ai/ltx-2/..." was retired by fal (404 \"Application ltx-2 not found\"); LTX-2.3 replaces it.
+// Price: $0.06 per second at 1080p, so a 10 s clip is about $0.60.
+const DEFAULT_FAL_VIDEO_MODEL = "fal-ai/ltx-2.3/text-to-video/fast";
 
 function falVideoModel(): string {
   // Trim stray spaces/slashes so a hand-typed env value can't break the URL.
@@ -311,6 +313,10 @@ function falVideoBody(
   aspectRatio: "9:16" | "16:9",
   seconds: number,
 ): Record<string, unknown> {
+  if (model.includes("ltx-2.3")) {
+    // LTX-2.3 renders 9:16 and 16:9. Duration is one of 6, 8, 10, 12 ... seconds.
+    return { prompt, aspect_ratio: aspectRatio, duration: seconds, resolution: "1080p", generate_audio: true };
+  }
   if (model.includes("ltx-2")) {
     // LTX-2 has no aspect-ratio input (it renders landscape). Duration is one of
     // 6, 8, 10, 12 ... seconds. Audio is on by default; we ask for it explicitly.
@@ -355,7 +361,11 @@ export async function createVideoJob(
 
   if (!res.ok) {
     const text = await res.text().catch(() => "");
-    throw new Error(`fal.ai video job creation failed [${res.status}] (model "${model}"): ${text}`);
+    const hint =
+      res.status === 404
+        ? ` — fal does not have this model any more. Set FAL_VIDEO_MODEL in Vercel to a current one (default: ${DEFAULT_FAL_VIDEO_MODEL}).`
+        : "";
+    throw new Error(`fal.ai video job creation failed [${res.status}] (model "${model}"): ${text}${hint}`);
   }
 
   const json = (await res.json()) as { request_id?: string; status?: string };

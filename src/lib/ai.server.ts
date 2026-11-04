@@ -220,6 +220,23 @@ async function generateImageBytesPollinations(
  * fal-ai/flux-pro for higher quality, or fal-ai/flux/schnell for
  * cheaper/faster) without a code change.
  */
+/** Nano Banana / Imagen take an aspect ratio; Flux, Ideogram and most others take image_size. */
+function falImageBody(model: string, prompt: string, aspect: ImageAspect): Record<string, unknown> {
+  const m = model.toLowerCase();
+  if (m.includes("nano-banana") || m.includes("imagen")) {
+    return { prompt, aspect_ratio: aspect, num_images: 1 };
+  }
+  if (m.includes("gpt-image")) {
+    return { prompt, image_size: "auto", quality: "medium", num_images: 1 };
+  }
+  return {
+    prompt,
+    // Square keeps the proven preset; other shapes use fal's custom {width,height} size.
+    image_size: aspect === "1:1" ? "square_hd" : IMAGE_SIZES[aspect],
+    num_images: 1,
+  };
+}
+
 async function generateImageBytesFal(prompt: string, aspect: ImageAspect): Promise<Uint8Array> {
   const apiKey = process.env["FAL_KEY"]?.trim();
   if (!apiKey) {
@@ -233,13 +250,7 @@ async function generateImageBytesFal(prompt: string, aspect: ImageAspect): Promi
       Authorization: `Key ${apiKey}`,
       "content-type": "application/json",
     },
-    body: JSON.stringify({
-      prompt: guard(prompt),
-      // Square keeps the proven preset. Other shapes use fal's custom {width,height} size,
-      // written from fal's docs and not live-tested: verify on the first real fal run.
-      image_size: aspect === "1:1" ? "square_hd" : IMAGE_SIZES[aspect],
-      num_images: 1,
-    }),
+    body: JSON.stringify(falImageBody(model, guard(prompt), aspect)),
   });
 
   if (!res.ok) {
@@ -290,9 +301,7 @@ export interface VideoJob {
  * first time a job actually completes and adjust parseFalVideoStatus()
  * / downloadVideoBytes()'s result parsing if they don't match.
  */
-// "fal-ai/ltx-2/..." was retired by fal (404 \"Application ltx-2 not found\"); LTX-2.3 replaces it.
-// Price: $0.06 per second at 1080p, so a 10 s clip is about $0.60.
-const DEFAULT_FAL_VIDEO_MODEL = "fal-ai/ltx-2.3/text-to-video/fast";
+const DEFAULT_FAL_VIDEO_MODEL = "fal-ai/ltx-2/text-to-video/fast";
 
 function falVideoModel(): string {
   // Trim stray spaces/slashes so a hand-typed env value can't break the URL.
@@ -313,10 +322,6 @@ function falVideoBody(
   aspectRatio: "9:16" | "16:9",
   seconds: number,
 ): Record<string, unknown> {
-  if (model.includes("ltx-2.3")) {
-    // LTX-2.3 renders 9:16 and 16:9. Duration is one of 6, 8, 10, 12 ... seconds.
-    return { prompt, aspect_ratio: aspectRatio, duration: seconds, resolution: "1080p", generate_audio: true };
-  }
   if (model.includes("ltx-2")) {
     // LTX-2 has no aspect-ratio input (it renders landscape). Duration is one of
     // 6, 8, 10, 12 ... seconds. Audio is on by default; we ask for it explicitly.
@@ -361,11 +366,7 @@ export async function createVideoJob(
 
   if (!res.ok) {
     const text = await res.text().catch(() => "");
-    const hint =
-      res.status === 404
-        ? ` — fal does not have this model any more. Set FAL_VIDEO_MODEL in Vercel to a current one (default: ${DEFAULT_FAL_VIDEO_MODEL}).`
-        : "";
-    throw new Error(`fal.ai video job creation failed [${res.status}] (model "${model}"): ${text}${hint}`);
+    throw new Error(`fal.ai video job creation failed [${res.status}] (model "${model}"): ${text}`);
   }
 
   const json = (await res.json()) as { request_id?: string; status?: string };

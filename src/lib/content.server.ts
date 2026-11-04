@@ -100,6 +100,17 @@ export function aspectForType(type: string): "1:1" | "4:5" | "2:3" | "9:16" | "1
 /** Crop-safety wording: platforms crop previews, so text must never sit near an edge. */
 const NO_TEXT_IMAGE =
   "IMPORTANT: the image must contain NO text, NO letters, NO numbers, NO words, NO logos, NO captions and NO watermark anywhere — a pure visual illustration/photo only. Any English wording is added separately by the app.";
+/** True when the chosen fal image model can spell words correctly (Nano Banana, Ideogram,
+ *  GPT Image, Recraft, Seedream, Qwen, Krea, Grok). Flux cannot, so it gets no text. */
+export function imageModelRendersText(): boolean {
+  if ((process.env["IMAGE_PROVIDER"] ?? "").trim().toLowerCase() !== "fal") return false;
+  const m = (process.env["FAL_MODEL"] ?? "").trim().toLowerCase();
+  return /nano-banana|ideogram|gpt-image|recraft|seedream|qwen-image|krea|grok|imagen/.test(m);
+}
+
+const PHOTOREAL_STYLE =
+  "Photorealistic, real-world professional photograph shot on a 50mm lens with natural light, shallow depth of field, authentic candid moment, believable real people with natural skin texture and expressions, true-to-life setting. Not a cartoon, not an illustration, not a 3D render, not a painting, not stylised art, no stock-photo cliche.";
+
 const SAFE_ZONE =
   "Keep every word of text and the main subject well inside the frame with a generous margin on all sides, nothing touching or near the edges, because platforms crop previews.";
 
@@ -752,15 +763,24 @@ export function imagePromptFor(
 
   if (isVideoType(item.type)) {
     const aspect = item.type === "product_service_video" ? "16:9" : "9:16 vertical";
-    return `${aspect} thumbnail/cover frame, high contrast, cinematic professional marketing visual about: ${item.title}. ${NO_TEXT_IMAGE} ${SAFE_ZONE} ${base}${SAFETY_IMAGE_SUFFIX}`;
+    return `${aspect} thumbnail/cover frame, high contrast, ${PHOTOREAL_STYLE} Cinematic marketing visual about: ${item.title}. ${NO_TEXT_IMAGE} ${SAFE_ZONE} ${base}${SAFETY_IMAGE_SUFFIX}`;
   }
 
   const aspect = item.type === "pinterest" ? "2:3 vertical" : "4:5 portrait";
+  const withText = imageModelRendersText();
+  const headline = (item.title || "").split(/\s+/).slice(0, 6).join(" ");
+  const who = brand?.icp ? ` The people shown should look like this audience: ${String(brand.icp).slice(0, 160)}.` : "";
+  const offer = (brand?.products_services || brand?.description || "").slice(0, 240);
   return [
-    `Premium, agency-grade editorial marketing visual for social media, ${aspect}.`,
-    "Art direction: one clear focal subject, clean modern composition, generous whitespace, a disciplined 3-colour palette with one accent, soft shadows and subtle depth, crisp custom vector or photoreal style, print-quality sharpness, no stock-photo collage.",
-    `Topic to illustrate visually (do NOT write it as text): ${item.title}. ${item.summary}`,
-    NO_TEXT_IMAGE,
+    `Social media marketing image for ${brand?.business_name || "the brand"}, ${aspect}.`,
+    PHOTOREAL_STYLE,
+    offer ? `The business offers: ${offer}. Show a concrete, believable scene from this business's real world (its customers, product or service in use), not abstract concepts.` : "",
+    who,
+    `Scene idea: ${item.title}. ${item.summary}`,
+    `Mood and colour: ${brand?.tone || "professional, warm, modern"}; clean composition with one clear focal subject.`,
+    withText
+      ? `Include ONE short headline overlay in clean modern bold sans-serif, spelled exactly: "${headline}". Place it in a clear area with good contrast. No other text, numbers or logos.`
+      : NO_TEXT_IMAGE,
     SAFE_ZONE,
     SAFETY_IMAGE_SUFFIX,
   ]
@@ -785,7 +805,7 @@ export function carouselSlideImagePromptFor(
     `Carousel slide ${index + 1} of ${total}, 4:5 portrait, part of one connected visual sequence — consistent colour palette, typography and layout grid across all slides in the set.`,
     SAFE_ZONE,
     `Render ONLY this short English headline, spelled exactly, in large clean sans-serif type: "${(slide.headline || "").split(/\s+/).slice(0, 6).join(" ")}". No other text, numbers or logos anywhere.`,
-    `Visual theme (illustrate, do not write as text): ${slide.subtext || ""}`,
+    `Background visual: ${PHOTOREAL_STYLE} Theme: ${slide.subtext || slide.headline || ""}${brand?.business_name ? `, for ${brand.business_name}` : ""}.`,
     SAFETY_IMAGE_SUFFIX,
   ]
     .filter(Boolean)

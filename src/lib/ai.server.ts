@@ -293,7 +293,35 @@ export interface VideoJob {
 const DEFAULT_FAL_VIDEO_MODEL = "fal-ai/ltx-2/text-to-video/fast";
 
 function falVideoModel(): string {
-  return process.env["FAL_VIDEO_MODEL"] || DEFAULT_FAL_VIDEO_MODEL;
+  // Trim stray spaces/slashes so a hand-typed env value can't break the URL.
+  const raw = (process.env["FAL_VIDEO_MODEL"] ?? "").trim().replace(/^\/+|\/+$/g, "");
+  return raw || DEFAULT_FAL_VIDEO_MODEL;
+}
+
+/** fal's status and result URLs use only "owner/app" (the first two parts of the
+ *  model id) — never the extra path such as "text-to-video/fast". */
+function falAppId(model: string): string {
+  return model.split("/").slice(0, 2).join("/");
+}
+
+/** Each model family names its inputs differently, so build the body per family. */
+function falVideoBody(
+  model: string,
+  prompt: string,
+  aspectRatio: "9:16" | "16:9",
+  seconds: number,
+): Record<string, unknown> {
+  if (model.includes("ltx-2")) {
+    // LTX-2 has no aspect-ratio input (it renders landscape). Duration is one of
+    // 6, 8, 10, 12 ... seconds. Audio is on by default; we ask for it explicitly.
+    return { prompt, duration: seconds, resolution: "1080p", generate_audio: true };
+  }
+  if (model.includes("veo3")) {
+    // Veo 3 supports 9:16 and audio; duration is "4s", "6s" or "8s".
+    const d = seconds >= 8 ? "8s" : seconds >= 6 ? "6s" : "4s";
+    return { prompt, aspect_ratio: aspectRatio, duration: d, generate_audio: true };
+  }
+  return { prompt, aspect_ratio: aspectRatio, duration: String(seconds) };
 }
 
 function falHeaders(): Record<string, string> {
@@ -320,16 +348,14 @@ export async function createVideoJob(
   const res = await fetch(`https://queue.fal.run/${model}`, {
     method: "POST",
     headers: falHeaders(),
-    body: JSON.stringify({
-      prompt: guard(prompt),
-      aspect_ratio: options.aspectRatio ?? "9:16",
-      duration: String(options.durationSeconds ?? 5),
-    }),
+    body: JSON.stringify(
+      falVideoBody(model, guard(prompt), options.aspectRatio ?? "9:16", options.durationSeconds ?? 6),
+    ),
   });
 
   if (!res.ok) {
     const text = await res.text().catch(() => "");
-    throw new Error(`fal.ai video job creation failed [${res.status}]: ${text}`);
+    throw new Error(`fal.ai video job creation failed [${res.status}] (model "${model}"): ${text}`);
   }
 
   const json = (await res.json()) as { request_id?: string; status?: string };
@@ -341,7 +367,7 @@ export async function createVideoJob(
 
 export async function getVideoJob(id: string): Promise<VideoJob> {
   const model = falVideoModel();
-  const res = await fetch(`https://queue.fal.run/${model}/requests/${id}/status`, {
+  const res = await fetch(`https://queue.fal.run/${falAppId(model)}/requests/${id}/status`, {
     headers: falHeaders(),
   });
 
@@ -363,7 +389,7 @@ export async function getVideoJob(id: string): Promise<VideoJob> {
 
 export async function downloadVideoBytes(id: string): Promise<Uint8Array> {
   const model = falVideoModel();
-  const res = await fetch(`https://queue.fal.run/${model}/requests/${id}`, {
+  const res = await fetch(`https://queue.fal.run/${falAppId(model)}/requests/${id}`, {
     headers: falHeaders(),
   });
 

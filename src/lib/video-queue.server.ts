@@ -288,6 +288,16 @@ export async function processVideoQueue(admin: AdminClient, userId?: string) {
           started += 1;
         } catch (error) {
           console.error(error);
+          // Show the reason on the card instead of a silent "paused". The row stays
+          // "none", so the next run retries (a rejected request costs nothing).
+          const reason = error instanceof Error ? error.message : "Video request failed.";
+          failed += 1;
+          const { error: noteError } = await admin
+            .from("content_items")
+            .update({ video_error: reason.slice(0, 500) })
+            .eq("id", item.id)
+            .eq("video_status", "none");
+          if (noteError) console.error(noteError);
         }
       }
     }

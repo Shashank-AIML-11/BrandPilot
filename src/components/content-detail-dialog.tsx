@@ -59,6 +59,7 @@ export interface ContentItem {
   video_script: string | null;
   video_url: string | null;
   video_status?: string | null;
+  video_error?: string | null;
   carousel_slides?: Array<{ headline?: string; subtext?: string; image_prompt?: string }> | null;
   carousel_image_urls?: string[] | null;
   platforms: string[] | null;
@@ -288,7 +289,9 @@ export function ContentDetailDialog({
                       ? "This video could not be rendered."
                       : item.video_status === "generating"
                         ? "Rendering in the background. It will be ready here automatically."
-                        : "Video generation is currently paused."}
+                        : item.video_error
+                          ? `Video request was rejected: ${item.video_error}`
+                          : "Video is queued. It starts on the next background run."}
                   </p>
                   {item.video_status === "generating" && <Progress className="w-2/3" />}
                 </div>

@@ -1,8 +1,8 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { createFileRoute } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { ChevronRight, Link2, Loader2, Save } from "lucide-react";
+import { ChevronRight, Loader2, Save } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { ChannelConnections } from "@/components/channel-connections";
 import { useMe } from "@/components/app-shell";
@@ -196,6 +196,35 @@ function BrandProfilePage() {
 
 });
 
+  /*
+   * Connected channels fill the brand's social handles by themselves, so there is no
+   * separate handles form. Only empty handles are filled; anything already saved stays.
+   */
+  const syncedRef = useRef<string>("");
+  const syncHandles = useCallback(
+    async (connected: Array<{ channel: string; accountName: string }>) => {
+      if (!data?.id) return;
+      const current = ((data.social_handles as Record<string, string> | null) ?? {}) as Record<
+        string,
+        string
+      >;
+      const missing: Record<string, string> = {};
+      for (const c of connected) {
+        const name = (c.accountName ?? "").trim();
+        if (name && !(current[c.channel] ?? "").trim()) missing[c.channel] = name;
+      }
+      const signature = JSON.stringify(missing);
+      if (Object.keys(missing).length === 0 || syncedRef.current === signature) return;
+      syncedRef.current = signature;
+      const { error } = await supabase
+        .from("brand_profiles")
+        .update({ social_handles: { ...current, ...missing } })
+        .eq("id", data.id);
+      if (!error) void queryClient.invalidateQueries({ queryKey: ["brand-profile"] });
+    },
+    [data, queryClient],
+  );
+
   const set = (key: keyof FormState, value: string) => setForm((f) => ({ ...f, [key]: value }));
 
   if (meLoading || (isAgency && brandsLoading) || isLoading) {
@@ -207,33 +236,20 @@ function BrandProfilePage() {
   }
 
   return (
-    <div className="mx-auto max-w-4xl space-y-6">
-      <div className="sticky top-16 z-10 -mx-4 flex flex-wrap items-end justify-between gap-4 border-b border-border bg-background/95 px-4 py-4 backdrop-blur sm:-mx-8 sm:px-8">
-        <div>
-          {isAgency && (
-            <nav
-              aria-label="Breadcrumb"
-              className="mb-2 flex items-center gap-1.5 text-xs text-muted-foreground"
-            >
-              <span>Brands</span>
-              <ChevronRight className="h-3.5 w-3.5" />
-              <span className="text-foreground">
-                {activeBrand?.name ?? "Your brand"}
-              </span>
-            </nav>
-          )}
+    <div className="w-full space-y-6">
+      <div className="sticky top-16 z-10 -mx-4 border-b border-border bg-background/95 px-4 py-4 backdrop-blur sm:-mx-8 sm:px-8">
+        {isAgency && (
+          <nav
+            aria-label="Breadcrumb"
+            className="mb-2 flex items-center gap-1.5 text-xs text-muted-foreground"
+          >
+            <span>Brands</span>
+            <ChevronRight className="h-3.5 w-3.5" />
+            <span className="text-foreground">{activeBrand?.name ?? "Your brand"}</span>
+          </nav>
+        )}
+        <div className="flex items-center justify-between gap-4">
           <h1 className="text-2xl font-bold">Brand Profile</h1>
-          <p className="mt-1 text-sm text-muted-foreground">
-            Everything here feeds the generator. The richer this page, the sharper the content.
-          </p>
-        </div>
-        <div className="flex flex-wrap gap-3">
-          {isAgency && (
-            <Button variant="outline" disabled title="Client intake links are coming in the next update">
-              <Link2 className="mr-2 h-4 w-4" />
-              Send client intake link
-            </Button>
-          )}
           <Button onClick={() => save.mutate()} disabled={save.isPending}>
             {save.isPending ? (
               <Loader2 className="mr-2 h-4 w-4 animate-spin" />
@@ -243,6 +259,9 @@ function BrandProfilePage() {
             Save profile
           </Button>
         </div>
+        <p className="mt-1 text-sm text-muted-foreground">
+          Everything here feeds the generator. The richer this page, the sharper the content.
+        </p>
       </div>
 
       <section className="surface space-y-4 p-6">
@@ -341,34 +360,12 @@ function BrandProfilePage() {
         </div>
       </section>
 
-      <section className="surface space-y-4 p-6">
+      <section className="surface space-y-3 p-6">
         <h2 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">
-          Channels & assets
+          Brand assets
         </h2>
-        <p className="text-sm text-muted-foreground">
-          Only the channels you fill in are used for scheduling.
-        </p>
-        <div className="grid gap-4 sm:grid-cols-2">
-          {SOCIALS.map((s) => (
-            <div key={s.key} className="space-y-2">
-              <Label htmlFor={s.key}>{s.key}</Label>
-              <Input
-                id={s.key}
-                maxLength={200}
-                placeholder={s.placeholder}
-                value={form.social_handles[s.key] ?? ""}
-                onChange={(e) =>
-                  setForm((f) => ({
-                    ...f,
-                    social_handles: { ...f.social_handles, [s.key]: e.target.value },
-                  }))
-                }
-              />
-            </div>
-          ))}
-        </div>
         <div className="space-y-2">
-          <Label htmlFor="drive">Google Drive folder link</Label>
+          <Label htmlFor="drive">Google Drive folder link (optional)</Label>
           <Input
             id="drive"
             maxLength={400}
@@ -384,7 +381,7 @@ function BrandProfilePage() {
       </section>
 
       {isPrimary ? (
-        <ChannelConnections />
+        <ChannelConnections onConnections={syncHandles} />
       ) : (
         <section className="rounded-xl border border-border bg-card p-6">
           <h2 className="text-lg font-semibold">Channels</h2>

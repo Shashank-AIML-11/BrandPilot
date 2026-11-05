@@ -15,7 +15,11 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 
-export function ChannelConnections() {
+export function ChannelConnections({
+  onConnections,
+}: {
+  onConnections?: (connected: Array<{ channel: string; accountName: string }>) => void;
+} = {}) {
   const queryClient = useQueryClient();
   const list = useServerFn(listChannelConnections);
   const start = useServerFn(startChannelAuth);
@@ -31,6 +35,17 @@ export function ChannelConnections() {
   });
 
   const byChannel = Object.fromEntries(connections.map((c) => [c.channel, c]));
+
+  // Tell the page which channels are connected so it can fill the social handles.
+  useEffect(() => {
+    if (!onConnections || isLoading) return;
+    onConnections(
+      connections
+        .filter((c) => c.connected)
+        .map((c) => ({ channel: c.channel, accountName: c.accountName })),
+    );
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [connections, isLoading]);
 
   useEffect(() => {
     const site = byChannel["Website"];
@@ -119,7 +134,14 @@ export function ChannelConnections() {
                     )}
                   </div>
                   <p className="mt-1 truncate text-xs text-muted-foreground">
-                    {conn?.connected ? conn.accountName : channel.note}
+                    {conn?.connected ? (
+                      <>
+                        <span className="font-medium text-foreground/80">Social Handle:</span>{" "}
+                        {conn.accountName}
+                      </>
+                    ) : (
+                      channel.note
+                    )}
                   </p>
                 </div>
                 {conn?.connected ? (

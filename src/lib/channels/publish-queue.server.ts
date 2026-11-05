@@ -49,7 +49,29 @@ export async function processPublishQueue(admin: Admin) {
     return true; // blog — no media required
   }
 
+  // Account-wide Autopost switch (header toggle). Users who turned it OFF are skipped:
+  // their posts stay scheduled and go out only through the manual Post now button.
+  const userIds = [...new Set(rows.map((r) => r.user_id))];
+  const pausedUsers = new Set<string>();
+  if (userIds.length > 0) {
+    const { data: paused } = await (admin as unknown as {
+      from: (t: string) => {
+        select: (c: string) => {
+          in: (c: string, v: string[]) => {
+            eq: (c: string, v: boolean) => Promise<{ data: Array<{ id: string }> | null }>;
+          };
+        };
+      };
+    })
+      .from("profiles")
+      .select("id")
+      .in("id", userIds)
+      .eq("autopost_enabled", false);
+    for (const row of paused ?? []) pausedUsers.add(row.id);
+  }
+
   const due = rows
+    .filter((row) => !pausedUsers.has(row.user_id))
     .filter((row) => row.scheduled_date < today || (row.scheduled_time ?? "00:00:00") <= time)
     .filter((row) => (row.platforms ?? []).length > 0)
     // Only publish once the media the channel needs actually exists.

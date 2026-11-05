@@ -1,6 +1,7 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { Link, useNavigate, useRouterState } from "@tanstack/react-router";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { toast } from "sonner";
 import {
   CalendarDays,
   BarChart3,
@@ -26,6 +27,7 @@ import {
 } from "@/lib/agency";
 import { Button } from "@/components/ui/button";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
+import { Switch } from "@/components/ui/switch";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -104,6 +106,31 @@ export function AppShell({ children }: { children: ReactNode }) {
 
   const activePlan = planById(me?.activeSubscription?.plan);
 
+  // Account-wide Autopost switch. ON (default) = scheduled posts publish by themselves.
+  const autopostOn =
+    (me?.profile as { autopost_enabled?: boolean } | null | undefined)?.autopost_enabled !== false;
+  const setAutopost = useMutation({
+    mutationFn: async (next: boolean) => {
+      if (!me?.user) throw new Error("Not signed in");
+      const { error } = await supabase
+        .from("profiles")
+        .update({ autopost_enabled: next } as never)
+        .eq("id", me.user.id);
+      if (error) throw error;
+      return next;
+    },
+    onSuccess: (next) => {
+      toast.success(
+        next
+          ? "Autopost is ON. Scheduled posts will go out to your connected channels."
+          : "Autopost is OFF. Nothing posts by itself; use Post now on a card.",
+      );
+      void queryClient.invalidateQueries({ queryKey: ["me"] });
+    },
+    onError: (e: unknown) =>
+      toast.error(e instanceof Error ? e.message : "Could not change Autopost."),
+  });
+
   // Scale-plan users get the agency sidebar (brand switcher) instead of the single-brand nav.
   const agencyPlan = agencyPlanFor(me);
   const { data: agencyBrands = [] } = useAgencyBrands(!!agencyPlan);
@@ -151,6 +178,32 @@ export function AppShell({ children }: { children: ReactNode }) {
           </Link>
         </div>
 
+        <div className="flex items-center gap-3">
+        <label
+          className="flex cursor-pointer items-center gap-2 rounded-full border border-border px-3 py-1.5 text-sm"
+          title={
+            autopostOn
+              ? "Autopost is ON: scheduled content posts to connected channels automatically"
+              : "Autopost is OFF: select cards and use Post now"
+          }
+        >
+          <span className="hidden font-medium sm:inline">Autopost</span>
+          <Switch
+            checked={autopostOn}
+            disabled={!me || setAutopost.isPending}
+            onCheckedChange={(v) => setAutopost.mutate(v)}
+            aria-label="Autopost on or off"
+          />
+          <span
+            className={cn(
+              "w-7 text-xs font-semibold",
+              autopostOn ? "text-emerald-400" : "text-muted-foreground",
+            )}
+          >
+            {autopostOn ? "ON" : "OFF"}
+          </span>
+        </label>
+
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
             <button className="flex items-center gap-2 rounded-full border border-border p-1 pr-3 transition-colors hover:bg-accent">
@@ -191,12 +244,13 @@ export function AppShell({ children }: { children: ReactNode }) {
             </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
+        </div>
       </header>
 
       <div className="mx-auto flex max-w-[1600px]">
         <aside
           className={cn(
-            "fixed inset-y-16 left-0 z-20 w-64 shrink-0 overflow-y-auto border-r border-sidebar-border bg-sidebar p-4 transition-transform lg:sticky lg:top-16 lg:h-[calc(100vh-4rem)] lg:translate-x-0",
+            "fixed inset-y-16 left-0 z-20 w-64 shrink-0 overflow-y-auto border-r border-sidebar-border bg-sidebar p-3 transition-transform lg:sticky lg:top-16 lg:h-[calc(100vh-4rem)] lg:translate-x-0",
             open ? "translate-x-0" : "-translate-x-full",
           )}
         >

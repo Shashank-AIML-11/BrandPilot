@@ -353,6 +353,7 @@ export type Database = {
       }
       profiles: {
         Row: {
+          autopost_enabled: boolean
           avatar_url: string | null
           created_at: string
           email: string
@@ -362,6 +363,7 @@ export type Database = {
           updated_at: string
         }
         Insert: {
+          autopost_enabled?: boolean
           avatar_url?: string | null
           created_at?: string
           email: string
@@ -371,6 +373,7 @@ export type Database = {
           updated_at?: string
         }
         Update: {
+          autopost_enabled?: boolean
           avatar_url?: string | null
           created_at?: string
           email?: string

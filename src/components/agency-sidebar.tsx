@@ -1,6 +1,23 @@
 import { Link } from "@tanstack/react-router";
-import { BarChart3, Building2, CalendarDays, LibraryBig, Plus, ShieldCheck } from "lucide-react";
+import {
+  BarChart3,
+  Building2,
+  CalendarDays,
+  Check,
+  ChevronsUpDown,
+  LibraryBig,
+  Plus,
+  ShieldCheck,
+} from "lucide-react";
 import { Button } from "@/components/ui/button";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { cn } from "@/lib/utils";
 import type { AgencyBrand } from "@/lib/agency";
 import type { Plan } from "@/lib/plans";
@@ -20,7 +37,7 @@ const SWATCHES = [
 ];
 
 const rowBase =
-  "flex min-h-11 w-full items-center gap-2.5 rounded-[10px] px-2.5 py-2 text-left text-sm text-sidebar-foreground transition-colors hover:bg-sidebar-accent";
+  "flex min-h-10 w-full items-center gap-2.5 rounded-[10px] px-2.5 py-1.5 text-left text-sm text-sidebar-foreground transition-colors hover:bg-sidebar-accent";
 const rowActive =
   "bg-sidebar-accent font-medium text-sidebar-accent-foreground ring-1 ring-inset ring-sidebar-border";
 
@@ -32,64 +49,91 @@ interface Props {
   onSelectBrand: (id: string) => void;
 }
 
-/** Sidebar for Scale-plan (agency) users: brand switcher + per-brand workspace. */
-export function AgencySidebar({
-  brands,
-  activeBrandId,
-  plan,
-  showAdmin,
-  onSelectBrand,
-}: Props) {
+function BrandBadge({ name, index, active }: { name: string; index: number; active?: boolean }) {
+  return (
+    <span
+      className={cn(
+        "flex h-7 w-7 flex-none items-center justify-center rounded-lg text-xs font-bold",
+        active ? "bg-primary text-primary-foreground" : SWATCHES[index % SWATCHES.length],
+      )}
+    >
+      {(name[0] ?? "?").toUpperCase()}
+    </span>
+  );
+}
+
+/** Sidebar for Scale-plan (agency) users: brand dropdown + per-brand workspace. */
+export function AgencySidebar({ brands, activeBrandId, plan, showAdmin, onSelectBrand }: Props) {
   const used = brands.length;
   const limit = plan.brandProfileLimit;
   const atLimit = used >= limit;
-  const activeBrand = brands.find((b) => b.id === activeBrandId);
+  const activeIndex = Math.max(
+    0,
+    brands.findIndex((b) => b.id === activeBrandId),
+  );
+  const activeBrand = brands[activeIndex];
   const pct = limit > 0 ? Math.min(100, (used / limit) * 100) : 0;
 
   return (
-    <div className="flex min-h-full flex-col gap-6">
-      <nav aria-label="Client brands" className="space-y-1">
-        <div className="flex items-center justify-between px-2.5 pb-2">
+    <div className="flex min-h-full flex-col gap-3">
+      <div className="space-y-2">
+        <div className="flex items-center justify-between px-1">
           <span className="text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">
-            Brands
+            Brand
           </span>
           <span className="text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">
             {used} / {limit}
           </span>
         </div>
 
-        {brands.map((brand, i) => {
-          const active = brand.id === activeBrandId;
-          const pending = brand.status === "intake_pending";
-          return (
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
             <button
-              key={brand.id}
               type="button"
-              onClick={() => onSelectBrand(brand.id)}
-              aria-current={active ? "true" : undefined}
-              className={cn(rowBase, active && rowActive)}
+              aria-label="Choose brand"
+              className={cn(rowBase, "border border-sidebar-border bg-card")}
             >
-              <span
-                className={cn(
-                  "flex h-7 w-7 flex-none items-center justify-center rounded-lg text-xs font-bold",
-                  active
-                    ? "bg-primary text-primary-foreground"
-                    : pending
-                      ? "text-muted-foreground ring-1 ring-inset ring-border"
-                      : SWATCHES[i % SWATCHES.length],
-                )}
-              >
-                {(brand.name[0] ?? "?").toUpperCase()}
-              </span>
-              <span className="min-w-0 flex-1 truncate">{brand.name}</span>
-              {pending && (
-                <span className="whitespace-nowrap rounded-full border border-amber-900/60 px-2 py-0.5 text-[11px] text-amber-300">
-                  Intake pending
-                </span>
+              {activeBrand ? (
+                <BrandBadge name={activeBrand.name} index={activeIndex} active />
+              ) : (
+                <BrandBadge name="?" index={0} />
               )}
+              <span className="min-w-0 flex-1 truncate font-medium">
+                {activeBrand?.name ?? "Select a brand"}
+              </span>
+              <ChevronsUpDown className="h-4 w-4 flex-none text-muted-foreground" />
             </button>
-          );
-        })}
+          </DropdownMenuTrigger>
+          <DropdownMenuContent
+            align="start"
+            className="max-h-80 w-[var(--radix-dropdown-menu-trigger-width)] overflow-y-auto"
+          >
+            <DropdownMenuLabel className="text-xs text-muted-foreground">
+              Your brands ({used} of {limit})
+            </DropdownMenuLabel>
+            <DropdownMenuSeparator />
+            {brands.map((brand, i) => {
+              const active = brand.id === activeBrandId;
+              const pending = brand.status === "intake_pending";
+              return (
+                <DropdownMenuItem
+                  key={brand.id}
+                  onSelect={() => onSelectBrand(brand.id)}
+                  className="gap-2.5"
+                >
+                  <BrandBadge name={brand.name} index={i} active={active} />
+                  <span className="min-w-0 flex-1 truncate">{brand.name}</span>
+                  {pending && (
+                    <span className="whitespace-nowrap rounded-full border border-amber-900/60 px-1.5 py-0.5 text-[10px] text-amber-300">
+                      Intake pending
+                    </span>
+                  )}
+                  {active && <Check className="h-4 w-4 flex-none" />}
+                </DropdownMenuItem>
+              );
+            })}
+          </DropdownMenuContent>
+        </DropdownMenu>
 
         {atLimit ? (
           <div
@@ -97,7 +141,7 @@ export function AgencySidebar({
             title={`Your ${plan.name} plan includes ${limit} brands`}
             className={cn(
               rowBase,
-              "mt-2 cursor-not-allowed border border-dashed border-border text-amber-300 opacity-50 hover:bg-transparent",
+              "cursor-not-allowed border border-dashed border-border text-amber-300 opacity-50 hover:bg-transparent",
             )}
           >
             <Plus className="h-4 w-4" />
@@ -106,20 +150,20 @@ export function AgencySidebar({
         ) : (
           <Link
             to="/add-brand"
-            className={cn(rowBase, "mt-2 border border-dashed border-border text-amber-300")}
+            className={cn(rowBase, "border border-dashed border-border text-amber-300")}
             activeProps={{
-              className: cn(rowBase, "mt-2 border border-dashed border-primary text-amber-300"),
+              className: cn(rowBase, "border border-dashed border-primary text-amber-300"),
             }}
           >
             <Plus className="h-4 w-4" />
             Add brand
           </Link>
         )}
-      </nav>
+      </div>
 
       {activeBrand && (
-        <nav aria-label={`${activeBrand.name} workspace`} className="space-y-1">
-          <div className="px-2.5 pb-2">
+        <nav aria-label={`${activeBrand.name} workspace`} className="space-y-0.5">
+          <div className="px-1 pb-1">
             <span className="block truncate text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">
               {activeBrand.name}
             </span>
@@ -148,16 +192,16 @@ export function AgencySidebar({
         </nav>
       )}
 
-      <div className="mt-auto rounded-xl border border-sidebar-border bg-card p-4">
+      <div className="mt-auto rounded-xl border border-sidebar-border bg-card p-3">
         <p className="text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">
           Your active plan
         </p>
-        <p className="mt-1 font-display text-xl font-bold">{plan.name}</p>
-        <p className="mt-1 text-[13px] text-muted-foreground">
+        <p className="mt-0.5 font-display text-lg font-bold leading-tight">{plan.name}</p>
+        <p className="mt-0.5 text-xs text-muted-foreground">
           {used} of {limit} brands used
         </p>
         <div
-          className="mt-2.5 h-1.5 rounded-full bg-border"
+          className="mt-2 h-1.5 rounded-full bg-border"
           role="progressbar"
           aria-valuemin={0}
           aria-valuemax={limit}
@@ -166,7 +210,7 @@ export function AgencySidebar({
         >
           <div className="h-1.5 rounded-full bg-primary" style={{ width: `${pct}%` }} />
         </div>
-        <Button size="sm" variant="outline" className="mt-3.5 w-full" asChild>
+        <Button size="sm" variant="outline" className="mt-2.5 w-full" asChild>
           <Link to="/plan">Manage plan</Link>
         </Button>
       </div>

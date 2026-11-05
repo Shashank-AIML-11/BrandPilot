@@ -112,12 +112,37 @@ export function AppShell({ children }: { children: ReactNode }) {
   const setAutopost = useMutation({
     mutationFn: async (next: boolean) => {
       if (!me?.user) throw new Error("Not signed in");
-      const { error } = await supabase
+      // .select() returns the changed rows, so a silent "0 rows updated" is caught below.
+      const { data, error } = await supabase
         .from("profiles")
         .update({ autopost_enabled: next } as never)
-        .eq("id", me.user.id);
-      if (error) throw error;
+        .eq("id", me.user.id)
+        .select("id");
+      if (error) {
+        throw new Error(
+          /autopost_enabled/i.test(error.message)
+            ? "The Autopost column is missing in the database. Run the autopost SQL migration first."
+            : error.message,
+        );
+      }
+      if (!data || data.length === 0) {
+        // No profile row to update yet: create it.
+        const { error: insertError } = await supabase
+          .from("profiles")
+          .upsert({ id: me.user.id, email: me.user.email ?? "", autopost_enabled: next } as never);
+        if (insertError) throw new Error(insertError.message);
+      }
       return next;
+    },
+    // Flip the switch immediately; roll back if saving fails.
+    onMutate: async (next: boolean) => {
+      await queryClient.cancelQueries({ queryKey: ["me"] });
+      const previous = queryClient.getQueryData(["me"]);
+      queryClient.setQueryData(["me"], (old: unknown) => {
+        const o = old as { profile?: Record<string, unknown> | null } | null | undefined;
+        return o ? { ...o, profile: { ...(o.profile ?? {}), autopost_enabled: next } } : o;
+      });
+      return { previous };
     },
     onSuccess: (next) => {
       toast.success(
@@ -127,8 +152,10 @@ export function AppShell({ children }: { children: ReactNode }) {
       );
       void queryClient.invalidateQueries({ queryKey: ["me"] });
     },
-    onError: (e: unknown) =>
-      toast.error(e instanceof Error ? e.message : "Could not change Autopost."),
+    onError: (e: unknown, _next, ctx) => {
+      if (ctx?.previous !== undefined) queryClient.setQueryData(["me"], ctx.previous);
+      toast.error(e instanceof Error ? e.message : "Could not change Autopost.");
+    },
   });
 
   // Scale-plan users get the agency sidebar (brand switcher) instead of the single-brand nav.

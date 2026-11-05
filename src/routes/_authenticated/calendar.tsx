@@ -1,6 +1,6 @@
 import { useBrandScope } from "@/lib/brand-scope";
 import { useEffect, useMemo, useState, useRef, } from "react";
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   addMonths,
@@ -72,6 +72,7 @@ const DOW = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
 
 function CalendarPage() {
   const queryClient = useQueryClient();
+  const navigate = useNavigate();
 
   const [cursor, setCursor] = useState(() => startOfMonth(new Date()));
   const [openDay, setOpenDay] = useState<string | null>(null);
@@ -608,38 +609,10 @@ function CalendarPage() {
   /*
    * POST CONTENT
    */
-  async function postContent() {
-    if (posting) return;
-
-    setPosting(true);
-
-    try {
-      const result = await publishAllContent({ data: scope.brandId ? { brandId: scope.brandId } : {} });
-
-      await queryClient.invalidateQueries({
-        queryKey: ["content", monthKey],
-      });
-
-      if (result.posted === 0) {
-        toast.info(
-          "Nothing new to post — no due, unposted blogs found.",
-        );
-      } else {
-        toast.success(
-          `Posted ${result.posted} item${
-            result.posted === 1 ? "" : "s"
-          } to your connected channels.`,
-        );
-      }
-    } catch (error) {
-      toast.error(
-        error instanceof Error
-          ? error.message
-          : "Posting failed.",
-      );
-    } finally {
-      setPosting(false);
-    }
+  function postContent() {
+    // Posting is a manual, per-card choice: open the Content Library, where cards can
+    // be selected and published with the "Post now" button.
+    void navigate({ to: "/content-library" });
   }
 
   /*

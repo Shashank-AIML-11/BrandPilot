@@ -143,10 +143,10 @@ export const generateWeek = createServerFn({
               brandId: brand.id,
               date,
               platforms,
-              // Channels are still per account: only the primary brand auto-posts.
+              // Each brand has its own connected channels.
               autopost:
                 entitlement.plan
-                  .autoPost && primary,
+                  .autoPost,
             },
             quotaSchedule[
               date
@@ -1284,8 +1284,8 @@ export const queueMonthGeneration = createServerFn({ method: "POST" })
           brandId: brand.id,
           date,
           platforms: activeChannelList,
-          // Channels are still per account: only the primary brand auto-posts.
-          autopost: entitlement.plan.autoPost && primary,
+          // Each brand has its own connected channels.
+          autopost: entitlement.plan.autoPost,
         },
         quota,
       );

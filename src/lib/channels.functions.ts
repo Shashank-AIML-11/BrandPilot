@@ -12,16 +12,28 @@ function originFromRequest(): string {
   return `${proto}://${host}`;
 }
 
+/** Resolves which of the user's brands a channel action is for (defaults to the oldest). */
+async function resolveBrandId(userId: string, brandId?: string): Promise<string | null> {
+  const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+  const { loadBrand } = await import("@/lib/brand.server");
+  const brand = await loadBrand(supabaseAdmin as never, userId, brandId ?? null);
+  return brand?.id ?? null;
+}
+
 export const listChannelConnections = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
-  .handler(async ({ context }): Promise<ChannelConnectionStatus[]> => {
+  .inputValidator((input: { brandId?: string } | undefined) => input ?? {})
+  .handler(async ({ data, context }): Promise<ChannelConnectionStatus[]> => {
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
-    const { data } = await supabaseAdmin
+    const brandId = await resolveBrandId(context.userId, data.brandId);
+    let query = supabaseAdmin
       .from("channel_connections")
       .select("channel, account_name, status, token_expires_at, meta")
       .eq("user_id", context.userId);
+    if (brandId) query = query.eq("brand_id", brandId);
+    const { data: rows } = await query;
 
-    return ((data ?? []) as unknown as Array<{
+    return ((rows ?? []) as unknown as Array<{
       channel: string;
       account_name: string;
       status: string;
@@ -41,15 +53,17 @@ export const listChannelConnections = createServerFn({ method: "GET" })
 
 export const startChannelAuth = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((input: { channel: string }) => {
+  .inputValidator((input: { channel: string; brandId?: string }) => {
     if (!input?.channel) throw new Error("Channel is required");
     return input;
   })
   .handler(async ({ data, context }) => {
     const { buildAuthUrl } = await import("@/lib/channels/oauth.server");
+    const brandId = await resolveBrandId(context.userId, data.brandId);
     const url = await buildAuthUrl({
       channel: data.channel,
       userId: context.userId,
+      ...(brandId ? { brandId } : {}),
       origin: originFromRequest(),
     });
     return { url };
@@ -57,52 +71,17 @@ export const startChannelAuth = createServerFn({ method: "POST" })
 
 export const disconnectChannel = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((input: { channel: string }) => input)
+  .inputValidator((input: { channel: string; brandId?: string }) => input)
   .handler(async ({ data, context }) => {
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
-    await supabaseAdmin
+    const brandId = await resolveBrandId(context.userId, data.brandId);
+    let del = supabaseAdmin
       .from("channel_connections")
       .delete()
       .eq("user_id", context.userId)
       .eq("channel", data.channel);
-    return { ok: true };
-  });
-
-export const saveWebsiteEndpoint = createServerFn({ method: "POST" })
-  .middleware([requireSupabaseAuth])
-  .inputValidator((input: { url: string; secret: string }) => {
-    const url = (input?.url ?? "").trim();
-    if (url && !/^https?:\/\//i.test(url)) throw new Error("Enter a full https:// URL");
-    if (url.length > 500) throw new Error("URL is too long");
-    return { url, secret: (input?.secret ?? "").trim().slice(0, 200) };
-  })
-  .handler(async ({ data, context }) => {
-    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
-    if (!data.url) {
-      await supabaseAdmin
-        .from("channel_connections")
-        .delete()
-        .eq("user_id", context.userId)
-        .eq("channel", "Website");
-      return { ok: true };
-    }
-    const { encryptToken } = await import("@/lib/channels/crypto.server");
-    const { error } = await supabaseAdmin.from("channel_connections").upsert(
-      {
-        user_id: context.userId,
-        channel: "Website",
-        account_id: data.url,
-        account_name: new URL(data.url).host,
-        access_token: await encryptToken(data.secret),
-        refresh_token: "",
-        scopes: "",
-        meta: { url: data.url },
-        status: "connected",
-        updated_at: new Date().toISOString(),
-      } as never,
-      { onConflict: "user_id,channel" },
-    );
-    if (error) throw new Error(error.message);
+    if (brandId) del = del.eq("brand_id", brandId);
+    await del;
     return { ok: true };
   });
 
@@ -128,19 +107,10 @@ export const publishAllContent = createServerFn({ method: "POST" })
 
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
     const { CHANNELS_BY_TYPE } = await import("@/lib/content.server");
-    const { loadBrand, isPrimaryBrand } = await import("@/lib/brand.server");
+    const { loadBrand } = await import("@/lib/brand.server");
 
     const brand = await loadBrand(supabaseAdmin, context.userId, data.brandId);
     if (!brand) throw new Error("Create your brand profile first.");
-    // Channel connections belong to the account, not to a brand (yet), so only the
-    // first brand may publish to them. This stops one client's posts going out on
-    // another client's accounts.
-    if (!(await isPrimaryBrand(supabaseAdmin, context.userId, brand.id))) {
-      throw new Error(
-        "Publishing for additional brands needs their own connected channels, which is coming next. Nothing was posted.",
-      );
-    }
-
     // Only text blogs are posted for now — infographic/video posting is on
     // hold while we validate the blog pipeline end-to-end.
     const today = new Date().toISOString().slice(0, 10);
@@ -165,6 +135,7 @@ export const publishAllContent = createServerFn({ method: "POST" })
       .from("channel_connections")
       .select("channel, status")
       .eq("user_id", context.userId)
+      .eq("brand_id", brand.id)
       .eq("status", "connected");
     const connections = new Set(
       (connectionsRaw ?? []).map((c) => (c as unknown as { channel: string }).channel),

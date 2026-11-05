@@ -95,6 +95,7 @@ export type Database = {
           access_token: string
           account_id: string
           account_name: string
+          brand_id: string | null
           channel: string
           created_at: string
           id: string
@@ -110,6 +111,7 @@ export type Database = {
           access_token?: string
           account_id?: string
           account_name?: string
+          brand_id?: string | null
           channel: string
           created_at?: string
           id?: string
@@ -125,6 +127,7 @@ export type Database = {
           access_token?: string
           account_id?: string
           account_name?: string
+          brand_id?: string | null
           channel?: string
           created_at?: string
           id?: string

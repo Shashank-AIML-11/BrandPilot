@@ -28,7 +28,8 @@ export function useBrandScope(): BrandScope {
     isAgency,
     brandId: active?.id ?? null,
     brandName: active?.name ?? null,
-    isPrimary: !isAgency || (!!active && brands?.[0]?.id === active.id),
+    // Every brand now has its own channel connections, so any brand may publish.
+    isPrimary: true,
     loading: meLoading || (isAgency && brandsLoading),
   };
 }

@@ -213,7 +213,7 @@ function BrandProfilePage() {
         const name = (c.accountName ?? "").trim();
         if (name && !(current[c.channel] ?? "").trim()) missing[c.channel] = name;
       }
-      const signature = JSON.stringify(missing);
+      const signature = `${data.id}:${JSON.stringify(missing)}`;
       if (Object.keys(missing).length === 0 || syncedRef.current === signature) return;
       syncedRef.current = signature;
       const { error } = await supabase
@@ -402,18 +402,10 @@ function BrandProfilePage() {
         </div>
       </section>
 
-      {isPrimary ? (
-        <ChannelConnections onConnections={syncHandles} />
-      ) : (
-        <section className="rounded-xl border border-border bg-card p-6">
-          <h2 className="text-lg font-semibold">Channels</h2>
-          <p className="mt-1 text-sm text-muted-foreground">
-            Connecting social accounts for additional brands is coming next. Until then, content for
-            this brand is created and kept in its calendar and library, and nothing is posted
-            automatically.
-          </p>
-        </section>
-      )}
+      <ChannelConnections
+        brandId={isAgency ? (activeBrand?.id ?? null) : (data?.id ?? null)}
+        onConnections={syncHandles}
+      />
     </div>
   );
 }

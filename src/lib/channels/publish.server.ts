@@ -11,13 +11,13 @@ export async function publishItemToChannels(
   const { data } = await supabaseAdmin
     .from("content_items")
     .select(
-      "id, type, title, summary, body, caption, hashtags, image_url, video_url, carousel_slides, carousel_image_urls, published_channels",
+      "id, brand_id, type, title, summary, body, caption, hashtags, image_url, video_url, carousel_slides, carousel_image_urls, published_channels",
     )
     .eq("id", itemId)
     .eq("user_id", userId)
     .maybeSingle();
 
-  const item = data as unknown as (PublishItem & { published_channels: string[] | null }) | null;
+  const item = data as unknown as (PublishItem & { published_channels: string[] | null; brand_id: string | null }) | null;
   if (!item) throw new Error("Content not found");
 
   const already = new Set(item.published_channels ?? []);
@@ -25,7 +25,7 @@ export async function publishItemToChannels(
   const results: PublishResult[] = [];
 
   for (const channel of targets) {
-    const result = await publishToChannel(supabaseAdmin as never, userId, channel, item);
+    const result = await publishToChannel(supabaseAdmin as never, userId, channel, item, item.brand_id);
     results.push(result);
     await supabaseAdmin.from("publish_log").insert({
       user_id: userId,

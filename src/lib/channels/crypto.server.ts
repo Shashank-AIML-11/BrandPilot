@@ -57,6 +57,7 @@ export const decryptToken = (value: string) => open("CHANNEL_TOKEN_KEY", value);
 export interface OAuthState {
   userId: string;
   channel: string;
+  brandId?: string;
   origin: string;
   verifier?: string;
   exp: number;

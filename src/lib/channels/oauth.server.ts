@@ -98,6 +98,7 @@ export function credentials(provider: ProviderConfig) {
 export async function buildAuthUrl(input: {
   channel: string;
   userId: string;
+  brandId?: string;
   origin: string;
 }): Promise<string> {
   const provider = PROVIDERS[input.channel];
@@ -108,6 +109,7 @@ export async function buildAuthUrl(input: {
   const state = await packState({
     userId: input.userId,
     channel: input.channel,
+    ...(input.brandId ? { brandId: input.brandId } : {}),
     origin: input.origin,
     ...(pair ? { verifier: pair.verifier } : {}),
     exp: Date.now() + 15 * 60 * 1000,
@@ -299,6 +301,7 @@ export async function saveConnection(
   admin: Admin,
   input: {
     userId: string;
+    brandId?: string;
     channel: string;
     accessToken: string;
     refreshToken: string;
@@ -312,6 +315,7 @@ export async function saveConnection(
   const { error } = await admin.from("channel_connections").upsert(
     {
       user_id: input.userId,
+      brand_id: input.brandId ?? null,
       channel: input.channel,
       account_id: input.accountId,
       account_name: input.accountName,
@@ -325,7 +329,7 @@ export async function saveConnection(
       status: "connected",
       updated_at: new Date().toISOString(),
     } as never,
-    { onConflict: "user_id,channel" },
+    { onConflict: "user_id,brand_id,channel" },
   );
   if (error) throw new Error(error.message);
 }
@@ -343,16 +347,19 @@ export async function liveConnection(
   admin: Admin,
   userId: string,
   channel: string,
+  brandId?: string | null,
 ): Promise<LiveConnection | null> {
-  const { data } = await admin
+  let lookup = admin
     .from("channel_connections")
     .select("*")
     .eq("user_id", userId)
-    .eq("channel", channel)
-    .maybeSingle();
+    .eq("channel", channel);
+  if (brandId) lookup = lookup.eq("brand_id", brandId);
+  const { data } = await lookup.order("created_at", { ascending: true }).limit(1).maybeSingle();
   const row = data as unknown as {
     access_token: string;
     refresh_token: string;
+    id: string;
     token_expires_at: string | null;
     account_id: string;
     account_name: string;
@@ -395,15 +402,13 @@ export async function liveConnection(
               ? new Date(Date.now() + payload.expires_in * 1000).toISOString()
               : null,
           } as never)
-          .eq("user_id", userId)
-          .eq("channel", channel);
+          .eq("id", row.id);
       }
     } else {
       await admin
         .from("channel_connections")
         .update({ status: "needs_reconnect" } as never)
-        .eq("user_id", userId)
-        .eq("channel", channel);
+        .eq("id", row.id);
     }
   }
 

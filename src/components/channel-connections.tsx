@@ -7,31 +7,26 @@ import { CHANNELS } from "@/lib/channels/config";
 import {
   disconnectChannel,
   listChannelConnections,
-  saveWebsiteEndpoint,
   startChannelAuth,
 } from "@/lib/channels.functions";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 
 export function ChannelConnections({
+  brandId,
   onConnections,
 }: {
+  brandId?: string | null;
   onConnections?: (connected: Array<{ channel: string; accountName: string }>) => void;
 } = {}) {
   const queryClient = useQueryClient();
   const list = useServerFn(listChannelConnections);
   const start = useServerFn(startChannelAuth);
   const disconnect = useServerFn(disconnectChannel);
-  const saveSite = useServerFn(saveWebsiteEndpoint);
-
-  const [siteUrl, setSiteUrl] = useState("");
-  const [siteSecret, setSiteSecret] = useState("");
 
   const { data: connections = [], isLoading } = useQuery({
-    queryKey: ["channel-connections"],
-    queryFn: () => list({}),
+    queryKey: ["channel-connections", brandId ?? null],
+    queryFn: () => list({ data: brandId ? { brandId } : {} }),
   });
 
   const byChannel = Object.fromEntries(connections.map((c) => [c.channel, c]));
@@ -46,12 +41,6 @@ export function ChannelConnections({
     );
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [connections, isLoading]);
-
-  useEffect(() => {
-    const site = byChannel["Website"];
-    if (site && !siteUrl) setSiteUrl(String(site.meta["url"] ?? ""));
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [connections.length]);
 
   // Surface the OAuth callback outcome once we land back on this page.
   useEffect(() => {
@@ -71,7 +60,7 @@ export function ChannelConnections({
   const connect = useMutation({
     mutationFn: async (channel: string) => {
       setPendingChannel(channel);
-      return start({ data: { channel } });
+      return start({ data: { channel, ...(brandId ? { brandId } : {}) } });
     },
     onSuccess: ({ url }) => {
       window.location.href = url;
@@ -83,21 +72,12 @@ export function ChannelConnections({
   });
 
   const remove = useMutation({
-    mutationFn: async (channel: string) => disconnect({ data: { channel } }),
+    mutationFn: async (channel: string) =>
+      disconnect({ data: { channel, ...(brandId ? { brandId } : {}) } }),
     onSuccess: () => {
       toast.success("Disconnected");
       void queryClient.invalidateQueries({ queryKey: ["channel-connections"] });
     },
-  });
-
-  const saveWebsite = useMutation({
-    mutationFn: async () => saveSite({ data: { url: siteUrl, secret: siteSecret } }),
-    onSuccess: () => {
-      toast.success(siteUrl ? "Website endpoint saved" : "Website endpoint removed");
-      setSiteSecret("");
-      void queryClient.invalidateQueries({ queryKey: ["channel-connections"] });
-    },
-    onError: (e) => toast.error(e instanceof Error ? e.message : "Could not save"),
   });
 
   return (
@@ -107,7 +87,7 @@ export function ChannelConnections({
           Channel connections
         </h2>
         <p className="mt-1 text-sm text-muted-foreground">
-          Connect each network once — scheduled content then publishes automatically.
+          Connect each network once for this brand — scheduled content then publishes automatically.
         </p>
       </div>
 
@@ -174,43 +154,8 @@ export function ChannelConnections({
         </div>
       )}
 
-      <div className="space-y-3 rounded-lg border border-border p-4">
-        <div>
-          <p className="font-medium">Website</p>
-          <p className="text-xs text-muted-foreground">
-            Blogs are POSTed as JSON to this endpoint, signed with your secret in the{" "}
-            <code>x-LOVIZA-signature</code> header.
-          </p>
-        </div>
-        <div className="grid gap-3 sm:grid-cols-2">
-          <div className="space-y-2">
-            <Label htmlFor="site-endpoint">Publish endpoint</Label>
-            <Input
-              id="site-endpoint"
-              placeholder="https://acme.com/api/blog-webhook"
-              value={siteUrl}
-              onChange={(e) => setSiteUrl(e.target.value)}
-            />
-          </div>
-          <div className="space-y-2">
-            <Label htmlFor="site-secret">Shared secret</Label>
-            <Input
-              id="site-secret"
-              type="password"
-              placeholder="••••••••"
-              value={siteSecret}
-              onChange={(e) => setSiteSecret(e.target.value)}
-            />
-          </div>
-        </div>
-        <Button size="sm" onClick={() => saveWebsite.mutate()} disabled={saveWebsite.isPending}>
-          Save website endpoint
-        </Button>
-      </div>
-
       <p className="text-xs text-muted-foreground">
-        Quora and Medium have no public posting API — publishing there is recorded in LOVIZA so
-        your calendar stays accurate, and you post the prepared content manually.
+        Threads, Quora and Medium cannot be connected automatically. Add their handles above; content for them is prepared in LOVIZA and you post it manually.
       </p>
     </section>
   );

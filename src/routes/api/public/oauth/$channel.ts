@@ -44,6 +44,7 @@ export const Route = createFileRoute("/api/public/oauth/$channel")({
 
           await saveConnection(supabaseAdmin as never, {
             userId: state.userId,
+            ...(state.brandId ? { brandId: state.brandId } : {}),
             channel,
             accessToken: account.token ?? token.accessToken,
             refreshToken: token.refreshToken,

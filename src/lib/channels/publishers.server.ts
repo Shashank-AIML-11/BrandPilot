@@ -554,6 +554,7 @@ export async function publishToChannel(
   userId: string,
   channel: string,
   item: PublishItem,
+  brandId?: string | null,
 ): Promise<PublishResult> {
   if (MANUAL_CHANNELS.has(channel)) {
     return { channel, ok: true, manual: true };
@@ -561,7 +562,7 @@ export async function publishToChannel(
   const publisher = PUBLISHERS[channel];
   if (!publisher) return { channel, ok: false, error: `${channel} is not supported yet.` };
 
-  const conn = await liveConnection(admin, userId, channel);
+  const conn = await liveConnection(admin, userId, channel, brandId);
   if (!conn?.accessToken) {
     return { channel, ok: false, error: `${channel} is not connected — connect it in Brand Profile.` };
   }

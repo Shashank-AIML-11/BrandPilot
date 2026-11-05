@@ -364,6 +364,19 @@ export async function syncPostMetrics(admin: Admin) {
     .filter((x): x is { log: LogRow; bucket: BucketName } => !!x.bucket && !have.has(`${x.log.id}:${x.bucket}`))
     .slice(0, MAX_FETCHES_PER_RUN);
 
+  // Which brand each post belongs to, so the right brand's channel account is measured.
+  const brandOf = new Map<string, string | null>();
+  const itemIds = [...new Set(due.map((d) => d.log.content_item_id))];
+  if (itemIds.length) {
+    const { data: itemRows } = await admin
+      .from("content_items")
+      .select("id, brand_id")
+      .in("id", itemIds);
+    for (const r of (itemRows ?? []) as unknown as Array<{ id: string; brand_id: string | null }>) {
+      brandOf.set(r.id, r.brand_id);
+    }
+  }
+
   const conns = new Map<string, LiveConnection | null>();
   const touched = new Set<string>();
   let captured = 0;
@@ -371,8 +384,9 @@ export async function syncPostMetrics(admin: Admin) {
   let failed = 0;
 
   for (const { log, bucket } of due) {
-    const key = `${log.user_id}:${log.channel}`;
-    if (!conns.has(key)) conns.set(key, await liveConnection(admin, log.user_id, log.channel));
+    const brandId = brandOf.get(log.content_item_id) ?? null;
+    const key = `${log.user_id}:${brandId ?? ""}:${log.channel}`;
+    if (!conns.has(key)) conns.set(key, await liveConnection(admin, log.user_id, log.channel, brandId));
     const conn = conns.get(key);
     if (!conn?.accessToken) {
       failed += 1; // channel disconnected since posting; try again if they reconnect

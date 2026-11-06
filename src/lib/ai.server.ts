@@ -301,7 +301,8 @@ export interface VideoJob {
  * first time a job actually completes and adjust parseFalVideoStatus()
  * / downloadVideoBytes()'s result parsing if they don't match.
  */
-const DEFAULT_FAL_VIDEO_MODEL = "fal-ai/ltx-2/text-to-video/fast";
+// LTX-2.3 Fast: portrait 9:16 and native audio. (The older "fal-ai/ltx-2" id no longer exists on fal.)
+const DEFAULT_FAL_VIDEO_MODEL = "fal-ai/ltx-2.3/text-to-video/fast";
 
 function falVideoModel(): string {
   // Trim stray spaces/slashes so a hand-typed env value can't break the URL.
@@ -323,9 +324,15 @@ function falVideoBody(
   seconds: number,
 ): Record<string, unknown> {
   if (model.includes("ltx-2")) {
-    // LTX-2 has no aspect-ratio input (it renders landscape). Duration is one of
-    // 6, 8, 10, 12 ... seconds. Audio is on by default; we ask for it explicitly.
-    return { prompt, duration: seconds, resolution: "1080p", generate_audio: true };
+    // LTX-2.x: supports portrait 9:16 and generates audio. Not live-tested against fal:
+    // if fal rejects a field, the video card shows its exact message.
+    return {
+      prompt,
+      aspect_ratio: aspectRatio,
+      duration: seconds,
+      resolution: "1080p",
+      generate_audio: true,
+    };
   }
   if (model.includes("veo3")) {
     // Veo 3 supports 9:16 and audio; duration is "4s", "6s" or "8s".

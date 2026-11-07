@@ -35,8 +35,17 @@ const ACTIVE_LIMIT = 2;
 // calls per call risked the function being killed mid-batch before any
 // progress was saved. The client's 4-second poll loop (calendar.tsx) now
 // does the batching by calling this repeatedly instead.
-const IMAGE_BATCH_LIMIT = 1;
+// Defaults stay at 1 (safe on any function timeout). With fal, images take a few seconds,
+// so these can be raised in Vercel without a code change:
+//   IMAGE_BATCH_LIMIT        single images made per background run (default 1)
+//   CAROUSEL_SLIDES_PER_CALL carousel slides made per run, in parallel (default 1)
+function envInt(name: string, fallback: number, max: number): number {
+  const n = Number.parseInt(process.env[name] ?? "", 10);
+  return Number.isFinite(n) && n >= 1 ? Math.min(n, max) : fallback;
+}
+const IMAGE_BATCH_LIMIT = envInt("IMAGE_BATCH_LIMIT", 1, 6);
 const CAROUSEL_BATCH_LIMIT = 1;
+const CAROUSEL_SLIDES_PER_CALL = envInt("CAROUSEL_SLIDES_PER_CALL", 1, 6);
 
 function sleep(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -473,19 +482,38 @@ export async function processVideoQueue(admin: AdminClient, userId?: string) {
       }>) ?? [];
       const urls = [...((item.carousel_image_urls as string[] | null) ?? [])];
 
-      const nextIndex = slides.findIndex((_, i) => !urls[i]);
-      if (nextIndex === -1) continue; // shouldn't happen given the filter above, but be safe
+      const missing = slides
+        .map((_, i) => i)
+        .filter((i) => !urls[i])
+        .slice(0, CAROUSEL_SLIDES_PER_CALL);
+      if (missing.length === 0) continue; // shouldn't happen given the filter above, but be safe
 
-      const bytes = await generateImageWithRetry(
-        carouselSlideImagePromptFor(slides[nextIndex]!, nextIndex, slides.length, brand as never),
-        aspectForType("carousel"),
+      // Make the next few slides at the same time; save every one that succeeds.
+      const made = await Promise.allSettled(
+        missing.map(async (index) => {
+          const bytes = await generateImageWithRetry(
+            carouselSlideImagePromptFor(slides[index]!, index, slides.length, brand as never),
+            aspectForType("carousel"),
+          );
+          const path = `${item.user_id}/${item.id}-slide-${index}.png`;
+          const { error: uploadError } = await admin.storage
+            .from("content-media")
+            .upload(path, bytes, { contentType: "image/png", upsert: true });
+          if (uploadError) throw new Error(uploadError.message);
+          return { index, path };
+        }),
       );
-      const path = `${item.user_id}/${item.id}-slide-${nextIndex}.png`;
-      const { error: uploadError } = await admin.storage
-        .from("content-media")
-        .upload(path, bytes, { contentType: "image/png", upsert: true });
-      if (uploadError) throw new Error(uploadError.message);
-      urls[nextIndex] = path;
+      let savedAny = false;
+      for (const r of made) {
+        if (r.status === "fulfilled") {
+          urls[r.value.index] = r.value.path;
+          savedAny = true;
+        }
+      }
+      if (!savedAny) {
+        const firstFail = made.find((r) => r.status === "rejected") as PromiseRejectedResult;
+        throw firstFail.reason instanceof Error ? firstFail.reason : new Error("Slide failed");
+      }
 
       const { error: updateError } = await admin
         .from("content_items")

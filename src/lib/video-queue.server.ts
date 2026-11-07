@@ -371,6 +371,43 @@ export async function processVideoQueue(admin: AdminClient, userId?: string) {
         continue;
       }
 
+      // Video cover frame: all video types of one brand and day share ONE video, so
+      // they share ONE cover image too (instead of paying for four).
+      if ((SHARED_VIDEO_TYPES as string[]).includes(item.type)) {
+        const thumbPath = `${item.user_id}/${item.scheduled_date}${
+          item.brand_id ? `-${item.brand_id}` : ""
+        }-shared-video-cover.png`;
+        const { data: coverSibling } = await admin
+          .from("content_items")
+          .select("id")
+          .eq("user_id", item.user_id)
+          .filter("brand_id", brandOp(item.brand_id), item.brand_id ?? null)
+          .eq("scheduled_date", item.scheduled_date)
+          .in("type", SHARED_VIDEO_TYPES)
+          .eq("image_url", thumbPath)
+          .limit(1)
+          .maybeSingle();
+        if (!coverSibling) {
+          const coverBrand = await loadBrand(admin, item.user_id, item.brand_id);
+          const coverBytes = await generateImageWithRetry(
+            imagePromptFor(item as never, coverBrand as never),
+            aspectForType(item.type),
+          );
+          const { error: coverUploadError } = await admin.storage
+            .from("content-media")
+            .upload(thumbPath, coverBytes, { contentType: "image/png", upsert: true });
+          if (coverUploadError) throw new Error(coverUploadError.message);
+        }
+        const { error: coverUpdateError } = await admin
+          .from("content_items")
+          .update({ image_url: thumbPath })
+          .eq("id", item.id)
+          .is("image_url", null);
+        if (coverUpdateError) throw new Error(coverUpdateError.message);
+        imageResults.push({ status: "fulfilled", value: item.id });
+        continue;
+      }
+
       // Not in the shared group (pinterest, video thumbnails) — generate
       // its own unique image as before.
       const brand = await loadBrand(admin, item.user_id, item.brand_id);

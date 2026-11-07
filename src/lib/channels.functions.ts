@@ -171,3 +171,12 @@ export const publishAllContent = createServerFn({ method: "POST" })
 
 
 
+
+/** "Sync now" on the Analytics page: pull the latest numbers for this user's posts. */
+export const syncMyMetrics = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .handler(async ({ context }) => {
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    const { syncPostMetrics } = await import("@/lib/channels/metrics.server");
+    return syncPostMetrics(supabaseAdmin as never, context.userId);
+  });

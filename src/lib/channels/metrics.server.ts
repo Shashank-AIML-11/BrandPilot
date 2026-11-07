@@ -330,11 +330,11 @@ async function rollUpItem(admin: Admin, itemId: string) {
     .eq("id", itemId);
 }
 
-export async function syncPostMetrics(admin: Admin) {
+export async function syncPostMetrics(admin: Admin, onlyUserId?: string) {
   const now = Date.now();
   const since = new Date(now - LOOKBACK_DAYS * 24 * 3600 * 1000).toISOString();
 
-  const { data } = await admin
+  let logQuery = admin
     .from("publish_log")
     .select("id, user_id, content_item_id, channel, external_id, created_at")
     .eq("status", "posted")
@@ -343,6 +343,8 @@ export async function syncPostMetrics(admin: Admin) {
     .gte("created_at", since)
     .order("created_at", { ascending: true })
     .limit(500);
+  if (onlyUserId) logQuery = logQuery.eq("user_id", onlyUserId);
+  const { data } = await logQuery;
   const logs = ((data ?? []) as unknown as LogRow[]).filter((l) => l.content_item_id);
   if (!logs.length) return { checked: 0, captured: 0, unmeasurable: 0, failed: 0 };
 

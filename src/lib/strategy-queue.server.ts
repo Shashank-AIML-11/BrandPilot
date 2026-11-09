@@ -8,9 +8,18 @@ type AdminClient = SupabaseClient<Database>;
 
 const USERS_PER_CYCLE = 3;
 
+// Strict schema: the model must return exactly these two fields.
+const STRATEGY_SCHEMA = {
+  type: "object",
+  properties: { insights: { type: "string" }, directives: { type: "string" } },
+  required: ["insights", "directives"],
+  additionalProperties: false,
+} as const;
+
 const STRATEGY_SYSTEM = `You are a senior performance-marketing strategist reviewing one brand's own weekly content analytics.
 You only reason from the numbers and the brand profile you are given. Never invent data.
 Be specific and operational: name the formats, hooks, channels, posting times and topics to double down on, and the ones to drop.
+Evidence rules: fewer than 3 pieces of a format is never grounds to cut it, say "too early to judge". Quote rates as percentages, never fractions. Compare formats within the same channel. Never talk about budget or spend. Only mention content types and channels that appear in the data.
 Answer with a single valid JSON object and nothing else.
 
 ${SAFETY_RULES}`;
@@ -155,6 +164,7 @@ Return JSON shaped exactly as:
   "insights": "3-5 sentences of concrete findings: which content types, channels, posting times, topics and hook styles won or lost, with the numbers that prove it.",
   "directives": "A single operational brief (max 200 words) written as instructions to the content generator: the exact formats to increase, formats to cut, channels to prioritise, best posting time windows, hook and topic angles to repeat, and what to stop doing."
 }`,
+        STRATEGY_SCHEMA as unknown as Record<string, unknown>,
       );
 
       const insights = (analysis.insights ?? "").trim();
@@ -247,4 +257,99 @@ export async function latestStrategy(
     .limit(1)
     .maybeSingle();
   return (data as StrategyDirective | null) ?? null;
+}
+
+/**
+ * Learning step that runs right before each automatic generation: reads the measured
+ * results of this brand's posts from the last 14 days, writes a new strategy, and the
+ * generator picks it up through latestStrategy(). It does not touch any existing content.
+ */
+export async function learnForBrand(
+  admin: AdminClient,
+  userId: string,
+  brandId: string,
+  todayIso: string,
+): Promise<{ learned: boolean; reason?: string }> {
+  const today = new Date(`${todayIso}T00:00:00Z`);
+  const from = iso(addDays(today, -14));
+  const to = iso(addDays(today, -1));
+
+  const { data: existing } = await admin
+    .from("content_strategies")
+    .select("id")
+    .eq("brand_id", brandId)
+    .eq("week_start", from)
+    .limit(1)
+    .maybeSingle();
+  if (existing) return { learned: false, reason: "already reviewed for this cycle" };
+
+  const { data } = await admin
+    .from("content_items")
+    .select(
+      "user_id, brand_id, scheduled_date, scheduled_time, type, title, caption, body, status, platforms, impressions, clicks, engagements",
+    )
+    .eq("user_id", userId)
+    .eq("brand_id", brandId)
+    .eq("status", "posted")
+    .gte("scheduled_date", from)
+    .lte("scheduled_date", to);
+  type R = Row & { caption: string | null; body: string | null };
+  const rows = (data ?? []) as unknown as R[];
+  if (!rows.length || !rows.some((r) => score(r) > 0)) {
+    return { learned: false, reason: "no measured posts yet" };
+  }
+
+  const brand = await loadBrand(admin, userId, brandId);
+  if (!brand || !brand.business_name) return { learned: false, reason: "brand profile incomplete" };
+
+  const metrics = summarise(rows);
+  const ranked = [...rows].sort((a, b) => score(b) - score(a));
+  const opening = (r: R) =>
+    ({ type: r.type, opening: (r.caption || r.body || r.title || "").split("\n")[0]?.slice(0, 140) ?? "" });
+  const hooks = {
+    best_openings: ranked.slice(0, 3).map(opening),
+    weakest_openings: ranked.slice(-3).reverse().map(opening),
+  };
+
+  const { data: previous } = await admin
+    .from("content_strategies")
+    .select("directives")
+    .eq("brand_id", brandId)
+    .order("week_start", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  const analysis = await chatJSON<{ insights?: string; directives?: string }>(
+    STRATEGY_SYSTEM,
+    `${brandContext(brand as never)}
+
+Measured performance of this brand's posted content from ${from} to ${to} (JSON):
+${JSON.stringify({ ...metrics, ...hooks })}
+${previous?.directives ? `\nThe previous strategy told the generator: ${previous.directives}\nSay whether it worked and what to change.` : ""}
+
+Analyse reach (impressions), clicks and engagement. Decide how the NEXT 7 days of content must change to grow this brand's reach and virality.
+
+Return JSON shaped exactly as:
+{
+  "insights": "3-5 sentences of concrete findings with the numbers that prove them.",
+  "directives": "A single operational brief (max 200 words) written as instructions to the content generator: formats to increase, formats to cut, channels to prioritise, best posting windows, hook and topic angles to repeat, what to stop doing."
+}`,
+    STRATEGY_SCHEMA as unknown as Record<string, unknown>,
+  );
+  const insights = (analysis.insights ?? "").trim();
+  const directives = (analysis.directives ?? "").trim();
+  if (!insights && !directives) return { learned: false, reason: "model returned nothing" };
+
+  const { error } = await admin.from("content_strategies").insert({
+    user_id: userId,
+    brand_id: brandId,
+    week_start: from,
+    week_end: to,
+    metrics: metrics as never,
+    insights,
+    directives,
+    rebuilt_dates: [],
+  } as never);
+  if (error) throw new Error(error.message);
+  return { learned: true };
 }

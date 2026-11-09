@@ -12,7 +12,7 @@ import {
   type DailyContentQuota,
 } from "@/lib/content.server";
 import { getGenerationEntitlement } from "@/lib/generation-entitlements";
-import { isPrimaryBrand, loadBrand } from "@/lib/brand.server";
+import { loadBrand } from "@/lib/brand.server";
 
 type AdminClient = SupabaseClient<Database>;
 
@@ -65,8 +65,6 @@ export async function processGenerationQueue(admin: AdminClient, userId?: string
     }
 
     const entitlement = await getGenerationEntitlement(admin, job.user_id);
-    // Channels are still per account: only the primary brand auto-posts.
-    const primary = await isPrimaryBrand(admin, job.user_id, brand.id);
     const platforms = activePlatforms(brand as never).slice(
       0,
       entitlement.plan.channelLimit ?? undefined,
@@ -137,7 +135,7 @@ export async function processGenerationQueue(admin: AdminClient, userId?: string
           brandId: brand.id,
           date,
           platforms,
-          autopost: entitlement.plan.autoPost && primary,
+          autopost: entitlement.plan.autoPost,
         },
         quotas[date]!,
       );

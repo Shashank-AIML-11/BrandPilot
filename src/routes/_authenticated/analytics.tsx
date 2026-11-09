@@ -227,7 +227,10 @@ function AnalyticsPage() {
   const byPlatform = Object.entries(platformCounts).map(([name, value]) => ({ name, value }));
 
   // ---- Performance from the platforms --------------------------------------------
-  const BUCKET_ORDER: Record<string, number> = { h24: 1, h72: 2, d7: 3, d14: 4 };
+  const BUCKET_ORDER: Record<string, number> = {
+    h24: 1, h72: 3, d7: 7, d14: 14,
+    day1: 1, day2: 2, day3: 3, day4: 4, day5: 5, day6: 6, day7: 7,
+  };
   const itemById = new Map((perf?.items ?? []).map((i) => [i.id, i]));
   const latestByLog = new Map<string, NonNullable<typeof perf>["snaps"][number]>();
   for (const sn of perf?.snaps ?? []) {

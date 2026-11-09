@@ -29,19 +29,20 @@ class PermanentMetricsError extends Error {}
 const LINKEDIN_VERSION = process.env["LINKEDIN_VERSION"] || "202606";
 const GRAPH = "https://graph.facebook.com/v21.0";
 
-const BUCKETS = [
-  { name: "d14", minHours: 14 * 24 },
-  { name: "d7", minHours: 7 * 24 },
-  { name: "h72", minHours: 72 },
-  { name: "h24", minHours: 24 },
-] as const;
-type BucketName = (typeof BUCKETS)[number]["name"];
-const BUCKET_ORDER: BucketName[] = ["h24", "h72", "d7", "d14"];
+// One snapshot per post per day for the first 7 days (day1 ... day7). Older rows keep
+// their h24/h72/d7/d14 names, ranked by age so roll-ups still pick the newest.
+type BucketName =
+  | "day1" | "day2" | "day3" | "day4" | "day5" | "day6" | "day7"
+  | "h24" | "h72" | "d7" | "d14";
+const BUCKET_RANK: Record<string, number> = {
+  h24: 1, h72: 3, d7: 7, d14: 14,
+  day1: 1, day2: 2, day3: 3, day4: 4, day5: 5, day6: 6, day7: 7,
+};
 
 /** Looks back this far for posts that still deserve a new snapshot. */
-const LOOKBACK_DAYS = 15;
+const LOOKBACK_DAYS = 8;
 /** Upper bound of platform calls per run, so one cron tick stays well inside its time limit. */
-const MAX_FETCHES_PER_RUN = 60;
+const MAX_FETCHES_PER_RUN = 150;
 
 const num = (v: unknown): number => {
   const n = typeof v === "string" ? Number(v) : (v as number);
@@ -291,8 +292,9 @@ interface LogRow {
 }
 
 function bucketFor(createdAt: string, now: number): BucketName | null {
-  const hours = (now - Date.parse(createdAt)) / 3_600_000;
-  return BUCKETS.find((b) => hours >= b.minHours)?.name ?? null;
+  const day = Math.floor((now - Date.parse(createdAt)) / 86_400_000);
+  if (day < 1) return null;
+  return `day${Math.min(day, 7)}` as BucketName;
 }
 
 /** Sum of the newest OK snapshot of every channel the item was published to. */
@@ -314,7 +316,7 @@ async function rollUpItem(admin: Admin, itemId: string) {
   const newest = new Map<string, (typeof rows)[number]>();
   for (const r of rows) {
     const cur = newest.get(r.publish_log_id);
-    if (!cur || BUCKET_ORDER.indexOf(r.bucket) > BUCKET_ORDER.indexOf(cur.bucket)) {
+    if (!cur || (BUCKET_RANK[r.bucket] ?? 0) > (BUCKET_RANK[cur.bucket] ?? 0)) {
       newest.set(r.publish_log_id, r);
     }
   }

@@ -1,8 +1,12 @@
 {
   "crons": [
     {
-      "path": "/api/public/hooks/process-video-queue",
-      "schedule": "0 3 * * *"
+      "path": "/api/public/hooks/process-video-queue?task=generate",
+      "schedule": "30 19 * * *"
+    },
+    {
+      "path": "/api/public/hooks/process-video-queue?task=post",
+      "schedule": "30 1 * * *"
     }
   ]
 }

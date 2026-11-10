@@ -85,6 +85,116 @@ export const disconnectChannel = createServerFn({ method: "POST" })
     return { ok: true };
   });
 
+export const saveBlogSite = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator(
+    (input: {
+      brandId?: string;
+      platform: string;
+      url?: string;
+      username?: string;
+      secret?: string;
+      collectionId?: string;
+      blogId?: string;
+    }) => input,
+  )
+  .handler(async ({ data, context }) => {
+    const { BLOG_PLATFORMS, verifyBlogSite } = await import("@/lib/channels/blog-sites.server");
+    const platform = data.platform as (typeof BLOG_PLATFORMS)[number];
+    if (!(BLOG_PLATFORMS as readonly string[]).includes(platform)) throw new Error("Choose a platform");
+
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    const brandId = await resolveBrandId(context.userId, data.brandId);
+    if (!brandId) throw new Error("Create your brand profile first.");
+
+    let url = (data.url ?? "").trim();
+    const secret = (data.secret ?? "").trim();
+    if (platform === "hosted") {
+      url = `${originFromRequest()}/api/public/blog/${brandId}`;
+    } else {
+      if (!/^https?:\/\//i.test(url) && platform !== "shopify") throw new Error("Enter the full address starting with https://");
+      if (platform === "shopify" && !url) throw new Error("Enter your store address, e.g. mystore.myshopify.com");
+      if (platform !== "webhook" && !secret) throw new Error("Enter the key / token / password for this platform");
+      if (platform === "wordpress" && !(data.username ?? "").trim()) throw new Error("Enter your WordPress username");
+      if (platform === "webflow" && !(data.collectionId ?? "").trim()) throw new Error("Enter your Webflow blog Collection ID");
+    }
+
+    const cfg = {
+      platform,
+      url,
+      username: (data.username ?? "").trim(),
+      secret,
+      collectionId: (data.collectionId ?? "").trim(),
+      blogId: (data.blogId ?? "").trim(),
+    };
+    await verifyBlogSite(cfg);
+
+    const { encryptToken } = await import("@/lib/channels/crypto.server");
+    const host = (() => {
+      try {
+        return new URL(/^https?:/i.test(url) ? url : `https://${url}`).host;
+      } catch {
+        return url;
+      }
+    })();
+    const { error } = await supabaseAdmin.from("channel_connections").upsert(
+      {
+        user_id: context.userId,
+        brand_id: brandId,
+        channel: "Website",
+        account_id: url,
+        account_name: host,
+        access_token: await encryptToken(secret || "LOVIZA"),
+        refresh_token: "",
+        scopes: "",
+        meta: {
+          platform,
+          url,
+          username: cfg.username,
+          collection_id: cfg.collectionId,
+          blog_id: cfg.blogId,
+        },
+        status: "connected",
+        updated_at: new Date().toISOString(),
+      } as never,
+      { onConflict: "user_id,brand_id,channel" },
+    );
+    if (error) throw new Error(error.message);
+    return { ok: true, url };
+  });
+
+export const saveMediumToken = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((input: { brandId?: string; token: string }) => input)
+  .handler(async ({ data, context }) => {
+    const token = (data.token ?? "").trim();
+    if (!token) throw new Error("Paste your Medium integration token");
+    const { mediumUser } = await import("@/lib/channels/blog-sites.server");
+    const me = await mediumUser(token);
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    const brandId = await resolveBrandId(context.userId, data.brandId);
+    if (!brandId) throw new Error("Create your brand profile first.");
+    const { encryptToken } = await import("@/lib/channels/crypto.server");
+    const { error } = await supabaseAdmin.from("channel_connections").upsert(
+      {
+        user_id: context.userId,
+        brand_id: brandId,
+        channel: "Medium",
+        account_id: me.id,
+        account_name: `@${me.username}`,
+        access_token: await encryptToken(token),
+        refresh_token: "",
+        scopes: "",
+        meta: {},
+        status: "connected",
+        updated_at: new Date().toISOString(),
+      } as never,
+      { onConflict: "user_id,brand_id,channel" },
+    );
+    if (error) throw new Error(error.message);
+    return { ok: true, name: me.username };
+  });
+
 export const publishContentItem = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((input: { itemId: string; channels: string[] }) => {

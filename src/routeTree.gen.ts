@@ -33,6 +33,7 @@ import { Route as DotlovableOauthConsentRouteImport } from './routes/[.]lovable.
 import { Route as Char91DotmcpChar93InvokeToolToolRouteImport } from './routes/[.mcp]/invoke-tool/$tool'
 import { Route as ApiPublicHooksProcessVideoQueueRouteImport } from './routes/api/public/hooks/process-video-queue'
 import { Route as ApiPublicOauthChannelRouteImport } from './routes/api/public/oauth/$channel'
+import { Route as ApiPublicBlogBrandIdRouteImport } from './routes/api/public/blog/$brandId'
 import { Route as ApiPublicWebhooksRazorpayRouteImport } from './routes/api/public/webhooks/razorpay'
 
 const IndexRoute = IndexRouteImport.update({
@@ -155,6 +156,11 @@ const ApiPublicHooksProcessVideoQueueRoute =
     path: '/api/public/hooks/process-video-queue',
     getParentRoute: () => rootRouteImport,
   } as any)
+const ApiPublicBlogBrandIdRoute = ApiPublicBlogBrandIdRouteImport.update({
+  id: '/api/public/blog/$brandId',
+  path: '/api/public/blog/$brandId',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ApiPublicOauthChannelRoute = ApiPublicOauthChannelRouteImport.update({
   id: '/api/public/oauth/$channel',
   path: '/api/public/oauth/$channel',
@@ -191,6 +197,7 @@ export interface FileRoutesByFullPath {
   '/.mcp/invoke-tool/$tool': typeof Char91DotmcpChar93InvokeToolToolRoute
   '/api/public/hooks/process-video-queue': typeof ApiPublicHooksProcessVideoQueueRoute
   '/api/public/oauth/$channel': typeof ApiPublicOauthChannelRoute
+  '/api/public/blog/$brandId': typeof ApiPublicBlogBrandIdRoute
   '/api/public/webhooks/razorpay': typeof ApiPublicWebhooksRazorpayRoute
 }
 export interface FileRoutesByTo {
@@ -217,6 +224,7 @@ export interface FileRoutesByTo {
   '/.mcp/invoke-tool/$tool': typeof Char91DotmcpChar93InvokeToolToolRoute
   '/api/public/hooks/process-video-queue': typeof ApiPublicHooksProcessVideoQueueRoute
   '/api/public/oauth/$channel': typeof ApiPublicOauthChannelRoute
+  '/api/public/blog/$brandId': typeof ApiPublicBlogBrandIdRoute
   '/api/public/webhooks/razorpay': typeof ApiPublicWebhooksRazorpayRoute
 }
 export interface FileRoutesById {
@@ -245,6 +253,7 @@ export interface FileRoutesById {
   '/.mcp/invoke-tool/$tool': typeof Char91DotmcpChar93InvokeToolToolRoute
   '/api/public/hooks/process-video-queue': typeof ApiPublicHooksProcessVideoQueueRoute
   '/api/public/oauth/$channel': typeof ApiPublicOauthChannelRoute
+  '/api/public/blog/$brandId': typeof ApiPublicBlogBrandIdRoute
   '/api/public/webhooks/razorpay': typeof ApiPublicWebhooksRazorpayRoute
 }
 export interface FileRouteTypes {
@@ -273,6 +282,7 @@ export interface FileRouteTypes {
     | '/.mcp/invoke-tool/$tool'
     | '/api/public/hooks/process-video-queue'
     | '/api/public/oauth/$channel'
+    | '/api/public/blog/$brandId'
     | '/api/public/webhooks/razorpay'
   fileRoutesByTo: FileRoutesByTo
   to:
@@ -299,6 +309,7 @@ export interface FileRouteTypes {
     | '/.mcp/invoke-tool/$tool'
     | '/api/public/hooks/process-video-queue'
     | '/api/public/oauth/$channel'
+    | '/api/public/blog/$brandId'
     | '/api/public/webhooks/razorpay'
   id:
     | '__root__'
@@ -326,6 +337,7 @@ export interface FileRouteTypes {
     | '/.mcp/invoke-tool/$tool'
     | '/api/public/hooks/process-video-queue'
     | '/api/public/oauth/$channel'
+    | '/api/public/blog/$brandId'
     | '/api/public/webhooks/razorpay'
   fileRoutesById: FileRoutesById
 }
@@ -342,6 +354,7 @@ export interface RootRouteChildren {
   Char91DotmcpChar93InvokeToolToolRoute: typeof Char91DotmcpChar93InvokeToolToolRoute
   ApiPublicHooksProcessVideoQueueRoute: typeof ApiPublicHooksProcessVideoQueueRoute
   ApiPublicOauthChannelRoute: typeof ApiPublicOauthChannelRoute
+  ApiPublicBlogBrandIdRoute: typeof ApiPublicBlogBrandIdRoute
   ApiPublicWebhooksRazorpayRoute: typeof ApiPublicWebhooksRazorpayRoute
 }
 
@@ -508,6 +521,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiPublicHooksProcessVideoQueueRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/public/blog/$brandId': {
+      id: '/api/public/blog/$brandId'
+      path: '/api/public/blog/$brandId'
+      fullPath: '/api/public/blog/$brandId'
+      preLoaderRoute: typeof ApiPublicBlogBrandIdRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/api/public/oauth/$channel': {
       id: '/api/public/oauth/$channel'
       path: '/api/public/oauth/$channel'
@@ -580,6 +600,7 @@ const rootRouteChildren: RootRouteChildren = {
   Char91DotmcpChar93InvokeToolToolRoute: Char91DotmcpChar93InvokeToolToolRoute,
   ApiPublicHooksProcessVideoQueueRoute: ApiPublicHooksProcessVideoQueueRoute,
   ApiPublicOauthChannelRoute: ApiPublicOauthChannelRoute,
+  ApiPublicBlogBrandIdRoute: ApiPublicBlogBrandIdRoute,
   ApiPublicWebhooksRazorpayRoute: ApiPublicWebhooksRazorpayRoute,
 }
 export const routeTree = rootRouteImport

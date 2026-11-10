@@ -52,7 +52,7 @@ export const CHANNELS: ChannelDef[] = [
     key: "Website",
     label: "Website",
     kind: "webhook",
-    note: "Sends each blog to your own site endpoint, signed with a shared secret.",
+    note: "Publishes each blog to your own website's blog section (WordPress, Ghost, Webflow, Shopify, custom endpoint or a LOVIZA-hosted blog).",
   },
   {
     key: "Quora",
@@ -64,7 +64,7 @@ export const CHANNELS: ChannelDef[] = [
     key: "Medium",
     label: "Medium",
     kind: "manual",
-    note: "Medium closed its write API — publishing is recorded for manual posting.",
+    note: "Posts automatically if you add a Medium integration token; otherwise recorded for manual posting.",
   },
 ];
 

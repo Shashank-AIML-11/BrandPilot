@@ -11,6 +11,7 @@ import {
 } from "@/lib/channels.functions";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { BlogPublishing } from "@/components/blog-publishing";
 
 export function ChannelConnections({
   brandId,
@@ -81,6 +82,7 @@ export function ChannelConnections({
   });
 
   return (
+    <>
     <section className="surface space-y-4 p-6">
       <div>
         <h2 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">
@@ -158,5 +160,7 @@ export function ChannelConnections({
         Threads, Quora and Medium cannot be connected automatically. Add their handles above; content for them is prepared in LOVIZA and you post it manually.
       </p>
     </section>
+    <BlogPublishing brandId={brandId} />
+    </>
   );
 }

@@ -496,6 +496,20 @@ async function publishWebsite(
   const endpoint = conn.meta["url"] as string;
   if (!endpoint) throw new Error("No website endpoint configured.");
 
+  // WordPress, Ghost, Webflow, Shopify and the hosted feed are handled in blog-sites.
+  const platform = String(conn.meta["platform"] ?? "webhook");
+  if (platform !== "webhook") {
+    const { publishBlogToSite } = await import("./blog-sites.server");
+    const { url } = await publishBlogToSite(conn.meta, conn.accessToken, {
+      id: item.id,
+      title: item.title,
+      summary: item.summary ?? "",
+      body: item.body ?? "",
+      hashtags: item.hashtags ?? "",
+    });
+    return { channel: "Website", ok: true, externalUrl: url };
+  }
+
   const body = JSON.stringify({
     id: item.id,
     type: item.type,
@@ -556,6 +570,26 @@ export async function publishToChannel(
   item: PublishItem,
   brandId?: string | null,
 ): Promise<PublishResult> {
+  if (channel === "Medium") {
+    // With an integration token Medium posts automatically; without one it stays manual.
+    const conn = await liveConnection(admin, userId, "Medium", brandId);
+    if (conn?.accessToken) {
+      try {
+        const { publishMedium } = await import("./blog-sites.server");
+        const { url } = await publishMedium(conn.accessToken, {
+          id: item.id,
+          title: item.title,
+          summary: item.summary ?? "",
+          body: item.body ?? "",
+          hashtags: item.hashtags ?? "",
+        });
+        return { channel, ok: true, externalUrl: url };
+      } catch (error) {
+        return { channel, ok: false, error: error instanceof Error ? error.message : "Medium failed" };
+      }
+    }
+    return { channel, ok: true, manual: true };
+  }
   if (MANUAL_CHANNELS.has(channel)) {
     return { channel, ok: true, manual: true };
   }

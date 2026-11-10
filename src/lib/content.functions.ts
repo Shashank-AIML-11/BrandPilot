@@ -1140,15 +1140,11 @@ export const queueMonthGeneration = createServerFn({ method: "POST" })
      */
     const TESTING_MODE = true;
 
-    let futureDates: string[];
-    if (TESTING_MODE) {
-      futureDates = [today];
-    } else {
-      // TODO: replace with real 4-days/month, 6-day-gap-from-subscription-
-      // start scheduling once the subscription start date source is known.
-      // Placeholder keeps behaviour identical to testing mode until then.
-      futureDates = [today];
-    }
+    // One generation = 7 consecutive days starting today (11 types spread across them).
+    const futureDates = Array.from({ length: 7 }, (_, i) =>
+      new Date(Date.parse(`${today}T00:00:00Z`) + i * 86_400_000).toISOString().slice(0, 10),
+    );
+    void TESTING_MODE;
 
     /*
      * Do not regenerate already posted days.
@@ -1168,7 +1164,7 @@ export const queueMonthGeneration = createServerFn({ method: "POST" })
       throw new Error("No upcoming days left to generate in this month.");
     }
 
-    const { flatDailyQuota, renderingRowsForDay, activePlatforms, CONTENT_TYPES } =
+    const { weeklyContentPlan, renderingRowsForDay, activePlatforms, CONTENT_TYPES } =
       await import("@/lib/content.server");
 
     /*
@@ -1181,7 +1177,7 @@ export const queueMonthGeneration = createServerFn({ method: "POST" })
      * one Groq call under the 8,000 TPM free-tier limit — see the
      * max_completion_tokens comment in ai.server.ts for the token math.
      */
-    const contentPlan = flatDailyQuota(dates);
+    const contentPlan = weeklyContentPlan(dates);
 
     /*
      * COST-CONSCIOUS TESTING: carousel paused for now (multiple image

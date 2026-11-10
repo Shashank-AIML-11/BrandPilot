@@ -6,13 +6,14 @@
  *  - First generation: the subscription day if bought before 01:00 IST, else the next day.
  *  - Exactly 4 generations in every 30-day window: day 0, 7, 14, 21 of the window. Days 22-29
  *    never generate, so a 5th generation can never happen inside 30 days.
+ *  - One generation = 7 days of content (2,1,2,2,1,2,1 types per day); each day publishes at 7 AM on its own date.
  *  - Each generation first reads the last 14 days of measured results (learnForBrand).
  *  - Idempotent: auto_generation_log has a unique (brand_id, run_date).
  */
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { loadBrand } from "@/lib/brand.server";
 import { getGenerationEntitlement } from "@/lib/generation-entitlements";
-import { flatDailyQuota, renderingRowsForDay, activePlatforms, CONTENT_TYPES } from "@/lib/content.server";
+import { weeklyContentPlan, renderingRowsForDay, activePlatforms, CONTENT_TYPES } from "@/lib/content.server";
 import { learnForBrand } from "@/lib/strategy-queue.server";
 
 type Admin = SupabaseClient<any, any, any>;
@@ -129,35 +130,47 @@ export async function runAutoGeneration(admin: Admin, now = new Date()) {
             .maybeSingle();
           if (active) { result.skipped += 1; continue; }
 
-          const contentPlan = flatDailyQuota([today]);
-          const quota = contentPlan[today];
-          if (!quota) continue;
-          if (!INCLUDE_CAROUSEL) quota.carousel = 0;
-          if (!CONTENT_TYPES.some((t) => quota[t] > 0)) continue;
+          // One generation = 7 days from today; the 11 types are spread across them.
+          const weekDates = Array.from({ length: 7 }, (_, i) =>
+            new Date((dayNumber(today) + i) * 86_400_000).toISOString().slice(0, 10),
+          );
+          const contentPlan = weeklyContentPlan(weekDates);
+          for (const d of weekDates) {
+            const q = contentPlan[d];
+            if (q && !INCLUDE_CAROUSEL) q.carousel = 0;
+          }
+          const activeDates = weekDates.filter((d) => {
+            const q = contentPlan[d];
+            return !!q && CONTENT_TYPES.some((t) => q[t] > 0);
+          });
+          if (!activeDates.length) continue;
 
-          // Skip if content for this day already exists.
+          // Skip if content for these days already exists.
           const { count } = await admin
             .from("content_items")
             .select("id", { count: "exact", head: true })
             .eq("brand_id", b.id)
-            .eq("scheduled_date", today);
+            .in("scheduled_date", activeDates);
           if (count) { result.skipped += 1; continue; }
 
           await admin.from("content_generation_jobs").delete().eq("brand_id", b.id).eq("month", month);
           const { data: job, error: jobError } = await admin
             .from("content_generation_jobs")
             .insert({
-              user_id: userId, brand_id: b.id, month, pending_dates: [today], days_total: 1,
-              days_done: 0, status: "pending", content_plan: contentPlan, error: null,
+              user_id: userId, brand_id: b.id, month, pending_dates: activeDates,
+              days_total: activeDates.length, days_done: 0, status: "pending",
+              content_plan: contentPlan, error: null,
             })
             .select("id")
             .single();
           if (jobError || !job) throw new Error(jobError?.message ?? "job insert failed");
 
           const platforms = activePlatforms(brand as never).slice(0, entitlement.plan.channelLimit ?? undefined);
-          const rows = renderingRowsForDay(
-            { userId, brandId: b.id, date: today, platforms, autopost: entitlement.plan.autoPost },
-            quota,
+          const rows = activeDates.flatMap((d) =>
+            renderingRowsForDay(
+              { userId, brandId: b.id, date: d, platforms, autopost: entitlement.plan.autoPost },
+              contentPlan[d]!,
+            ),
           );
           const { error: rowError } = await admin.from("content_items").insert(rows as never);
           if (rowError) {

@@ -198,6 +198,36 @@ export function flatDailyQuota(dates: string[]): Record<string, DailyContentQuot
   );
 }
 
+/**
+ * One generation = a 7-day week. The 11 content types are spread so 4 days carry two
+ * types and 3 days carry one (2+2+1+2+1+2+1 = 11). Pairs are chosen so they share media:
+ * the two LinkedIn/Instagram or Facebook/X posts share one image, reel + short share one
+ * video, product video + TikTok share one video. This keeps AI cost low and gives the
+ * audience something new every day.
+ */
+export const WEEK_PLAN: ContentType[][] = [
+  ["linkedin_post", "instagram_post"],
+  ["blog"],
+  ["instagram_reel", "youtube_short"],
+  ["facebook_post", "twitter_post"],
+  ["pinterest"],
+  ["product_service_video", "tiktok_video"],
+  ["carousel"],
+];
+
+/** Quota for 7 consecutive dates (starting at the first date) following WEEK_PLAN. */
+export function weeklyContentPlan(dates: string[]): Record<string, DailyContentQuota> {
+  return Object.fromEntries(
+    dates.map((date, i) => {
+      const types = WEEK_PLAN[i % WEEK_PLAN.length] ?? [];
+      return [
+        date,
+        Object.fromEntries(CONTENT_TYPES.map((t) => [t, types.includes(t) ? 1 : 0])) as DailyContentQuota,
+      ];
+    }),
+  );
+}
+
 export const DEFAULT_PLATFORMS = [
   "LinkedIn",
   "Instagram",

@@ -573,9 +573,8 @@ export function buildWeekResponseSchema(
         items: {
           type: "object",
           properties: dayProperties,
-          // Only the date is mandatory: with the 7-day spread each day carries just 1-2 types,
-          // so a type that is not planned for a day is simply left out (treated as none).
-          required: ["date"],
+          // The AI provider's strict mode requires every property to be listed here.
+          required: ["date", ...activeTypes],
           additionalProperties: false,
         },
       },

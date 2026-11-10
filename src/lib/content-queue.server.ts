@@ -101,11 +101,23 @@ export async function processGenerationQueue(admin: AdminClient, userId?: string
       return { job: job.id, generated: 0 };
     }
 
-    const result = await chatJSON<{ days?: Array<Record<string, unknown>> }>(
-      SYSTEM_PROMPT,
-      weekPrompt(brand as never, batchDates, strategy, quotas, batchActiveTypes),
-      buildWeekResponseSchema(batchActiveTypes),
-    );
+    // The model occasionally leaves out an (empty) type key and the strict schema check
+    // rejects the reply. That is random, so retry a couple of times before giving up.
+    let result: { days?: Array<Record<string, unknown>> } = {};
+    for (let attempt = 1; ; attempt += 1) {
+      try {
+        result = await chatJSON<{ days?: Array<Record<string, unknown>> }>(
+          SYSTEM_PROMPT,
+          weekPrompt(brand as never, batchDates, strategy, quotas, batchActiveTypes),
+          buildWeekResponseSchema(batchActiveTypes),
+        );
+        break;
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        if (attempt >= 3 || !message.includes("json_validate_failed")) throw error;
+        console.warn(`[generate] schema miss, retrying (${attempt}/3)`);
+      }
+    }
 
     const days = (result.days ?? []) as Array<{ date?: string }>;
 

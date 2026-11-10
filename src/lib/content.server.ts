@@ -573,7 +573,9 @@ export function buildWeekResponseSchema(
         items: {
           type: "object",
           properties: dayProperties,
-          required: ["date", ...activeTypes],
+          // Only the date is mandatory: with the 7-day spread each day carries just 1-2 types,
+          // so a type that is not planned for a day is simply left out (treated as none).
+          required: ["date"],
           additionalProperties: false,
         },
       },

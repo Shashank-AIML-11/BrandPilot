@@ -1,8 +1,10 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState, type Dispatch, type SetStateAction } from "react";
 import { createFileRoute } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { ChevronRight, Loader2, Save } from "lucide-react";
+import { ChevronRight, Loader2, Save, Trash2, Upload } from "lucide-react";
+import { useServerFn } from "@tanstack/react-start";
+import { getBrandLogoUrl, removeBrandLogo, uploadBrandLogo } from "@/lib/brand-assets.functions";
 import { supabase } from "@/integrations/supabase/client";
 import { ChannelConnections } from "@/components/channel-connections";
 import { useMe } from "@/components/app-shell";
@@ -61,6 +63,8 @@ interface FormState {
   keywords: string;
   google_drive_folder: string;
   social_handles: Record<string, string>;
+  logo_url: string;
+  brand_colors: { primary: string; secondary: string; accent: string };
 }
 
 const EMPTY: FormState = {
@@ -74,7 +78,132 @@ const EMPTY: FormState = {
   keywords: "",
   google_drive_folder: "",
   social_handles: {},
+  logo_url: "",
+  brand_colors: { primary: "#4f46e5", secondary: "#0f172a", accent: "#f59e0b" },
 };
+
+const COLOR_FIELDS: Array<{ key: "primary" | "secondary" | "accent"; label: string }> = [
+  { key: "primary", label: "Primary colour" },
+  { key: "secondary", label: "Secondary colour" },
+  { key: "accent", label: "Accent colour" },
+];
+
+/** Logo upload + brand colours. Used by the poster designer so posts match the brand. */
+function BrandAssets({
+  brandId,
+  form,
+  setForm,
+  onChanged,
+}: {
+  brandId?: string;
+  form: FormState;
+  setForm: Dispatch<SetStateAction<FormState>>;
+  onChanged: () => void;
+}) {
+  const upload = useServerFn(uploadBrandLogo);
+  const remove = useServerFn(removeBrandLogo);
+  const signed = useServerFn(getBrandLogoUrl);
+  const fileRef = useRef<HTMLInputElement>(null);
+
+  const { data: logo } = useQuery({
+    queryKey: ["brand-logo", form.logo_url],
+    enabled: !!form.logo_url,
+    queryFn: () => signed({ data: { path: form.logo_url } }),
+  });
+
+  const up = useMutation({
+    mutationFn: async (file: File) => {
+      if (file.size > 1_500_000) throw new Error("Logo must be smaller than 1.5 MB.");
+      const base64 = await new Promise<string>((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(String(reader.result).split(",")[1] ?? "");
+        reader.onerror = () => reject(new Error("Could not read the file"));
+        reader.readAsDataURL(file);
+      });
+      return upload({ data: { ...(brandId ? { brandId } : {}), mime: file.type, base64 } });
+    },
+    onSuccess: ({ path }) => {
+      setForm((f) => ({ ...f, logo_url: path }));
+      toast.success("Logo uploaded");
+      onChanged();
+    },
+    onError: (e) => toast.error(e instanceof Error ? e.message : "Upload failed"),
+  });
+
+  const del = useMutation({
+    mutationFn: () => remove({ data: brandId ? { brandId } : {} }),
+    onSuccess: () => {
+      setForm((f) => ({ ...f, logo_url: "" }));
+      onChanged();
+    },
+  });
+
+  const setColor = (key: "primary" | "secondary" | "accent", value: string) =>
+    setForm((f) => ({ ...f, brand_colors: { ...f.brand_colors, [key]: value } }));
+
+  return (
+    <div className="grid gap-4 sm:grid-cols-2">
+      <div className="space-y-2">
+        <Label>Brand logo</Label>
+        <div className="flex items-center gap-3">
+          <div className="flex h-16 w-28 items-center justify-center overflow-hidden rounded-md border border-border bg-muted/30">
+            {logo?.url ? (
+              <img src={logo.url} alt="Brand logo" className="max-h-full max-w-full object-contain" />
+            ) : (
+              <span className="text-xs text-muted-foreground">No logo</span>
+            )}
+          </div>
+          <input
+            ref={fileRef}
+            type="file"
+            accept="image/png,image/jpeg,image/svg+xml"
+            className="hidden"
+            onChange={(e) => {
+              const file = e.target.files?.[0];
+              if (file) up.mutate(file);
+              e.target.value = "";
+            }}
+          />
+          <Button type="button" size="sm" variant="secondary" onClick={() => fileRef.current?.click()} disabled={up.isPending}>
+            {up.isPending ? <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" /> : <Upload className="mr-1.5 h-3.5 w-3.5" />}
+            {form.logo_url ? "Replace" : "Upload"}
+          </Button>
+          {form.logo_url && (
+            <Button type="button" size="sm" variant="ghost" onClick={() => del.mutate()} disabled={del.isPending}>
+              <Trash2 className="h-4 w-4" />
+            </Button>
+          )}
+        </div>
+        <p className="text-xs text-muted-foreground">PNG, JPG or SVG, up to 1.5 MB. A transparent PNG looks best.</p>
+      </div>
+      <div className="space-y-2">
+        <Label>Brand colours</Label>
+        <div className="grid grid-cols-3 gap-3">
+          {COLOR_FIELDS.map((c) => (
+            <div key={c.key} className="space-y-1">
+              <div className="flex items-center gap-2">
+                <input
+                  type="color"
+                  aria-label={c.label}
+                  value={form.brand_colors[c.key]}
+                  onChange={(e) => setColor(c.key, e.target.value)}
+                  className="h-9 w-10 cursor-pointer rounded border border-border bg-transparent p-0.5"
+                />
+                <Input
+                  value={form.brand_colors[c.key]}
+                  maxLength={7}
+                  onChange={(e) => setColor(c.key, e.target.value)}
+                  className="h-9 px-2 text-xs"
+                />
+              </div>
+              <p className="text-[11px] text-muted-foreground">{c.label}</p>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
 
 function BrandProfilePage() {
   const queryClient = useQueryClient();
@@ -124,6 +253,11 @@ function BrandProfilePage() {
       keywords: data.keywords ?? "",
       google_drive_folder: data.google_drive_folder ?? "",
       social_handles: (data.social_handles as Record<string, string>) ?? {},
+      logo_url: (data as { logo_url?: string }).logo_url ?? "",
+      brand_colors: {
+        ...EMPTY.brand_colors,
+        ...(((data as { brand_colors?: Record<string, string> }).brand_colors) ?? {}),
+      },
     });
   }, [data]);
 
@@ -151,6 +285,7 @@ function BrandProfilePage() {
         keywords: form.keywords.trim(),
         google_drive_folder: form.google_drive_folder.trim(),
         social_handles: handles,
+        brand_colors: form.brand_colors,
         updated_at: new Date().toISOString(),
       };
 
@@ -289,6 +424,12 @@ function BrandProfilePage() {
             />
           </div>
         </div>
+        <BrandAssets
+          brandId={isAgency ? activeBrand?.id : data?.id}
+          form={form}
+          setForm={setForm}
+          onChanged={() => void queryClient.invalidateQueries({ queryKey: ["brand-profile"] })}
+        />
         <div className="space-y-2">
           <Label htmlFor="description">Business description</Label>
           <Textarea

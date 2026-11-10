@@ -108,8 +108,13 @@ export function imageModelRendersText(): boolean {
   return /nano-banana|ideogram|gpt-image|recraft|seedream|qwen-image|krea|grok|imagen/.test(m);
 }
 
+/** True when posters are designed by the app (real photo + sharp text, logo, brand colours). */
+export function posterComposerEnabled(): boolean {
+  return (process.env["POSTER_COMPOSER"] ?? "on").trim().toLowerCase() !== "off";
+}
+
 const PHOTOREAL_STYLE =
-  "Photorealistic, real-world professional photograph shot on a 50mm lens with natural light, shallow depth of field, authentic candid moment, believable real people with natural skin texture and expressions, true-to-life setting. Not a cartoon, not an illustration, not a 3D render, not a painting, not stylised art, no stock-photo cliche.";
+  "Documentary-style photograph by a working professional photographer: natural window or daylight, 50mm lens, shallow depth of field, a candid unposed moment, real people of believable age with natural skin texture, pores, flyaway hair and relaxed non-camera-facing expressions, a lived-in real-world setting with small imperfections. Subject placed slightly off-centre with clean uncluttered space around it. Not a cartoon, not an illustration, not a 3D render, not CGI, not a painting, no plastic or airbrushed skin, no glossy over-polished AI look, no perfect symmetry, no staged stock-photo smile.";
 
 const SAFE_ZONE =
   "Keep every word of text and the main subject well inside the frame with a generous margin on all sides, nothing touching or near the edges, because platforms crop previews.";
@@ -767,7 +772,7 @@ export function imagePromptFor(
   }
 
   const aspect = item.type === "pinterest" ? "2:3 vertical" : "4:5 portrait";
-  const withText = imageModelRendersText();
+  const withText = imageModelRendersText() && !posterComposerEnabled();
   const headline = (item.title || "").split(/\s+/).slice(0, 6).join(" ");
   const who = brand?.icp ? ` The people shown should look like this audience: ${String(brand.icp).slice(0, 160)}.` : "";
   const offer = (brand?.products_services || brand?.description || "").slice(0, 240);

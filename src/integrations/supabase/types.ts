@@ -41,6 +41,8 @@ export type Database = {
     Tables: {
       brand_profiles: {
         Row: {
+          brand_colors: Json
+          logo_url: string
           business_name: string
           created_at: string
           description: string
@@ -57,6 +59,8 @@ export type Database = {
           website: string
         }
         Insert: {
+          brand_colors?: Json
+          logo_url?: string
           business_name?: string
           created_at?: string
           description?: string
@@ -73,6 +77,8 @@ export type Database = {
           website?: string
         }
         Update: {
+          brand_colors?: Json
+          logo_url?: string
           business_name?: string
           created_at?: string
           description?: string

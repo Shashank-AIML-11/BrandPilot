@@ -19,6 +19,51 @@ import {
   sharedVideoPath,
 } from "@/lib/content.server";
 import { loadBrand } from "@/lib/brand.server";
+import { posterComposerEnabled } from "@/lib/content.server";
+
+/**
+ * Turns the plain AI photo into a designed poster (headline, logo, brand colours).
+ * Never throws: if composing fails the plain photo is used so generation keeps working.
+ */
+async function designPoster(
+  admin: AdminClient,
+  photo: Uint8Array,
+  item: { id: string; title?: string | null; summary?: string | null },
+  brand: Record<string, unknown> | null,
+  aspect: string,
+): Promise<Uint8Array> {
+  if (!posterComposerEnabled() || aspect === "16:9" || aspect === "1:1") return photo;
+  try {
+    const { composePoster, posterCopyFor } = await import("@/lib/poster.server");
+    let logo: { bytes: Uint8Array; mime: string } | null = null;
+    const logoPath = String(brand?.["logo_url"] ?? "");
+    if (logoPath) {
+      const { data: file } = await admin.storage.from("content-media").download(logoPath);
+      if (file) {
+        const ext = logoPath.split(".").pop()?.toLowerCase();
+        logo = {
+          bytes: new Uint8Array(await file.arrayBuffer()),
+          mime: ext === "svg" ? "image/svg+xml" : ext === "jpg" ? "image/jpeg" : "image/png",
+        };
+      }
+    }
+    return await composePoster({
+      photo,
+      copy: posterCopyFor(item, { website: String(brand?.["website"] ?? "") }),
+      brand: {
+        name: String(brand?.["business_name"] ?? ""),
+        website: String(brand?.["website"] ?? ""),
+        logo,
+        colors: (brand?.["brand_colors"] as Record<string, string> | null) ?? null,
+      },
+      aspect,
+      seed: `${item.id}`,
+    });
+  } catch (error) {
+    console.error("[poster] composing failed, using the plain photo", error);
+    return photo;
+  }
+}
 
 type AdminClient = SupabaseClient<Database>;
 
@@ -362,10 +407,11 @@ export async function processVideoQueue(admin: AdminClient, userId?: string) {
         // First of the group to render today — generate once, upload to
         // the SHARED path (not a per-item path) so siblings can find it.
         const brand = await loadBrand(admin, item.user_id, item.brand_id);
-        const bytes = await generateImageWithRetry(
-        imagePromptFor(item as never, brand as never),
-        aspectForType(item.type),
-      );
+        const photo = await generateImageWithRetry(
+          imagePromptFor(item as never, brand as never),
+          aspectForType(item.type),
+        );
+        const bytes = await designPoster(admin, photo, item, brand as never, aspectForType(item.type));
         const { error: uploadError } = await admin.storage
           .from("content-media")
           .upload(path, bytes, { contentType: "image/png", upsert: true });
@@ -398,9 +444,12 @@ export async function processVideoQueue(admin: AdminClient, userId?: string) {
           .maybeSingle();
         if (!coverSibling) {
           const coverBrand = await loadBrand(admin, item.user_id, item.brand_id);
-          const coverBytes = await generateImageWithRetry(
+          const coverPhoto = await generateImageWithRetry(
             imagePromptFor(item as never, coverBrand as never),
             aspectForType(item.type),
+          );
+          const coverBytes = await designPoster(
+            admin, coverPhoto, item, coverBrand as never, aspectForType(item.type),
           );
           const { error: coverUploadError } = await admin.storage
             .from("content-media")
@@ -420,10 +469,11 @@ export async function processVideoQueue(admin: AdminClient, userId?: string) {
       // Not in the shared group (pinterest, video thumbnails) — generate
       // its own unique image as before.
       const brand = await loadBrand(admin, item.user_id, item.brand_id);
-      const bytes = await generateImageWithRetry(
+      const photo = await generateImageWithRetry(
         imagePromptFor(item as never, brand as never),
         aspectForType(item.type),
       );
+      const bytes = await designPoster(admin, photo, item, brand as never, aspectForType(item.type));
       const path = `${item.user_id}/${item.id}.png`;
       const { error: uploadError } = await admin.storage
         .from("content-media")

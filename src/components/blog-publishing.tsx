@@ -190,7 +190,7 @@ export function BlogPublishing({ brandId }: { brandId?: string | null }) {
         ) : (
           <>
             <p className="text-xs text-muted-foreground">
-              Optional. Paste a Medium integration token (Medium > Settings > Security and apps) to post automatically.
+              Optional. Paste a Medium integration token (Medium → Settings → Security and apps) to post automatically.
               Medium no longer issues new tokens to everyone — without one, blogs are prepared for you to post by hand.
             </p>
             <div className="flex gap-2">

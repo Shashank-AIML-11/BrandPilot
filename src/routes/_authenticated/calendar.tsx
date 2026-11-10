@@ -677,15 +677,8 @@ function CalendarPage() {
           <h1 className="text-2xl font-bold">
             Content Calendar
           </h1>
-
-          <p className="mt-1 text-sm text-muted-foreground">
-            Plan-based posts, carousels and videos,
-            generated from your brand profile.
-          </p>
         </div>
-
         <div className="flex flex-wrap items-center gap-2">
-
           {/* Previous Month */}
           <Button
             variant="outline"

@@ -185,6 +185,10 @@ export function AppShell({ children }: { children: ReactNode }) {
     // chance to run.
     await navigate({ to: "/", replace: true });
     await supabase.auth.signOut();
+    // Send signed-out users to the public marketing site (e.g. https://loviza.click)
+    // when VITE_LANDING_URL is set. Left unset (local / staging), they stay on this app's "/".
+    const landingUrl = import.meta.env.VITE_LANDING_URL as string | undefined;
+    if (landingUrl) window.location.assign(landingUrl);
   }
 
   return (

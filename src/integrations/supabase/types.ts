@@ -194,6 +194,7 @@ export type Database = {
       }
       content_items: {
         Row: {
+          reviewed_at: string | null
           carousel_image_urls: string[]
           carousel_slides: Json
           brand_id: string | null
@@ -229,6 +230,7 @@ export type Database = {
           voiceover_url: string | null
         }
         Insert: {
+          reviewed_at?: string | null
           carousel_image_urls?: string[]
           carousel_slides?: Json
           brand_id?: string | null
@@ -264,6 +266,7 @@ export type Database = {
           voiceover_url?: string | null
         }
         Update: {
+          reviewed_at?: string | null
           carousel_image_urls?: string[]
           carousel_slides?: Json
           brand_id?: string | null

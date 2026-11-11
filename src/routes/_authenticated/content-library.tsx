@@ -3,9 +3,9 @@ import { useEffect, useMemo, useState } from "react";
 import { createFileRoute } from "@tanstack/react-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
-import { format } from "date-fns";
+import { addDays, endOfWeek, format, parseISO, startOfWeek } from "date-fns";
 import { toast } from "sonner";
-import { Loader2, ImageOff, Send } from "lucide-react";
+import { CheckCircle2, ChevronLeft, ChevronRight, Loader2, ImageOff, Send } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { publishContentItem } from "@/lib/channels.functions";
 import { cachedMediaUrl } from "@/lib/media";
@@ -44,26 +44,19 @@ export const Route = createFileRoute("/_authenticated/content-library")({
   component: ContentLibraryPage,
 });
 
-/**
- * Maps the 11 real content_items.type values (see CONTENT_TYPES in
- * src/lib/content/types.ts — the single source of truth) onto the 6
- * library buckets requested for this page. Every type appears in exactly
- * one bucket.
- */
-const BUCKETS = [
-  {
-    id: "posts",
-    label: "Posts",
-    types: ["linkedin_post", "instagram_post", "facebook_post", "twitter_post", "pinterest"],
-  },
-  { id: "reels", label: "Reels", types: ["instagram_reel", "tiktok_video"] },
-  { id: "carousel", label: "Carousel", types: ["carousel"] },
-  { id: "youtube_shorts", label: "YouTube Shorts", types: ["youtube_short"] },
-  { id: "video", label: "Video", types: ["product_service_video"] },
-  { id: "blog", label: "Blog", types: ["blog"] },
-] as const;
+type LibraryTab = "generated" | "reviewed" | "posted";
+const TABS: Array<{ id: LibraryTab; label: string }> = [
+  { id: "generated", label: "Generated" },
+  { id: "reviewed", label: "Reviewed - Ready to Post" },
+  { id: "posted", label: "Posted" },
+];
+const dayKey = (d: Date) => format(d, "yyyy-MM-dd");
 
-type BucketId = (typeof BUCKETS)[number]["id"] | "all";
+/** Which tab an item belongs to. */
+function tabOf(item: ContentItem): LibraryTab {
+  if (item.status === "posted") return "posted";
+  return item.reviewed_at ? "reviewed" : "generated";
+}
 
 function thumbnailFor(item: ContentItem): string | null {
   const raw = item.image_url ?? item.carousel_image_urls?.[0] ?? null;
@@ -147,8 +140,11 @@ function targetsFor(item: ContentItem, brands: BrandHandles[]): string[] {
 
 function ContentLibraryPage() {
   const queryClient = useQueryClient();
-  const [active, setActive] = useState<BucketId>("all");
+  const [tab, setTab] = useState<LibraryTab>("generated");
+  const [weekStart, setWeekStart] = useState(() => startOfWeek(new Date(), { weekStartsOn: 1 }));
+  const [dayFilter, setDayFilter] = useState<string | null>(null);
   const [detail, setDetail] = useState<ContentItem | null>(null);
+  const [finishing, setFinishing] = useState(false);
 
   /*
    * Unlike the Calendar (scoped to one month), the Library shows
@@ -187,17 +183,64 @@ function ContentLibraryPage() {
     if (fresh && fresh !== detail) setDetail(fresh);
   }, [items, detail]);
 
-  const byBucket = useMemo(() => {
-    const map = new Map<string, ContentItem[]>();
-    for (const bucket of BUCKETS) map.set(bucket.id, []);
-    for (const item of items) {
-      const bucket = BUCKETS.find((b) => (b.types as readonly string[]).includes(item.type));
-      if (bucket) map.get(bucket.id)!.push(item);
-    }
-    return map;
-  }, [items]);
+  const weekDays = useMemo(() => Array.from({ length: 7 }, (_, i) => addDays(weekStart, i)), [weekStart]);
+  const weekEnd = endOfWeek(weekStart, { weekStartsOn: 1 });
+  const weekLabel = `${format(weekStart, "d MMM")} – ${format(weekEnd, "d MMM yyyy")}`;
+  const isCurrentWeek = dayKey(weekStart) === dayKey(startOfWeek(new Date(), { weekStartsOn: 1 }));
 
-  const visibleItems = active === "all" ? items : (byBucket.get(active) ?? []);
+  // Items scheduled inside the selected week.
+  const weekItems = useMemo(() => {
+    const from = dayKey(weekStart);
+    const to = dayKey(weekEnd);
+    return items.filter((i) => i.scheduled_date >= from && i.scheduled_date <= to);
+  }, [items, weekStart, weekEnd]);
+
+  const tabCounts = useMemo(() => {
+    const c: Record<LibraryTab, number> = { generated: 0, reviewed: 0, posted: 0 };
+    for (const i of weekItems) c[tabOf(i)] += 1;
+    return c;
+  }, [weekItems]);
+
+  const dayCounts = useMemo(() => {
+    const c = new Map<string, number>();
+    for (const i of weekItems) if (tabOf(i) === tab) c.set(i.scheduled_date, (c.get(i.scheduled_date) ?? 0) + 1);
+    return c;
+  }, [weekItems, tab]);
+
+  const visibleItems = useMemo(
+    () =>
+      weekItems
+        .filter((i) => tabOf(i) === tab && (!dayFilter || i.scheduled_date === dayFilter))
+        .sort((a, b) => (a.scheduled_date + (a.scheduled_time ?? "")).localeCompare(b.scheduled_date + (b.scheduled_time ?? ""))),
+    [weekItems, tab, dayFilter],
+  );
+
+  const groupedByDay = useMemo(() => {
+    const m = new Map<string, ContentItem[]>();
+    for (const i of visibleItems) m.set(i.scheduled_date, [...(m.get(i.scheduled_date) ?? []), i]);
+    return Array.from(m.entries());
+  }, [visibleItems]);
+
+  const moveWeek = (delta: number) => {
+    setWeekStart((w) => addDays(w, delta * 7));
+    setDayFilter(null);
+  };
+
+  const finishReview = async (item: ContentItem) => {
+    setFinishing(true);
+    const { error } = await supabase
+      .from("content_items")
+      .update({ reviewed_at: new Date().toISOString() } as never)
+      .eq("id", item.id);
+    setFinishing(false);
+    if (error) {
+      toast.error(error.message);
+      return;
+    }
+    toast.success("Review finished — moved to “Reviewed - Ready to Post”.");
+    setDetail(null);
+    void queryClient.invalidateQueries({ queryKey: ["content-library"] });
+  };
 
   /* ------------------------------- "Post now" ------------------------------- */
 
@@ -350,7 +393,7 @@ function ContentLibraryPage() {
         <div>
           <h1 className="text-2xl font-bold">Content Library</h1>
           <p className="mt-1 text-sm text-muted-foreground">
-            Every piece LOVIZA has generated, in one place — browse by format.
+            Review each week’s content, then post what is ready.
           </p>
         </div>
         <Button onClick={onPostNowClick} disabled={selectedItems.length === 0 || posting}>
@@ -367,103 +410,168 @@ function ContentLibraryPage() {
         </Button>
       </div>
 
-      <Tabs value={active} onValueChange={(v) => setActive(v as BucketId)}>
-        <TabsList className="flex h-auto flex-wrap justify-start gap-1 bg-transparent p-0">
-          <TabsTrigger value="all" className="rounded-full border border-border">
-            All ({items.length})
-          </TabsTrigger>
-          {BUCKETS.map((bucket) => (
-            <TabsTrigger
-              key={bucket.id}
-              value={bucket.id}
-              className="rounded-full border border-border"
-            >
-              {bucket.label} ({byBucket.get(bucket.id)?.length ?? 0})
-            </TabsTrigger>
-          ))}
-        </TabsList>
-
-        <TabsContent value={active} className="mt-6">
-          {isLoading ? (
-            <div className="flex h-64 items-center justify-center">
-              <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+      <div className="grid gap-6 lg:grid-cols-[230px_1fr]">
+        {/* Week navigator (left) */}
+        <aside className="space-y-3">
+          <div className="surface space-y-3 p-3">
+            <div className="flex items-center justify-between">
+              <Button type="button" size="icon" variant="ghost" className="h-8 w-8" onClick={() => moveWeek(-1)} aria-label="Previous week">
+                <ChevronLeft className="h-4 w-4" />
+              </Button>
+              <div className="text-center">
+                <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                  {isCurrentWeek ? "Current week" : "Week"}
+                </p>
+                <p className="text-sm font-medium">{weekLabel}</p>
+              </div>
+              <Button type="button" size="icon" variant="ghost" className="h-8 w-8" onClick={() => moveWeek(1)} aria-label="Next week">
+                <ChevronRight className="h-4 w-4" />
+              </Button>
             </div>
-          ) : visibleItems.length === 0 ? (
-            <div className="surface p-10 text-center text-sm text-muted-foreground">
-              Nothing here yet. Generate content from the Content Calendar to fill this bucket.
-            </div>
-          ) : (
-            <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
-              {visibleItems.map((item) => {
-                const thumb = thumbnailFor(item);
-                const isSelected = selectedIds.has(item.id);
+            {!isCurrentWeek && (
+              <Button type="button" size="sm" variant="secondary" className="w-full" onClick={() => { setWeekStart(startOfWeek(new Date(), { weekStartsOn: 1 })); setDayFilter(null); }}>
+                Go to current week
+              </Button>
+            )}
+            <div className="space-y-1">
+              <button
+                type="button"
+                onClick={() => setDayFilter(null)}
+                className={cn("flex w-full items-center justify-between rounded-md px-2.5 py-2 text-sm transition-colors hover:bg-muted/40", !dayFilter && "bg-primary/10 font-medium text-primary")}
+              >
+                <span>All 7 days</span>
+                <span className="text-xs">{tabCounts[tab]}</span>
+              </button>
+              {weekDays.map((d) => {
+                const key = dayKey(d);
+                const n = dayCounts.get(key) ?? 0;
                 return (
-                  // The checkbox is a sibling of the card button (not inside it): interactive
-                  // elements can't be nested, and this keeps "open details" and "select" separate.
-                  <div
-                    key={item.id}
-                    className={cn(
-                      "group relative flex flex-col overflow-hidden rounded-xl border text-left transition-colors hover:border-primary/50",
-                      isSelected ? "border-primary ring-1 ring-primary" : "border-border",
-                    )}
+                  <button
+                    key={key}
+                    type="button"
+                    onClick={() => setDayFilter(dayFilter === key ? null : key)}
+                    className={cn("flex w-full items-center justify-between rounded-md px-2.5 py-2 text-sm transition-colors hover:bg-muted/40", dayFilter === key && "bg-primary/10 font-medium text-primary", n === 0 && "text-muted-foreground")}
                   >
-                    <button
-                      type="button"
-                      onClick={() => setDetail(item)}
-                      className="flex w-full flex-col text-left"
-                    >
-                      <div className="relative aspect-square w-full overflow-hidden bg-muted/20">
-                        {thumb ? (
-                          <img
-                            src={thumb}
-                            alt={item.title}
-                            className="h-full w-full object-cover transition-transform group-hover:scale-[1.03]"
-                          />
-                        ) : (
-                          <div className="flex h-full w-full items-center justify-center text-muted-foreground/40">
-                            <ImageOff className="h-6 w-6" />
-                          </div>
-                        )}
-                        <Badge
-                          variant="outline"
-                          className={`absolute left-2 top-2 ${typeStyles[item.type] ?? ""}`}
-                        >
-                          {item.type}
-                        </Badge>
-                      </div>
-                      <div className="space-y-1.5 p-3">
-                        <p className="line-clamp-2 text-sm font-medium leading-snug">
-                          {item.title}
-                        </p>
-                        <div className="flex items-center justify-between">
-                          <span className="text-xs text-muted-foreground">
-                            {format(new Date(item.scheduled_date), "d MMM yyyy")}
-                          </span>
-                          <Badge className={`text-[10px] capitalize ${statusStyles(item.status)}`}>
-                            {item.status}
-                          </Badge>
-                        </div>
-                      </div>
-                    </button>
-
-                    <div className="absolute right-2 top-2 z-10 rounded-md bg-background/80 p-1 shadow-sm backdrop-blur-sm">
-                      <Checkbox
-                        className="h-5 w-5"
-                        checked={isSelected}
-                        onCheckedChange={() => toggleSelected(item.id)}
-                        aria-label={`Select “${item.title}” to post`}
-                      />
-                    </div>
-                  </div>
+                    <span>{format(d, "EEE, d MMM")}</span>
+                    <span className="text-xs">{n}</span>
+                  </button>
                 );
               })}
             </div>
-          )}
-        </TabsContent>
-      </Tabs>
+          </div>
+        </aside>
+
+        {/* Three tabs */}
+        <div className="min-w-0">
+          <Tabs value={tab} onValueChange={(v) => setTab(v as LibraryTab)}>
+            <TabsList className="flex h-auto flex-wrap justify-start gap-1 bg-transparent p-0">
+              {TABS.map((t) => (
+                <TabsTrigger key={t.id} value={t.id} className="rounded-full border border-border">
+                  {t.label} ({tabCounts[t.id]})
+                </TabsTrigger>
+              ))}
+            </TabsList>
+
+            <TabsContent value={tab} className="mt-6 space-y-8">
+              {isLoading ? (
+                <div className="flex h-64 items-center justify-center">
+                  <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+                </div>
+              ) : groupedByDay.length === 0 ? (
+                <div className="surface p-10 text-center text-sm text-muted-foreground">
+                  {tab === "generated"
+                    ? "Nothing waiting for review in this week. Generate content from the Content Calendar, or pick another week."
+                    : tab === "reviewed"
+                      ? "No reviewed content for this week yet. Open a card in “Generated” and click Review."
+                      : "Nothing has been posted in this week yet."}
+                </div>
+              ) : (
+                groupedByDay.map(([date, dayItems]) => (
+                  <section key={date} className="space-y-3">
+                    <h2 className="text-sm font-semibold">
+                      {format(parseISO(date), "EEEE, d MMM yyyy")}{" "}
+                      <span className="font-normal text-muted-foreground">
+                        · {dayItems.length} piece{dayItems.length === 1 ? "" : "s"}
+                      </span>
+                    </h2>
+                    <div className="grid grid-cols-2 gap-4 md:grid-cols-3 xl:grid-cols-4">
+                      {dayItems.map((item) => {
+                        const thumb = thumbnailFor(item);
+                        const isSelected = selectedIds.has(item.id);
+                        const rendering = item.status === "draft";
+                        return (
+                          <div
+                            key={item.id}
+                            className={cn(
+                              "group relative flex flex-col overflow-hidden rounded-xl border text-left transition-colors hover:border-primary/50",
+                              isSelected ? "border-primary ring-1 ring-primary" : "border-border",
+                            )}
+                          >
+                            <button type="button" onClick={() => setDetail(item)} className="flex w-full flex-1 flex-col text-left">
+                              <div className="relative aspect-square w-full overflow-hidden bg-muted/20">
+                                {thumb ? (
+                                  <img src={thumb} alt={item.title} className="h-full w-full object-cover transition-transform group-hover:scale-[1.03]" />
+                                ) : (
+                                  <div className="flex h-full w-full items-center justify-center text-muted-foreground/40">
+                                    {rendering ? <Loader2 className="h-6 w-6 animate-spin" /> : <ImageOff className="h-6 w-6" />}
+                                  </div>
+                                )}
+                                <Badge variant="outline" className={`absolute left-2 top-2 ${typeStyles[item.type] ?? ""}`}>
+                                  {item.type}
+                                </Badge>
+                              </div>
+                              <div className="space-y-1.5 p-3 pb-2">
+                                <p className="line-clamp-2 text-sm font-medium leading-snug">{item.title}</p>
+                                <span className="text-xs text-muted-foreground">
+                                  {format(parseISO(item.scheduled_date), "d MMM yyyy")}
+                                  {item.scheduled_time ? ` · ${item.scheduled_time.slice(0, 5)}` : ""}
+                                </span>
+                              </div>
+                            </button>
+
+                            {/* Bottom-right action */}
+                            <div className="flex justify-end px-3 pb-3">
+                              {tab === "generated" && (
+                                <Button size="sm" disabled={rendering} onClick={() => setDetail(item)}>
+                                  {rendering ? "Generating…" : "Review"}
+                                </Button>
+                              )}
+                              {tab === "reviewed" && (
+                                <Button size="sm" variant="secondary" className="gap-1.5 text-success" onClick={() => setDetail(item)}>
+                                  <CheckCircle2 className="h-3.5 w-3.5" /> Reviewed - Ready to Post
+                                </Button>
+                              )}
+                              {tab === "posted" && (
+                                <Badge className={`text-[10px] capitalize ${statusStyles(item.status)}`}>Posted</Badge>
+                              )}
+                            </div>
+
+                            {tab === "reviewed" && (
+                              <div className="absolute right-2 top-2 z-10 rounded-md bg-background/80 p-1 shadow-sm backdrop-blur-sm">
+                                <Checkbox
+                                  className="h-5 w-5"
+                                  checked={isSelected}
+                                  onCheckedChange={() => toggleSelected(item.id)}
+                                  aria-label={`Select “${item.title}” to post`}
+                                />
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </section>
+                ))
+              )}
+            </TabsContent>
+          </Tabs>
+        </div>
+      </div>
 
       <ContentDetailDialog
         item={detail}
+        onFinishReview={(i) => void finishReview(i)}
+        finishing={finishing}
         onOpenChange={(open) => {
           if (!open) setDetail(null);
           queryClient.invalidateQueries({ queryKey: ["content-library"] });

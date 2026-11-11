@@ -3,7 +3,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { publishContentItem } from "@/lib/channels.functions";
 import { toast } from "sonner";
-import { Loader2, Send, Trash2 } from "lucide-react";
+import { CheckCircle2, Loader2, Send, Trash2 } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { cachedMediaUrl, signedMediaUrl } from "@/lib/media";
 import { cn } from "@/lib/utils";
@@ -65,6 +65,7 @@ export interface ContentItem {
   platforms: string[] | null;
   status: string;
   enabled: boolean;
+  reviewed_at?: string | null;
 }
 
 export const typeStyles: Record<string, string> = {
@@ -85,9 +86,14 @@ export const typeStyles: Record<string, string> = {
 export function ContentDetailDialog({
   item,
   onOpenChange,
+  onFinishReview,
+  finishing,
 }: {
   item: ContentItem | null;
   onOpenChange: (open: boolean) => void;
+  /** When given (Content Library), the footer shows "Finish Review" for unreviewed items. */
+  onFinishReview?: (item: ContentItem) => void;
+  finishing?: boolean;
 }) {
   const queryClient = useQueryClient();
   const [imageUrl, setImageUrl] = useState<string | null>(() => cachedMediaUrl(item?.image_url));
@@ -352,13 +358,24 @@ export function ContentDetailDialog({
           <Button variant="ghost" onClick={() => remove.mutate()} disabled={remove.isPending}>
             <Trash2 className="mr-2 h-4 w-4" /> Delete
           </Button>
-          <Button
-            onClick={() => post.mutate()}
-            disabled={post.isPending || !item.enabled || item.status === "posted"}
-          >
-            <Send className="mr-2 h-4 w-4" />
-            {item.status === "posted" ? "Already posted" : "Post now"}
-          </Button>
+          {onFinishReview && item.status !== "posted" && !item.reviewed_at ? (
+            <Button onClick={() => onFinishReview(item)} disabled={finishing}>
+              {finishing ? (
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+              ) : (
+                <CheckCircle2 className="mr-2 h-4 w-4" />
+              )}
+              Finish Review
+            </Button>
+          ) : (
+            <Button
+              onClick={() => post.mutate()}
+              disabled={post.isPending || !item.enabled || item.status === "posted"}
+            >
+              <Send className="mr-2 h-4 w-4" />
+              {item.status === "posted" ? "Already posted" : "Post now"}
+            </Button>
+          )}
         </div>
       </DialogContent>
     </Dialog>

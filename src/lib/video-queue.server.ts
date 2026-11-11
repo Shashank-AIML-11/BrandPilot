@@ -28,7 +28,7 @@ import { posterComposerEnabled } from "@/lib/content.server";
 async function designPoster(
   admin: AdminClient,
   photo: Uint8Array,
-  item: { id: string; title?: string | null; summary?: string | null },
+  item: { id: string; title?: string | null; summary?: string | null; image_prompt?: string | null },
   brand: Record<string, unknown> | null,
   aspect: string,
 ): Promise<Uint8Array> {

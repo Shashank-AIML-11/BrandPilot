@@ -632,8 +632,13 @@ Rules:
 - summary: which product/service + value prop + who it's for.
 - hashtags: one space-separated string, 4-6 tags from the brand's keywords/niche/name.
 - caption: ready-to-post, platform-appropriate length and tone, in the brand's voice.
-- script (video types): spoken narration, [HOOK]/[BODY]/[CTA] markers, full sentences (no bullet fragments), names the business + product. Reels/Shorts/TikTok: 15-45s. product_service_video: 60-90s.
-- image_prompt: on-image text lines for single-image types (drawn from real brand products/propositions); for video types, describes the thumbnail with a short (max 5 words) headline.
+- script (video types): must clearly speak the same three selling points as the image_prompt features, then the CTA. Spoken narration, [HOOK]/[BODY]/[CTA] markers, full sentences (no bullet fragments), names the business + product. Reels/Shorts/TikTok: 15-45s. product_service_video: 60-90s.
+- image_prompt (ALL image and video types): the text printed on the poster/cover, in EXACTLY this format with "||" separators and nothing else:
+  HEADLINE || FEATURE 1 || FEATURE 2 || FEATURE 3 || CTA
+  HEADLINE: a scroll-stopping hook, max 7 words, about a real benefit or result for the ideal customer.
+  FEATURE 1-3: three DIFFERENT, concrete selling points taken from the brand's real products, services and value propositions (a price, speed, number, guarantee, capability or outcome), max 5 words each. No vague buzzwords ("innovative", "best-in-class").
+  CTA: max 4 words, e.g. "Start free today" or "Book a demo".
+  Plain English only, no emojis, no quotation marks. Example: Grow Faster With Less Effort || 11 platforms, one dashboard || Posts go live automatically || Plans from INR 2,499 || Start free today
 - slides (carousel only): 3-6 objects, each with headline + one-line subtext + its own image_prompt, forming one argument (hook → proof → CTA).
 - time: 24h "HH:MM", spread through the working day.
 - Vary angles, no repeated hooks/structure: education, product spotlight, pain point, myth-busting, proof, behind-the-scenes, industry insight, offer — always this brand specifically.

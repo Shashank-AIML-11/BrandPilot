@@ -1,6 +1,6 @@
 import { useBrandScope } from "@/lib/brand-scope";
 import { useEffect, useMemo, useState, useRef, } from "react";
-import { createFileRoute, useNavigate } from "@tanstack/react-router";
+import { createFileRoute } from "@tanstack/react-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   addDays,
@@ -109,7 +109,6 @@ const CHANNELS_BY_TYPE: Record<string, string[]> = {
 
 function CalendarPage() {
   const queryClient = useQueryClient();
-  const navigate = useNavigate();
 
   const [cursor, setCursor] = useState(() => startOfMonth(new Date()));
   // Month grid (default) or a single week with the full cards listed under each day.
@@ -741,9 +740,13 @@ function CalendarPage() {
    * POST CONTENT
    */
   function postContent() {
-    // Posting is a manual, per-card choice: open the Content Library, where cards can
-    // be selected and published with the "Post now" button.
-    void navigate({ to: "/content-library" });
+    // Posting is a manual, per-card choice: open this week's "Reviewed - Ready to Post" tab,
+    // where cards are ticked and published with "Post now".
+    const thisWeek = startOfWeek(new Date(), { weekStartsOn: 1 });
+    setWeekStart(thisWeek);
+    setCursor(startOfMonth(thisWeek));
+    setView("week");
+    setReviewTab("reviewed");
   }
 
   /*
@@ -989,10 +992,34 @@ function CalendarPage() {
             ))}
           </div>
           {reviewTab === "reviewed" && (
+            <div className="flex items-center gap-2">
+            <Button
+              size="sm"
+              variant="outline"
+              disabled={reviewCounts.reviewed === 0 || postProgress !== null}
+              onClick={() => {
+                const ids = weekItems.filter((i) => reviewTabOf(i) === "reviewed").map((i) => i.id);
+                const allSelected = ids.length > 0 && ids.every((id) => selectedIds.has(id));
+                setSelectedIds((prev) => {
+                  const next = new Set(prev);
+                  for (const id of ids) {
+                    if (allSelected) next.delete(id);
+                    else next.add(id);
+                  }
+                  return next;
+                });
+              }}
+            >
+              {weekItems.filter((i) => reviewTabOf(i) === "reviewed").every((i) => selectedIds.has(i.id)) &&
+              reviewCounts.reviewed > 0
+                ? "Clear selection"
+                : "Select all"}
+            </Button>
             <Button size="sm" onClick={() => void postSelected()} disabled={selectedItems.length === 0 || postProgress !== null}>
               {postProgress ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Send className="mr-2 h-4 w-4" />}
               {postProgress ? `Posting ${postProgress.done}/${postProgress.total}…` : selectedItems.length ? `Post now (${selectedItems.length})` : "Post now"}
             </Button>
+            </div>
           )}
         </div>
       )}
@@ -1008,7 +1035,9 @@ function CalendarPage() {
           {DOW.map((day, i) => (
             <div
               key={day}
-              className="px-3 py-2 text-center text-xs uppercase tracking-wide text-muted-foreground"
+              className={`border-r border-border px-3 py-2 text-center text-xs uppercase tracking-wide ${
+                view === "week" && isToday(weekDays[i]!) ? "font-semibold text-primary" : "text-muted-foreground"
+              }`}
             >
               {day}
               {view === "week" ? ` ${format(weekDays[i]!, "d MMM")}` : ""}
@@ -1027,19 +1056,7 @@ function CalendarPage() {
               const key = format(day, "yyyy-MM-dd");
               const list = (byDate.get(key) ?? []).filter((i) => reviewTabOf(i) === reviewTab);
               return (
-                <div key={key} className="min-h-[28rem] min-w-0 border-b border-r border-border p-2">
-                  <div className="mb-2 flex items-center justify-between">
-                    <span
-                      className={`inline-flex h-6 w-6 items-center justify-center rounded-full text-xs ${
-                        isToday(day) ? "bg-primary font-semibold text-primary-foreground" : ""
-                      }`}
-                    >
-                      {format(day, "d")}
-                    </span>
-                    <span className="text-[11px] text-muted-foreground">
-                      {list.length} piece{list.length === 1 ? "" : "s"}
-                    </span>
-                  </div>
+                <div key={key} className="min-h-[34rem] min-w-0 border-b border-r border-border p-2">
                   <div className="space-y-2">
                     {list.length === 0 && (
                       <p className="pt-6 text-center text-[11px] text-muted-foreground">

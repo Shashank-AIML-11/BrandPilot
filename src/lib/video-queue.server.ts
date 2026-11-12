@@ -311,8 +311,21 @@ export async function processVideoQueue(admin: AdminClient, userId?: string) {
             // one and falls through to submit an actual job below.
           }
 
+          // Claim the row BEFORE paying, so two overlapping runs can never both
+          // submit a paid job for the same item.
+          const { data: claimed, error: claimError } = await admin
+            .from("content_items")
+            .update({ video_status: "generating", video_error: null })
+            .eq("id", item.id)
+            .eq("video_status", "none")
+            .select("id");
+          if (claimError) throw new Error(claimError.message);
+          if (!claimed || claimed.length === 0) continue;
+
           const brand = await loadBrand(admin, item.user_id, item.brand_id);
-          const job = await createVideoJob(
+          let job;
+          try {
+          job = await createVideoJob(
             videoPromptFor(
               {
                 type: item.type,
@@ -330,14 +343,20 @@ export async function processVideoQueue(admin: AdminClient, userId?: string) {
               // Locked at 10s flat for every type during testing, to
               // keep per-generation cost predictable — raise once
               // volume/cost is confirmed acceptable.
-              durationSeconds: 10,
+              durationSeconds: envInt("VIDEO_SECONDS", 6, 10),
             },
           );
+          } catch (submitError) {
+            // Never auto-retry a paid call: mark failed and stop.
+            const msg = submitError instanceof Error ? submitError.message : "Video request failed.";
+            await admin.from("content_items").update({ video_status: "failed", video_error: msg.slice(0, 500) }).eq("id", item.id);
+            failed += 1;
+            continue;
+          }
           const { error: updateError } = await admin
             .from("content_items")
             .update({ video_job_id: job.id, video_status: "generating", video_error: null })
-            .eq("id", item.id)
-            .eq("video_status", "none");
+            .eq("id", item.id);
           if (updateError) throw new Error(updateError.message);
           started += 1;
         } catch (error) {

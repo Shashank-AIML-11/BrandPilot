@@ -330,7 +330,7 @@ function falVideoBody(
       prompt,
       aspect_ratio: aspectRatio,
       duration: seconds,
-      resolution: "1080p",
+      resolution: process.env.VIDEO_RESOLUTION || "720p",
       generate_audio: true,
     };
   }

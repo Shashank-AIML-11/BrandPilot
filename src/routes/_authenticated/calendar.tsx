@@ -75,6 +75,14 @@ export const Route = createFileRoute("/_authenticated/calendar")({
 
 const DOW = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
 
+/**
+ * Production app (app.loviza.click). "Refresh Calendar" is a testing tool, so it is
+ * hidden there. Set VITE_APP_ENV=production in Vercel to override the host check.
+ */
+const IS_PRODUCTION_APP =
+  import.meta.env["VITE_APP_ENV"] === "production" ||
+  (typeof window !== "undefined" && window.location.hostname === "app.loviza.click");
+
 type ReviewTab = "generated" | "reviewed" | "posted";
 const REVIEW_TABS: Array<{ id: ReviewTab; label: string }> = [
   { id: "generated", label: "Generated" },
@@ -132,6 +140,14 @@ function CalendarPage() {
   const weekEnd = endOfWeek(weekStart, { weekStartsOn: 1 });
   const weekDays = useMemo(() => Array.from({ length: 7 }, (_, i) => addDays(weekStart, i)), [weekStart]);
   const weekLabel = `${format(weekStart, "d MMM")} – ${format(weekEnd, "d MMM yyyy")}`;
+
+  // The week the "Generate Content" button works on: the selected week in Weekly view,
+  // otherwise the current week.
+  const currentWeekStart = startOfWeek(new Date(), { weekStartsOn: 1 });
+  const targetWeekStart = view === "week" ? weekStart : currentWeekStart;
+  const targetWeekEnd = endOfWeek(targetWeekStart, { weekStartsOn: 1 });
+  const targetIsCurrent = format(targetWeekStart, "yyyy-MM-dd") === format(currentWeekStart, "yyyy-MM-dd");
+  const targetIsPast = format(targetWeekEnd, "yyyy-MM-dd") < format(new Date(), "yyyy-MM-dd");
 
   const days = useMemo(
     () =>
@@ -195,6 +211,22 @@ function CalendarPage() {
       });
 
       return hasRenderingAssets ? 15000 : false;
+    },
+  });
+
+  // Has this week already been generated? (any content for the brand in Mon-Sun)
+  const { data: weekGenerated = false } = useQuery({
+    queryKey: ["content", monthKey, "weekgen", scope.brandId, format(targetWeekStart, "yyyy-MM-dd")],
+    enabled: !scope.loading,
+    queryFn: async () => {
+      const { count, error } = await supabase
+        .from("content_items")
+        .select("id", { count: "exact", head: true })
+        .match(brandFilter)
+        .gte("scheduled_date", format(targetWeekStart, "yyyy-MM-dd"))
+        .lte("scheduled_date", format(targetWeekEnd, "yyyy-MM-dd"));
+      if (error) throw error;
+      return (count ?? 0) > 0;
     },
   });
 
@@ -537,28 +569,29 @@ function CalendarPage() {
     * It does NOT wait for AI generation.
     */
     async function generateMonth() {
-        if (
-    queueing ||
-    activeJob ||
-    items.length > 0 ||
-    refreshing
-  ) {
-    return;
-  }
+      if (queueing || activeJob || refreshing) return;
+
+      if (weekGenerated) {
+        toast.info(
+          targetIsCurrent
+            ? "Content for Current week is already Generated."
+            : "Content for this week is already Generated.",
+        );
+        return;
+      }
 
       const monthDays = eachDayOfInterval({
-        start: monthStart,
-        end: monthEnd,
-      }).map((day) =>
-        format(day, "yyyy-MM-dd"),
-      );
+        start: targetWeekStart,
+        end: targetWeekEnd,
+      }).map((day) => format(day, "yyyy-MM-dd"));
 
       setQueueing(true);
 
       try {
         const result = await queueMonthGeneration({
           data: {
-            month: monthKey,
+            month: format(targetWeekStart, "yyyy-MM"),
+            weekStart: format(targetWeekStart, "yyyy-MM-dd"),
             dates: monthDays,
             ...(scope.brandId ? { brandId: scope.brandId } : {}),
           },
@@ -574,14 +607,8 @@ function CalendarPage() {
 
         toast.success(
           result?.queued
-            ? `${result.queued} days queued for ${format(
-                cursor,
-                "MMMM yyyy",
-              )}. Generation will continue in the background.`
-            : `${format(
-                cursor,
-                "MMMM yyyy",
-              )} generation queued.`,
+            ? `${result.queued} days queued for the week of ${format(targetWeekStart, "d MMM")}. Generation will continue in the background.`
+            : `Generation queued for the week of ${format(targetWeekStart, "d MMM")}.`,
         );
       } catch (error) {
         toast.error(
@@ -766,13 +793,6 @@ function CalendarPage() {
     }
   }, [items, detail]);
 
-  // Only this month's content counts (the week view can also load days of a neighbouring month).
-  const hasCalendarContent = items.some(
-    (i) =>
-      i.scheduled_date >= format(monthStart, "yyyy-MM-dd") &&
-      i.scheduled_date <= format(monthEnd, "yyyy-MM-dd"),
-  );
-
   return (
     <div className="space-y-6">
 
@@ -860,11 +880,14 @@ function CalendarPage() {
           {/* Generate */}
           <Button
             onClick={generateMonth}
+            // The current week stays clickable so it can explain it is already generated;
+            // any other week is disabled once generated (and past weeks never generate).
             disabled={
               queueing ||
               Boolean(activeJob) ||
               refreshing ||
-              hasCalendarContent
+              targetIsPast ||
+              (weekGenerated && !targetIsCurrent)
             }
           >
             {queueing ? (
@@ -902,7 +925,8 @@ function CalendarPage() {
               : "Post Content"}
           </Button>
 
-          {/* REFRESH CALENDAR */}
+          {/* REFRESH CALENDAR — testing tool, not shown in Production */}
+          {!IS_PRODUCTION_APP && (
           <Button
             variant="outline"
             onClick={refreshCalendar}
@@ -921,6 +945,7 @@ function CalendarPage() {
               ? "Refreshing…"
               : "Refresh Calendar"}
           </Button>
+          )}
 
         </div>
       </div>

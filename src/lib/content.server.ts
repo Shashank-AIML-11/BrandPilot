@@ -217,9 +217,17 @@ export const WEEK_PLAN: ContentType[][] = [
 
 /** Quota for 7 consecutive dates (starting at the first date) following WEEK_PLAN. */
 export function weeklyContentPlan(dates: string[]): Record<string, DailyContentQuota> {
+  // With fewer than 7 days left in the week, whole groups of WEEK_PLAN are packed
+  // onto the remaining days so all 11 types still go out (group g -> day floor(g*n/7)).
+  const n = Math.max(dates.length, 1);
+  const typesByDay: ContentType[][] = dates.map(() => []);
+  WEEK_PLAN.forEach((group, g) => {
+    const day = Math.min(Math.floor((g * n) / WEEK_PLAN.length), n - 1);
+    typesByDay[day]?.push(...group);
+  });
   return Object.fromEntries(
     dates.map((date, i) => {
-      const types = WEEK_PLAN[i % WEEK_PLAN.length] ?? [];
+      const types = typesByDay[i] ?? [];
       return [
         date,
         Object.fromEntries(CONTENT_TYPES.map((t) => [t, types.includes(t) ? 1 : 0])) as DailyContentQuota,

@@ -3,6 +3,7 @@ import { useEffect, useMemo, useState, useRef, } from "react";
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
+  addDays,
   addMonths,
   eachDayOfInterval,
   endOfMonth,
@@ -22,10 +23,11 @@ import {
   RefreshCw,
   Send,
   Sparkles,
+  ImageOff,
 } from "lucide-react";
 
 import { supabase } from "@/integrations/supabase/client";
-import { prefetchMediaUrls } from "@/lib/media";
+import { cachedMediaUrl, prefetchMediaUrls } from "@/lib/media";
 import { queueMonthGeneration, processGenerationQueueNow, processVideoQueueNow } from "@/lib/content.functions";
 import { publishAllContent } from "@/lib/channels.functions";
 
@@ -75,6 +77,9 @@ function CalendarPage() {
   const navigate = useNavigate();
 
   const [cursor, setCursor] = useState(() => startOfMonth(new Date()));
+  // Month grid (default) or a single week with the full cards listed under each day.
+  const [view, setView] = useState<"month" | "week">("month");
+  const [weekStart, setWeekStart] = useState(() => startOfWeek(new Date(), { weekStartsOn: 1 }));
   const [openDay, setOpenDay] = useState<string | null>(null);
   const [detail, setDetail] = useState<ContentItem | null>(null);
 
@@ -92,6 +97,10 @@ function CalendarPage() {
   const monthStart = startOfMonth(cursor);
   const monthEnd = endOfMonth(cursor);
 
+  const weekEnd = endOfWeek(weekStart, { weekStartsOn: 1 });
+  const weekDays = useMemo(() => Array.from({ length: 7 }, (_, i) => addDays(weekStart, i)), [weekStart]);
+  const weekLabel = `${format(weekStart, "d MMM")} – ${format(weekEnd, "d MMM yyyy")}`;
+
   const days = useMemo(
     () =>
       eachDayOfInterval({
@@ -105,7 +114,8 @@ function CalendarPage() {
    * LOAD CURRENT MONTH CONTENT
    */
   const { data: items = [], isLoading } = useQuery({
-    queryKey: ["content", monthKey, scope.brandId],
+    // In week view the range also covers the selected week (it can span two months).
+    queryKey: ["content", monthKey, scope.brandId, view === "week" ? format(weekStart, "yyyy-MM-dd") : "month"],
     enabled: !scope.loading,
 
     queryFn: async () => {
@@ -115,11 +125,11 @@ function CalendarPage() {
         .match(brandFilter)
         .gte(
           "scheduled_date",
-          format(monthStart, "yyyy-MM-dd"),
+          format(view === "week" && weekStart < monthStart ? weekStart : monthStart, "yyyy-MM-dd"),
         )
         .lte(
           "scheduled_date",
-          format(monthEnd, "yyyy-MM-dd"),
+          format(view === "week" && weekEnd > monthEnd ? weekEnd : monthEnd, "yyyy-MM-dd"),
         )
         .order("scheduled_time", {
           ascending: true,
@@ -662,7 +672,12 @@ function CalendarPage() {
     }
   }, [items, detail]);
 
-  const hasCalendarContent = items.length > 0;
+  // Only this month's content counts (the week view can also load days of a neighbouring month).
+  const hasCalendarContent = items.some(
+    (i) =>
+      i.scheduled_date >= format(monthStart, "yyyy-MM-dd") &&
+      i.scheduled_date <= format(monthEnd, "yyyy-MM-dd"),
+  );
 
   return (
     <div className="space-y-6">
@@ -677,35 +692,73 @@ function CalendarPage() {
           <h1 className="text-2xl font-bold">
             Content Calendar
           </h1>
+
+          <p className="mt-1 text-sm text-muted-foreground">
+            Plan-based posts, carousels and videos,
+            generated from your brand profile.
+          </p>
         </div>
+
         <div className="flex flex-wrap items-center gap-2">
-          {/* Previous Month */}
+
+          {/* Month / Week toggle */}
+          <div className="inline-flex rounded-md border border-border p-0.5">
+            {(["month", "week"] as const).map((v) => (
+              <Button
+                key={v}
+                type="button"
+                size="sm"
+                variant={view === v ? "default" : "ghost"}
+                className="h-8 px-3 capitalize"
+                onClick={() => {
+                  if (v === "week" && view !== "week") {
+                    // Show the week containing today when it is in the visible month, else the month's first week.
+                    const today = new Date();
+                    setWeekStart(
+                      isSameMonth(today, cursor)
+                        ? startOfWeek(today, { weekStartsOn: 1 })
+                        : startOfWeek(startOfMonth(cursor), { weekStartsOn: 1 }),
+                    );
+                  }
+                  setView(v);
+                }}
+              >
+                {v === "month" ? "Monthly" : "Weekly"}
+              </Button>
+            ))}
+          </div>
+
+          {/* Previous */}
           <Button
             variant="outline"
             size="icon"
-            onClick={() =>
-              setCursor(
-                addMonths(cursor, -1),
-              )
-            }
+            onClick={() => {
+              if (view === "week") {
+                const next = addDays(weekStart, -7);
+                setWeekStart(next);
+                setCursor(startOfMonth(next));
+              } else setCursor(addMonths(cursor, -1));
+            }}
           >
             <ChevronLeft className="h-4 w-4" />
           </Button>
 
-          {/* Current Month */}
-          <span className="w-40 text-center font-display text-lg font-semibold">
-            {format(cursor, "MMMM yyyy")}
+          {/* Current period */}
+          <span className="w-44 text-center font-display text-lg font-semibold">
+            {view === "week" ? weekLabel : format(cursor, "MMMM yyyy")}
           </span>
 
-          {/* Next Month */}
+          {/* Next */}
           <Button
             variant="outline"
             size="icon"
-            onClick={() =>
-              setCursor(
-                addMonths(cursor, 1),
-              )
-            }
+            onClick={() => {
+              if (view === "week") {
+                const next = addDays(weekStart, 7);
+                setWeekStart(next);
+                setCursor(startOfMonth(next));
+              } else setCursor(addMonths(cursor, 1));
+            }}
           >
             <ChevronRight className="h-4 w-4" />
           </Button>
@@ -812,12 +865,13 @@ function CalendarPage() {
 
         <div className="grid grid-cols-7 border-b border-border bg-card">
 
-          {DOW.map((day) => (
+          {DOW.map((day, i) => (
             <div
               key={day}
               className="px-3 py-2 text-center text-xs uppercase tracking-wide text-muted-foreground"
             >
               {day}
+              {view === "week" ? ` ${format(weekDays[i]!, "d MMM")}` : ""}
             </div>
           ))}
 
@@ -826,6 +880,82 @@ function CalendarPage() {
         {isLoading ? (
           <div className="flex h-72 items-center justify-center">
             <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+          </div>
+        ) : view === "week" ? (
+          <div className="grid grid-cols-7">
+            {weekDays.map((day) => {
+              const key = format(day, "yyyy-MM-dd");
+              const list = byDate.get(key) ?? [];
+              return (
+                <div key={key} className="min-h-[28rem] min-w-0 border-b border-r border-border p-2">
+                  <div className="mb-2 flex items-center justify-between">
+                    <span
+                      className={`inline-flex h-6 w-6 items-center justify-center rounded-full text-xs ${
+                        isToday(day) ? "bg-primary font-semibold text-primary-foreground" : ""
+                      }`}
+                    >
+                      {format(day, "d")}
+                    </span>
+                    <span className="text-[11px] text-muted-foreground">
+                      {list.length} piece{list.length === 1 ? "" : "s"}
+                    </span>
+                  </div>
+                  <div className="space-y-2">
+                    {list.length === 0 && (
+                      <p className="pt-6 text-center text-[11px] text-muted-foreground">Nothing scheduled</p>
+                    )}
+                    {list.map((item) => {
+                      const raw = item.image_url ?? item.carousel_image_urls?.[0] ?? null;
+                      const thumb = cachedMediaUrl(raw) ?? raw;
+                      return (
+                        <button
+                          key={item.id}
+                          type="button"
+                          onClick={() => setDetail(item)}
+                          className="w-full overflow-hidden rounded-lg border border-border text-left transition-colors hover:border-primary/50 hover:bg-accent"
+                        >
+                          <div className="relative aspect-square w-full bg-muted/20">
+                            {thumb ? (
+                              <img src={thumb} alt={item.title} className="h-full w-full object-cover" />
+                            ) : (
+                              <div className="flex h-full w-full items-center justify-center text-muted-foreground/40">
+                                <ImageOff className="h-5 w-5" />
+                              </div>
+                            )}
+                            <Badge variant="outline" className={`absolute left-1.5 top-1.5 text-[10px] ${typeStyles[item.type] ?? ""}`}>
+                              {item.type}
+                            </Badge>
+                          </div>
+                          <div className="space-y-1 p-2">
+                            <p className="line-clamp-2 text-xs font-medium leading-snug">{item.title}</p>
+                            <div className="flex items-center justify-between text-[11px] text-muted-foreground">
+                              <span>{item.scheduled_time?.slice(0, 5) ?? ""}</span>
+                              <span
+                                className={
+                                  item.status === "posted"
+                                    ? "text-success"
+                                    : (item as { reviewed_at?: string | null }).reviewed_at
+                                      ? "text-success"
+                                      : ""
+                                }
+                              >
+                                {item.status === "posted"
+                                  ? "Posted"
+                                  : (item as { reviewed_at?: string | null }).reviewed_at
+                                    ? "Reviewed"
+                                    : item.status === "draft"
+                                      ? "Rendering"
+                                      : "Generated"}
+                              </span>
+                            </div>
+                          </div>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              );
+            })}
           </div>
         ) : (
           <div className="grid grid-cols-7">

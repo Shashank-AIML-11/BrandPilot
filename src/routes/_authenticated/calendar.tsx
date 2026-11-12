@@ -800,17 +800,13 @@ function CalendarPage() {
       {/* HEADER */}
       {/* ====================================================== */}
 
-      <div className="flex flex-wrap items-end justify-between gap-4">
+      {/* Stays pinned under the top bar while the calendar scrolls. */}
+      <div className="sticky top-16 z-20 -mx-4 flex flex-wrap items-end justify-between gap-4 border-b border-border bg-background px-4 pb-3 pt-2 sm:-mx-8 sm:px-8">
 
         <div>
           <h1 className="text-2xl font-bold">
             Content Calendar
           </h1>
-
-          <p className="mt-1 text-sm text-muted-foreground">
-            Plan-based posts, carousels and videos,
-            generated from your brand profile.
-          </p>
         </div>
 
         <div className="flex flex-wrap items-center gap-2">

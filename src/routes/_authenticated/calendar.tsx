@@ -24,12 +24,15 @@ import {
   Send,
   Sparkles,
   ImageOff,
+  CheckCircle2,
 } from "lucide-react";
 
 import { supabase } from "@/integrations/supabase/client";
 import { cachedMediaUrl, prefetchMediaUrls } from "@/lib/media";
 import { queueMonthGeneration, processGenerationQueueNow, processVideoQueueNow } from "@/lib/content.functions";
-import { publishAllContent } from "@/lib/channels.functions";
+import { publishAllContent, publishContentItem } from "@/lib/channels.functions";
+import { useServerFn } from "@tanstack/react-start";
+import { Checkbox } from "@/components/ui/checkbox";
 
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -72,6 +75,30 @@ export const Route = createFileRoute("/_authenticated/calendar")({
 
 const DOW = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
 
+type ReviewTab = "generated" | "reviewed" | "posted";
+const REVIEW_TABS: Array<{ id: ReviewTab; label: string }> = [
+  { id: "generated", label: "Generated" },
+  { id: "reviewed", label: "Reviewed - Ready to Post" },
+  { id: "posted", label: "Posted" },
+];
+const reviewTabOf = (item: ContentItem): ReviewTab =>
+  item.status === "posted" ? "posted" : item.reviewed_at ? "reviewed" : "generated";
+
+/** Channels each format may be posted to (same split the detail dialog uses). */
+const CHANNELS_BY_TYPE: Record<string, string[]> = {
+  blog: ["Website", "LinkedIn", "Medium", "Quora"],
+  linkedin_post: ["LinkedIn"],
+  instagram_post: ["Instagram"],
+  instagram_reel: ["Instagram"],
+  facebook_post: ["Facebook"],
+  twitter_post: ["X"],
+  pinterest: ["Pinterest"],
+  youtube_short: ["YouTube"],
+  tiktok_video: ["TikTok"],
+  product_service_video: ["YouTube", "Website"],
+  carousel: ["LinkedIn", "Instagram"],
+};
+
 function CalendarPage() {
   const queryClient = useQueryClient();
   const navigate = useNavigate();
@@ -80,6 +107,11 @@ function CalendarPage() {
   // Month grid (default) or a single week with the full cards listed under each day.
   const [view, setView] = useState<"month" | "week">("month");
   const [weekStart, setWeekStart] = useState(() => startOfWeek(new Date(), { weekStartsOn: 1 }));
+  const [reviewTab, setReviewTab] = useState<ReviewTab>("generated");
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [finishing, setFinishing] = useState(false);
+  const [postProgress, setPostProgress] = useState<{ done: number; total: number } | null>(null);
+  const publishItem = useServerFn(publishContentItem);
   const [openDay, setOpenDay] = useState<string | null>(null);
   const [detail, setDetail] = useState<ContentItem | null>(null);
 
@@ -434,6 +466,68 @@ function CalendarPage() {
 
       return map;
     }, [items]);
+
+    // Items of the selected week and how many sit in each review tab.
+    const weekItems = useMemo(() => {
+      const from = format(weekStart, "yyyy-MM-dd");
+      const to = format(weekEnd, "yyyy-MM-dd");
+      return items.filter((i) => i.scheduled_date >= from && i.scheduled_date <= to);
+    }, [items, weekStart, weekEnd]);
+    const reviewCounts = useMemo(() => {
+      const c: Record<ReviewTab, number> = { generated: 0, reviewed: 0, posted: 0 };
+      for (const i of weekItems) c[reviewTabOf(i)] += 1;
+      return c;
+    }, [weekItems]);
+    const selectedItems = useMemo(
+      () => items.filter((i) => selectedIds.has(i.id) && reviewTabOf(i) === "reviewed"),
+      [items, selectedIds],
+    );
+
+    async function finishReview(item: ContentItem) {
+      setFinishing(true);
+      const { error } = await supabase
+        .from("content_items")
+        .update({ reviewed_at: new Date().toISOString() } as never)
+        .eq("id", item.id);
+      setFinishing(false);
+      if (error) {
+        toast.error(error.message);
+        return;
+      }
+      toast.success("Review finished — moved to “Reviewed - Ready to Post”.");
+      setDetail(null);
+      await queryClient.invalidateQueries({ queryKey: ["content"] });
+    }
+
+    async function postSelected() {
+      const queue = selectedItems;
+      if (queue.length === 0) return;
+      if (!window.confirm(`Post ${queue.length} reviewed piece${queue.length === 1 ? "" : "s"} now? This publishes immediately to your connected handles.`)) return;
+      setPostProgress({ done: 0, total: queue.length });
+      const done: string[] = [];
+      for (let i = 0; i < queue.length; i += 1) {
+        const item = queue[i]!;
+        const allowed = CHANNELS_BY_TYPE[item.type] ?? [];
+        const chosen = (item.platforms ?? []).filter((c) => allowed.includes(c));
+        try {
+          const { results } = await publishItem({ data: { itemId: item.id, channels: chosen.length ? chosen : allowed } });
+          const failed = results.filter((r) => !r.ok);
+          for (const f of failed) toast.error(`“${item.title}” → ${f.channel}: ${f.error}`);
+          if (results.some((r) => r.ok && !r.manual)) toast.success(`Posted “${item.title}”`);
+          if (failed.length === 0) done.push(item.id);
+        } catch (error) {
+          toast.error(`“${item.title}”: ${error instanceof Error ? error.message : "Could not post"}`);
+        }
+        setPostProgress({ done: i + 1, total: queue.length });
+      }
+      setPostProgress(null);
+      setSelectedIds((prev) => {
+        const next = new Set(prev);
+        for (const id of done) next.delete(id);
+        return next;
+      });
+      await queryClient.invalidateQueries({ queryKey: ["content"] });
+    }
 
     /*
     * GENERATE MONTH
@@ -857,6 +951,31 @@ function CalendarPage() {
         </div>
       )}
 
+      {view === "week" && (
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div className="flex flex-wrap gap-1.5">
+            {REVIEW_TABS.map((t) => (
+              <Button
+                key={t.id}
+                type="button"
+                size="sm"
+                variant={reviewTab === t.id ? "default" : "outline"}
+                className="rounded-full"
+                onClick={() => setReviewTab(t.id)}
+              >
+                {t.label} ({reviewCounts[t.id]})
+              </Button>
+            ))}
+          </div>
+          {reviewTab === "reviewed" && (
+            <Button size="sm" onClick={() => void postSelected()} disabled={selectedItems.length === 0 || postProgress !== null}>
+              {postProgress ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Send className="mr-2 h-4 w-4" />}
+              {postProgress ? `Posting ${postProgress.done}/${postProgress.total}…` : selectedItems.length ? `Post now (${selectedItems.length})` : "Post now"}
+            </Button>
+          )}
+        </div>
+      )}
+
       {/* ====================================================== */}
       {/* CALENDAR */}
       {/* ====================================================== */}
@@ -885,7 +1004,7 @@ function CalendarPage() {
           <div className="grid grid-cols-7">
             {weekDays.map((day) => {
               const key = format(day, "yyyy-MM-dd");
-              const list = byDate.get(key) ?? [];
+              const list = (byDate.get(key) ?? []).filter((i) => reviewTabOf(i) === reviewTab);
               return (
                 <div key={key} className="min-h-[28rem] min-w-0 border-b border-r border-border p-2">
                   <div className="mb-2 flex items-center justify-between">
@@ -902,54 +1021,76 @@ function CalendarPage() {
                   </div>
                   <div className="space-y-2">
                     {list.length === 0 && (
-                      <p className="pt-6 text-center text-[11px] text-muted-foreground">Nothing scheduled</p>
+                      <p className="pt-6 text-center text-[11px] text-muted-foreground">
+                        {reviewTab === "generated" ? "Nothing to review" : reviewTab === "reviewed" ? "None reviewed" : "Nothing posted"}
+                      </p>
                     )}
                     {list.map((item) => {
                       const raw = item.image_url ?? item.carousel_image_urls?.[0] ?? null;
                       const thumb = cachedMediaUrl(raw) ?? raw;
+                      const rendering = item.status === "draft";
+                      const isSelected = selectedIds.has(item.id);
                       return (
-                        <button
+                        <div
                           key={item.id}
-                          type="button"
-                          onClick={() => setDetail(item)}
-                          className="w-full overflow-hidden rounded-lg border border-border text-left transition-colors hover:border-primary/50 hover:bg-accent"
+                          className={`relative overflow-hidden rounded-lg border transition-colors hover:border-primary/50 ${
+                            isSelected ? "border-primary ring-1 ring-primary" : "border-border"
+                          }`}
                         >
-                          <div className="relative aspect-square w-full bg-muted/20">
-                            {thumb ? (
-                              <img src={thumb} alt={item.title} className="h-full w-full object-cover" />
-                            ) : (
-                              <div className="flex h-full w-full items-center justify-center text-muted-foreground/40">
-                                <ImageOff className="h-5 w-5" />
-                              </div>
-                            )}
-                            <Badge variant="outline" className={`absolute left-1.5 top-1.5 text-[10px] ${typeStyles[item.type] ?? ""}`}>
-                              {item.type}
-                            </Badge>
-                          </div>
-                          <div className="space-y-1 p-2">
-                            <p className="line-clamp-2 text-xs font-medium leading-snug">{item.title}</p>
-                            <div className="flex items-center justify-between text-[11px] text-muted-foreground">
-                              <span>{item.scheduled_time?.slice(0, 5) ?? ""}</span>
-                              <span
-                                className={
-                                  item.status === "posted"
-                                    ? "text-success"
-                                    : (item as { reviewed_at?: string | null }).reviewed_at
-                                      ? "text-success"
-                                      : ""
-                                }
-                              >
-                                {item.status === "posted"
-                                  ? "Posted"
-                                  : (item as { reviewed_at?: string | null }).reviewed_at
-                                    ? "Reviewed"
-                                    : item.status === "draft"
-                                      ? "Rendering"
-                                      : "Generated"}
-                              </span>
+                          <button type="button" onClick={() => setDetail(item)} className="block w-full text-left">
+                            <div className="relative aspect-square w-full bg-muted/20">
+                              {thumb ? (
+                                <img src={thumb} alt={item.title} className="h-full w-full object-cover" />
+                              ) : (
+                                <div className="flex h-full w-full items-center justify-center text-muted-foreground/40">
+                                  {rendering ? <Loader2 className="h-5 w-5 animate-spin" /> : <ImageOff className="h-5 w-5" />}
+                                </div>
+                              )}
+                              <Badge variant="outline" className={`absolute left-1.5 top-1.5 text-[10px] ${typeStyles[item.type] ?? ""}`}>
+                                {item.type}
+                              </Badge>
                             </div>
+                            <div className="space-y-1 p-2 pb-1">
+                              <p className="line-clamp-2 text-xs font-medium leading-snug">{item.title}</p>
+                              <span className="text-[11px] text-muted-foreground">{item.scheduled_time?.slice(0, 5) ?? ""}</span>
+                            </div>
+                          </button>
+
+                          {/* Bottom-right action */}
+                          <div className="flex justify-end px-2 pb-2">
+                            {reviewTab === "generated" && (
+                              <Button size="sm" className="h-7 px-2.5 text-xs" disabled={rendering} onClick={() => setDetail(item)}>
+                                {rendering ? "Generating…" : "Review"}
+                              </Button>
+                            )}
+                            {reviewTab === "reviewed" && (
+                              <Button size="sm" variant="secondary" className="h-7 gap-1 px-2 text-[11px] text-success" onClick={() => setDetail(item)}>
+                                <CheckCircle2 className="h-3 w-3" /> Reviewed - Ready to Post
+                              </Button>
+                            )}
+                            {reviewTab === "posted" && (
+                              <Badge className="bg-success text-[10px] text-success-foreground">Posted</Badge>
+                            )}
                           </div>
-                        </button>
+
+                          {reviewTab === "reviewed" && (
+                            <div className="absolute right-1.5 top-1.5 z-10 rounded-md bg-background/80 p-1 shadow-sm backdrop-blur-sm">
+                              <Checkbox
+                                className="h-5 w-5"
+                                checked={isSelected}
+                                onCheckedChange={() =>
+                                  setSelectedIds((prev) => {
+                                    const next = new Set(prev);
+                                    if (next.has(item.id)) next.delete(item.id);
+                                    else next.add(item.id);
+                                    return next;
+                                  })
+                                }
+                                aria-label={`Select “${item.title}” to post`}
+                              />
+                            </div>
+                          )}
+                        </div>
                       );
                     })}
                   </div>
@@ -1238,6 +1379,7 @@ function CalendarPage() {
 
       <ContentDetailDialog
         item={detail}
+        {...(view === "week" ? { onFinishReview: (i: ContentItem) => void finishReview(i), finishing } : {})}
         onOpenChange={(open) =>
           !open &&
           setDetail(null)

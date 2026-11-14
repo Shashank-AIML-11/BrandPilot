@@ -20,6 +20,11 @@ const monthInput = z.object({
     .array(z.string().regex(/^\d{4}-\d{2}-\d{2}$/))
     .min(1)
     .max(31),
+  // Monday of the week to generate (Generate Content works one Monday-Sunday week at a time).
+  weekStart: z
+    .string()
+    .regex(/^\d{4}-\d{2}-\d{2}$/)
+    .optional(),
 });
 
 /**

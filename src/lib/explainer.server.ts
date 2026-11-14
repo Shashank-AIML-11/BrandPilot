@@ -166,6 +166,9 @@ export function buildTimeline(input: ExplainerInput) {
 }
 
 export async function submitExplainerRender(input: ExplainerInput): Promise<string> {
+  if (/^rendering\b/i.test(String(input.item.title ?? ""))) {
+    throw new Error("The content text is not written yet; the video will start once it is.");
+  }
   const res = await fetch(`${base()}/render`, {
     method: "POST",
     headers: { "x-api-key": key(), "content-type": "application/json" },

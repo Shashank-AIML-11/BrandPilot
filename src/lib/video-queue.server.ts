@@ -276,6 +276,10 @@ export async function processVideoQueue(admin: AdminClient, userId?: string) {
         .in("type", VIDEO_TYPES)
         .eq("video_status", "none")
         .is("video_url", null)
+        // Never start a paid video from a "Rendering…" placeholder: wait until the real
+        // script and on-screen text have been written (status leaves "draft").
+        .neq("status", "draft")
+        .eq("calendar_hidden", false)
         .order("scheduled_date", { ascending: true })
         .order("scheduled_time", { ascending: true })
         .limit(available);

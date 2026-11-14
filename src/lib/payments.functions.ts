@@ -1,39 +1,56 @@
 import { createServerFn } from "@tanstack/react-start";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import { z } from "zod";
-import { PLANS, type PlanId } from "@/lib/plans";
+import { PLANS, planById } from "@/lib/plans";
+import {
+  daysUntilExpiry,
+  isPeriodActive,
+  LEGACY_AUTOPAY_GRACE_DAYS,
+  nextPeriodEnd,
+  REMINDER_DAYS,
+} from "@/lib/plan-access";
 
-const createInput = z.object({
+/**
+ * Plans are prepaid 30-day periods paid through Razorpay Orders:
+ *   - createPlanOrder    -> opens a payment for one period
+ *   - confirmPlanPayment -> verifies it and adds the 30 days
+ *   - getPlanStatus      -> what the app shows (days left, expired, ...)
+ * The Razorpay webhook also applies paid orders (idempotently), so a user who
+ * closes the tab right after paying still gets their plan.
+ */
+
+// ---------------------------------------------------------------------------
+// createPlanOrder
+// ---------------------------------------------------------------------------
+
+const orderInput = z.object({
   planId: z.enum(["starter", "growth", "scale"]),
 });
 
-/**
- * Creates (or reuses) a Razorpay customer + subscription for the
- * current user, records a "created" row in public.subscriptions, and
- * returns what the client needs to open Razorpay Checkout. The
- * subscription only becomes "active" once Razorpay confirms payment —
- * that transition happens in the webhook, never here.
- */
-export const createRazorpaySubscription = createServerFn({ method: "POST" })
+export const createPlanOrder = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((input: unknown) => createInput.parse(input))
+  .inputValidator((input: unknown) => orderInput.parse(input))
   .handler(async ({ data, context }) => {
     const plan = PLANS.find((p) => p.id === data.planId);
     if (!plan) throw new Error("Unknown plan");
 
-    const { data: existingSubs, error: existingError } = await context.supabase
-      .from("subscriptions")
-      .select("id, plan, status, razorpay_subscription_id")
-      .eq("user_id", context.userId)
-      .in("status", ["pending", "active"])
-      .order("created_at", { ascending: false });
-    if (existingError) throw new Error(existingError.message);
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    const { untyped } = await import("@/lib/untyped-db.server");
 
-    if (existingSubs?.some((s) => s.plan === plan.id)) {
-      throw new Error(
-        `You're already on the ${plan.name} plan. Choose a different plan to switch.`,
-      );
-    }
+    // The most recent plan this user paid for (running or lapsed).
+    const { data: lastSub, error: subError } = await supabaseAdmin
+      .from("subscriptions")
+      .select("id, plan, status, current_period_end, razorpay_subscription_id")
+      .eq("user_id", context.userId)
+      .in("status", ["active", "expired"])
+      .order("created_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    if (subError) throw new Error(subError.message);
+
+    // Same plan as the last one = renewal (extends it). Anything else = a new
+    // plan that starts a fresh 30 days from today.
+    const kind: "new" | "renew" = lastSub && lastSub.plan === plan.id ? "renew" : "new";
 
     const { data: profile, error: profileError } = await context.supabase
       .from("profiles")
@@ -42,144 +59,201 @@ export const createRazorpaySubscription = createServerFn({ method: "POST" })
       .maybeSingle();
     if (profileError) throw new Error(profileError.message);
 
-    // The profiles table is populated by a DB trigger on signup, which
-    // can occasionally land a blank email (e.g. a race during OAuth
-    // redirect setup) and never self-heals afterwards. The JWT's
-    // `email` claim is authoritative and always current, so fall back
-    // to it — and opportunistically repair the stale profiles row so
-    // this doesn't need to run again for this user.
+    // The JWT's email claim is authoritative; fall back to it when the
+    // profiles row has a blank email.
     const claimsEmail =
       typeof context.claims === "object" && context.claims && "email" in context.claims
         ? (context.claims as { email?: unknown }).email
         : undefined;
     const email = profile?.email || (typeof claimsEmail === "string" ? claimsEmail : "");
     if (!email) throw new Error("Your account is missing an email address.");
-
-    if (!profile?.email && email) {
-      const { supabaseAdmin: admin } = await import("@/integrations/supabase/client.server");
-      await admin.from("profiles").update({ email } as never).eq("id", context.userId);
+    if (!profile?.email) {
+      await supabaseAdmin
+        .from("profiles")
+        .update({ email } as never)
+        .eq("id", context.userId);
     }
 
     const razorpay = await import("@/lib/payments/razorpay.server");
-    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
-
-    const customer = await razorpay.ensureCustomer({
-      email,
-      name: profile?.full_name,
+    const amountPaise = plan.priceMonthly * 100;
+    const order = await razorpay.createOrder({
+      amountPaise,
+      receipt: `lv_${context.userId.slice(0, 8)}_${Date.now()}`,
+      notes: { userId: context.userId, planId: plan.id, kind },
     });
 
-    const subscription = await razorpay.createSubscription({
-      planId: plan.id as PlanId,
-      customerId: customer.id,
-      userId: context.userId,
+    const { error: insertError } = await untyped(supabaseAdmin).from("plan_orders").insert({
+      razorpay_order_id: order.id,
+      user_id: context.userId,
+      plan: plan.id,
+      kind,
+      amount_paise: amountPaise,
+      currency: "INR",
     });
+    if (insertError) throw new Error(insertError.message);
 
-    // Upsert on razorpay_subscription_id so retrying a failed checkout
-    // doesn't create duplicate rows.
-    const { error: upsertError } = await supabaseAdmin
-      .from("subscriptions")
-      .upsert(
-        {
-          user_id: context.userId,
-          plan: plan.id,
-          price_cents: plan.priceMonthly * 100,
-          billing_period: "monthly",
-          payment_method: "razorpay",
-          status: "created",
-          currency: "INR",
-          razorpay_subscription_id: subscription.id,
-          razorpay_customer_id: customer.id,
-        } as never,
-        { onConflict: "razorpay_subscription_id" },
-      );
-    if (upsertError) throw new Error(upsertError.message);
-
-    // Cancel every other live subscription now that the new one is
-    // recorded — this is a plan switch, not an additional plan. Best
-    // effort: if Razorpay's cancel call fails for one (e.g. it was
-    // already cancelled there), log and continue rather than blocking
-    // checkout on it; the webhook/reconciliation job can catch stragglers.
-    if (existingSubs?.length) {
-      for (const old of existingSubs) {
-        try {
-          if (old.razorpay_subscription_id) {
-            await razorpay.cancelSubscription(old.razorpay_subscription_id);
-          }
-        } catch (err) {
-          console.error(
-            `[checkout] failed to cancel old subscription ${old.razorpay_subscription_id}`,
-            err,
-          );
-        }
-        await supabaseAdmin
-          .from("subscriptions")
-          .update({ status: "cancelled", cancelled_at: new Date().toISOString() } as never)
-          .eq("id", old.id);
-      }
-    }
+    // Preview of the new expiry, shown before the customer pays.
+    const running =
+      kind === "renew" && lastSub?.current_period_end ? lastSub.current_period_end : null;
+    const newPeriodEnd = nextPeriodEnd(running).toISOString();
 
     return {
-      subscriptionId: subscription.id,
+      orderId: order.id,
+      amountPaise,
+      currency: "INR" as const,
       keyId: razorpay.publicKeyId(),
       planName: plan.name,
+      kind,
+      newPeriodEnd,
       customerEmail: email,
       customerName: profile?.full_name ?? undefined,
     };
   });
 
+// ---------------------------------------------------------------------------
+// confirmPlanPayment
+// ---------------------------------------------------------------------------
+
 const confirmInput = z.object({
+  razorpayOrderId: z.string().min(1),
   razorpayPaymentId: z.string().min(1),
-  razorpaySubscriptionId: z.string().min(1),
   razorpaySignature: z.string().min(1),
 });
 
 /**
- * Called from the client's Razorpay Checkout success handler for fast
- * UI feedback. Verifies the payment signature and, if valid,
- * optimistically marks the subscription active. The webhook
- * (subscription.activated / subscription.charged) is idempotent and
- * remains the authoritative source of truth if this call is skipped
- * (e.g. the user closes the tab right after paying).
+ * Called from the Razorpay Checkout success handler for instant feedback.
+ * Verifies the payment signature, then adds the 30 days. The webhook does the
+ * same idempotently if this call is skipped.
  */
-export const confirmRazorpayPayment = createServerFn({ method: "POST" })
+export const confirmPlanPayment = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((input: unknown) => confirmInput.parse(input))
   .handler(async ({ data, context }) => {
     const razorpay = await import("@/lib/payments/razorpay.server");
-
-    const valid = razorpay.verifyPaymentSignature({
+    const valid = razorpay.verifyOrderPaymentSignature({
+      razorpayOrderId: data.razorpayOrderId,
       razorpayPaymentId: data.razorpayPaymentId,
-      razorpaySubscriptionId: data.razorpaySubscriptionId,
       razorpaySignature: data.razorpaySignature,
     });
     if (!valid) throw new Error("Payment verification failed.");
 
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    const { untyped } = await import("@/lib/untyped-db.server");
 
-    const { data: sub, error: subError } = await supabaseAdmin
-      .from("subscriptions")
-      .select("user_id, plan")
-      .eq("razorpay_subscription_id", data.razorpaySubscriptionId)
+    const { data: order, error: orderError } = await untyped(supabaseAdmin)
+      .from("plan_orders")
+      .select("user_id")
+      .eq("razorpay_order_id", data.razorpayOrderId)
       .maybeSingle();
-    if (subError) throw new Error(subError.message);
-    if (!sub || sub.user_id !== context.userId) {
-      throw new Error("Subscription not found for this user.");
+    if (orderError) throw new Error(orderError.message);
+    if (!order || order.user_id !== context.userId) {
+      throw new Error("Order not found for this user.");
     }
 
-    const { error: updateError } = await supabaseAdmin
-      .from("subscriptions")
-      .update({
-        status: "active",
-        last_payment_id: data.razorpayPaymentId,
-      } as never)
-      .eq("razorpay_subscription_id", data.razorpaySubscriptionId);
-    if (updateError) throw new Error(updateError.message);
+    const { applyPlanPayment } = await import("@/lib/payments/apply-payment.server");
+    const result = await applyPlanPayment(data.razorpayOrderId, data.razorpayPaymentId);
 
-    const { error: planError } = await supabaseAdmin
+    return {
+      status: "active" as const,
+      plan: result.plan,
+      kind: result.kind,
+      periodEnd: result.periodEnd,
+    };
+  });
+
+// ---------------------------------------------------------------------------
+// getPlanStatus
+// ---------------------------------------------------------------------------
+
+export type PlanState = "none" | "active" | "expiring" | "expired" | "root";
+
+export interface PlanStatus {
+  state: PlanState;
+  plan: string | null;
+  planName: string | null;
+  priceInr: number | null;
+  periodEnd: string | null;
+  /** Whole IST days until expiry (0 = expires today, negative = already expired). */
+  daysLeft: number | null;
+  /** Expiry date if the customer renews right now. */
+  renewedUntil: string | null;
+}
+
+const NO_PLAN: PlanStatus = {
+  state: "none",
+  plan: null,
+  planName: null,
+  priceInr: null,
+  periodEnd: null,
+  daysLeft: null,
+  renewedUntil: null,
+};
+
+/**
+ * Current plan state for the signed-in user. If a plan has run past its end
+ * date, this also marks it expired right away, so the app does not have to
+ * wait for the daily job to notice.
+ */
+export const getPlanStatus = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .handler(async ({ context }): Promise<PlanStatus> => {
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    const { ROOT_EMAIL } = await import("@/lib/generation-entitlements");
+
+    const { data: profile } = await supabaseAdmin
       .from("profiles")
-      .update({ plan: sub.plan } as never)
-      .eq("id", context.userId);
-    if (planError) throw new Error(planError.message);
+      .select("email")
+      .eq("id", context.userId)
+      .maybeSingle();
+    if (profile?.email?.trim().toLowerCase() === ROOT_EMAIL) {
+      return { ...NO_PLAN, state: "root" };
+    }
 
-    return { status: "active" as const };
+    const { data: sub, error } = await supabaseAdmin
+      .from("subscriptions")
+      .select("id, plan, status, current_period_end, razorpay_subscription_id")
+      .eq("user_id", context.userId)
+      .in("status", ["active", "expired"])
+      .order("created_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    if (error) throw new Error(error.message);
+    if (!sub) return NO_PLAN;
+
+    const plan = planById(sub.plan);
+    if (!plan) return NO_PLAN;
+
+    const now = new Date();
+    const grace = sub.razorpay_subscription_id ? LEGACY_AUTOPAY_GRACE_DAYS : 0;
+    const lapsed = sub.status === "expired" || !isPeriodActive(sub.current_period_end, now, grace);
+
+    if (lapsed && sub.status === "active") {
+      await supabaseAdmin
+        .from("subscriptions")
+        .update({ status: "expired", expired_at: now.toISOString() } as never)
+        .eq("id", sub.id)
+        .eq("status", "active");
+      await supabaseAdmin
+        .from("profiles")
+        .update({ plan: "free" } as never)
+        .eq("id", context.userId);
+    }
+
+    const periodEnd = sub.current_period_end;
+    const daysLeft = periodEnd ? daysUntilExpiry(periodEnd, now) : null;
+    const state: PlanState = lapsed
+      ? "expired"
+      : daysLeft !== null && daysLeft <= REMINDER_DAYS
+        ? "expiring"
+        : "active";
+
+    return {
+      state,
+      plan: plan.id,
+      planName: plan.name,
+      priceInr: plan.priceMonthly,
+      periodEnd,
+      daysLeft,
+      renewedUntil: nextPeriodEnd(lapsed ? null : periodEnd, now).toISOString(),
+    };
   });

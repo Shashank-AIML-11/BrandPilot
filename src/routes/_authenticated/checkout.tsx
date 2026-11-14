@@ -5,7 +5,8 @@ import { toast } from "sonner";
 import { ArrowLeft, Check, Loader2, Lock } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { formatINR, planById, PLANS, type PlanId } from "@/lib/plans";
-import { createRazorpaySubscription, confirmRazorpayPayment } from "@/lib/payments.functions";
+import { confirmPlanPayment, createPlanOrder } from "@/lib/payments.functions";
+import { formatIstDate } from "@/lib/plan-access";
 import { loadRazorpayScript } from "@/lib/payments/load-razorpay-script";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
@@ -84,33 +85,36 @@ function CheckoutPage() {
     try {
       await loadRazorpayScript();
 
-      const { subscriptionId, keyId, planName, customerEmail, customerName } =
-        await createRazorpaySubscription({ data: { planId: plan.id } });
+      const order = await createPlanOrder({ data: { planId: plan.id } });
 
       const checkout = new window.Razorpay({
-        key: keyId,
-        subscription_id: subscriptionId,
+        key: order.keyId,
+        order_id: order.orderId,
+        amount: order.amountPaise,
+        currency: order.currency,
         name: "LOVIZA",
-        description: `${planName} plan · monthly`,
-        prefill: { name: customerName, email: customerEmail },
-        theme: { color: "#6d28d9" },
+        description: `${order.planName} plan · 30 days`,
+        prefill: { name: order.customerName, email: order.customerEmail },
+        theme: { color: "#00a8c6" },
         handler: async (response) => {
           try {
-            await confirmRazorpayPayment({
+            const result = await confirmPlanPayment({
               data: {
+                razorpayOrderId: response.razorpay_order_id ?? order.orderId,
                 razorpayPaymentId: response.razorpay_payment_id,
-                razorpaySubscriptionId: response.razorpay_subscription_id,
                 razorpaySignature: response.razorpay_signature,
               },
             });
             queryClient.invalidateQueries();
-            toast.success(`${planName} plan activated. Welcome aboard!`);
+            toast.success(
+              `${order.planName} plan activated until ${formatIstDate(result.periodEnd)}. Welcome aboard!`,
+            );
             navigate({ to: "/plan" });
           } catch (err) {
             // Payment succeeded on Razorpay's side even if this
-            // confirmation call fails — the webhook will still
-            // activate the subscription shortly. Let the user know
-            // rather than implying the payment itself failed.
+            // confirmation call fails — the webhook will still add the
+            // 30 days shortly. Let the user know rather than implying
+            // the payment itself failed.
             toast.info(
               "Payment received — finishing setup. This can take a few seconds; refresh the plan page shortly.",
             );
@@ -136,7 +140,7 @@ function CheckoutPage() {
     <form onSubmit={submit} className="mx-auto max-w-4xl space-y-6">
       <div className="flex items-start justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-bold">Complete your subscription</h1>
+          <h1 className="text-2xl font-bold">Complete your payment</h1>
           <p className="mt-1 text-sm text-muted-foreground">
             {currentPlan
               ? "Pick the plan you'd like to switch to, then complete payment securely via Razorpay."
@@ -172,9 +176,7 @@ function CheckoutPage() {
           )}
 
           <section className="surface p-5">
-            <h2 className="text-sm font-semibold">
-              {currentPlan ? "Switch to" : "Plan"}
-            </h2>
+            <h2 className="text-sm font-semibold">{currentPlan ? "Switch to" : "Plan"}</h2>
 
             {loadingCurrentPlan ? (
               <div className="mt-4 flex items-center gap-2 text-sm text-muted-foreground">
@@ -217,8 +219,9 @@ function CheckoutPage() {
           <section className="surface p-5">
             <h2 className="text-sm font-semibold">Payment</h2>
             <p className="mt-2 text-sm text-muted-foreground">
-              Card, UPI, netbanking, and wallets are all available in the next step — Razorpay's
-              secure checkout lets you pick your preferred method there.
+              Each payment covers 30 days of your plan. It does not renew automatically — we'll
+              email you 5 days before it ends so you can renew from the Renew page. Card, UPI,
+              netbanking and wallets are all available in the next step.
             </p>
             <p className="mt-4 flex items-center gap-2 text-xs text-muted-foreground">
               <Lock className="h-3.5 w-3.5" />
@@ -233,7 +236,7 @@ function CheckoutPage() {
           {plan ? (
             <>
               <div className="mt-4 flex items-center justify-between text-sm">
-                <span className="text-muted-foreground">{plan.name} · monthly</span>
+                <span className="text-muted-foreground">{plan.name} · 30 days</span>
                 <span className="font-medium">{formatINR(plan.priceMonthly)}</span>
               </div>
               <div className="mt-2 flex items-center justify-between text-sm">

@@ -4,6 +4,12 @@ import { format } from "date-fns";
 import { Check, Loader2 } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { formatINR, planById } from "@/lib/plans";
+import {
+  formatIstDate,
+  formatIstDateTime,
+  daysUntilExpiry,
+  isPeriodActive,
+} from "@/lib/plan-access";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 
@@ -48,8 +54,23 @@ function PlanPage() {
    * sync with payment status. subs is already ordered by created_at
    * descending, so the first "active" match is the most recent one.
    */
-  const activeSub = data?.subs.find((s) => s.status === "active");
+  const activeSub = data?.subs.find(
+    (s) => s.status === "active" && isPeriodActive(s.current_period_end),
+  );
   const current = activeSub ? planById(activeSub.plan) : null;
+
+  // Most recent plan that has run out, so we can offer a renewal.
+  const lapsedSub = activeSub
+    ? null
+    : data?.subs.find(
+        (s) =>
+          s.status === "expired" ||
+          (s.status === "active" && !isPeriodActive(s.current_period_end)),
+      );
+  const lapsedPlan = lapsedSub ? planById(lapsedSub.plan) : null;
+  const daysLeft = activeSub?.current_period_end
+    ? daysUntilExpiry(activeSub.current_period_end)
+    : null;
 
   return (
     <div className="mx-auto max-w-3xl space-y-6">
@@ -71,7 +92,7 @@ function PlanPage() {
             </div>
             <p className="font-display text-2xl font-bold">
               {formatINR(current.priceMonthly)}
-              <span className="text-sm font-normal text-muted-foreground">/mo</span>
+              <span className="text-sm font-normal text-muted-foreground">/30 days</span>
             </p>
           </div>
           <ul className="mt-5 grid gap-2 sm:grid-cols-2">
@@ -82,9 +103,53 @@ function PlanPage() {
               </li>
             ))}
           </ul>
-          <Button className="mt-6" asChild>
-            <Link to="/pricing">Change plan</Link>
-          </Button>
+          {activeSub?.current_period_end && (
+            <div className="mt-5 rounded-xl border border-border bg-muted/40 p-4 text-sm">
+              <p>
+                Active until <strong>{formatIstDateTime(activeSub.current_period_end)}</strong>
+                {daysLeft !== null && (
+                  <span className="text-muted-foreground">
+                    {" "}
+                    (
+                    {daysLeft <= 0
+                      ? "ends today"
+                      : `${daysLeft} ${daysLeft === 1 ? "day" : "days"} left`}
+                    )
+                  </span>
+                )}
+              </p>
+              <p className="mt-1 text-muted-foreground">
+                Renew any time before then and 30 days are added after this date.
+              </p>
+            </div>
+          )}
+          <div className="mt-6 flex flex-wrap gap-3">
+            <Button asChild>
+              <Link to="/renew">Renew plan</Link>
+            </Button>
+            <Button variant="outline" asChild>
+              <Link to="/pricing">Change plan</Link>
+            </Button>
+          </div>
+        </div>
+      ) : lapsedPlan ? (
+        <div className="surface p-6">
+          <p className="text-xs uppercase tracking-wide text-muted-foreground">Your Plan</p>
+          <h2 className="mt-1 font-display text-2xl font-bold">{lapsedPlan.name} (expired)</h2>
+          <p className="mt-2 text-sm text-muted-foreground">
+            {lapsedSub?.current_period_end
+              ? `It ended on ${formatIstDate(lapsedSub.current_period_end)}. `
+              : ""}
+            Content generation and posting are paused. Your brand profile and content are safe.
+          </p>
+          <div className="mt-6 flex flex-wrap gap-3">
+            <Button asChild>
+              <Link to="/renew">Renew plan</Link>
+            </Button>
+            <Button variant="outline" asChild>
+              <Link to="/pricing">Change plan</Link>
+            </Button>
+          </div>
         </div>
       ) : (
         <div className="surface p-6">

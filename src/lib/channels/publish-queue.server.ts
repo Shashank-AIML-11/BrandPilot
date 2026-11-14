@@ -64,20 +64,32 @@ export async function processPublishQueue(admin: Admin, opts: PublishQueueOption
   const userIds = [...new Set(rows.map((r) => r.user_id))];
   const allowedUsers = new Set<string>();
   if (userIds.length > 0) {
-    const { data: enabled } = await (admin as unknown as {
-      from: (t: string) => {
-        select: (c: string) => {
-          in: (c: string, v: string[]) => {
-            eq: (c: string, v: boolean) => Promise<{ data: Array<{ id: string }> | null }>;
+    const { data: enabled } = await (
+      admin as unknown as {
+        from: (t: string) => {
+          select: (c: string) => {
+            in: (
+              c: string,
+              v: string[],
+            ) => {
+              eq: (c: string, v: boolean) => Promise<{ data: Array<{ id: string }> | null }>;
+            };
           };
         };
-      };
-    })
+      }
+    )
       .from("profiles")
       .select("id")
       .in("id", userIds)
       .eq("autopost_enabled", true);
     for (const row of enabled ?? []) allowedUsers.add(row.id);
+
+    // Plans are prepaid 30-day periods. Once a plan has lapsed, its scheduled
+    // posts are left untouched (not marked as failed) and go out only after
+    // the plan is renewed.
+    const { usersWithAccess } = await import("@/lib/generation-entitlements");
+    const paid = await usersWithAccess(admin as never, [...allowedUsers]);
+    for (const id of [...allowedUsers]) if (!paid.has(id)) allowedUsers.delete(id);
   }
 
   const due = rows
@@ -85,9 +97,7 @@ export async function processPublishQueue(admin: Admin, opts: PublishQueueOption
     .filter((row) => !opts.skipIds?.has(row.id))
     .filter(
       (row) =>
-        opts.ignoreTime ||
-        row.scheduled_date < today ||
-        (row.scheduled_time ?? "00:00:00") <= time,
+        opts.ignoreTime || row.scheduled_date < today || (row.scheduled_time ?? "00:00:00") <= time,
     )
     .filter((row) => (row.platforms ?? []).length > 0)
     // Only publish once the media the channel needs actually exists.

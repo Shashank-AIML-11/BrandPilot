@@ -14,10 +14,12 @@ interface RazorpayWebhookPayload {
     payment?: {
       entity?: {
         id?: string;
+        order_id?: string;
         subscription_id?: string;
         error_description?: string;
       };
     };
+    order?: { entity?: { id?: string } };
   };
 }
 
@@ -68,6 +70,37 @@ export const Route = createFileRoute("/api/public/webhooks/razorpay")({
 
         const subscriptionEntity = body.payload.subscription?.entity;
         const paymentEntity = body.payload.payment?.entity;
+
+        // Prepaid 30-day plans: a paid Razorpay Order adds 30 days to the plan.
+        // Also enable the "payment.captured" (or "order.paid") event on this
+        // webhook in the Razorpay dashboard. Payments that belong to old autopay
+        // subscriptions have an order id we don't know, so they fall through to
+        // the subscription handling below unchanged.
+        if (body.event === "payment.captured" || body.event === "order.paid") {
+          const orderId = paymentEntity?.order_id ?? body.payload.order?.entity?.id;
+          const paymentId = paymentEntity?.id;
+          if (orderId && paymentId) {
+            const { supabaseAdmin: adminDb } =
+              await import("@/integrations/supabase/client.server");
+            const { untyped } = await import("@/lib/untyped-db.server");
+            const { data: ourOrder } = await untyped(adminDb)
+              .from("plan_orders")
+              .select("razorpay_order_id")
+              .eq("razorpay_order_id", orderId)
+              .maybeSingle();
+            if (ourOrder) {
+              try {
+                const { applyPlanPayment } = await import("@/lib/payments/apply-payment.server");
+                await applyPlanPayment(orderId, paymentId);
+                return new Response("ok", { status: 200 });
+              } catch (err) {
+                console.error("[webhook:razorpay] applying plan payment failed", err);
+                // 500 makes Razorpay retry later.
+                return new Response("Apply failed", { status: 500 });
+              }
+            }
+          }
+        }
         const razorpaySubscriptionId = subscriptionEntity?.id ?? paymentEntity?.subscription_id;
 
         if (!razorpaySubscriptionId) {
@@ -102,7 +135,9 @@ export const Route = createFileRoute("/api/public/webhooks/razorpay")({
         const updates: Record<string, unknown> = {};
         if (nextStatus) updates["status"] = nextStatus;
         if (subscriptionEntity?.current_end) {
-          updates["current_period_end"] = new Date(subscriptionEntity.current_end * 1000).toISOString();
+          updates["current_period_end"] = new Date(
+            subscriptionEntity.current_end * 1000,
+          ).toISOString();
         }
         if (body.event === "subscription.cancelled") {
           updates["cancelled_at"] = new Date().toISOString();
@@ -133,11 +168,27 @@ export const Route = createFileRoute("/api/public/webhooks/razorpay")({
             .from("profiles")
             .update({ plan: sub.plan } as never)
             .eq("id", sub.user_id);
-        } else if (nextStatus === "cancelled" || nextStatus === "halted" || nextStatus === "completed") {
-          await supabaseAdmin
-            .from("profiles")
-            .update({ plan: "free" } as never)
-            .eq("id", sub.user_id);
+        } else if (
+          nextStatus === "cancelled" ||
+          nextStatus === "halted" ||
+          nextStatus === "completed"
+        ) {
+          // Only fall back to "free" if the user has no other live plan. A plan
+          // switch cancels the old autopay subscription; that late "cancelled"
+          // event must not wipe the plan the customer just paid for.
+          const { data: stillLive } = await supabaseAdmin
+            .from("subscriptions")
+            .select("id")
+            .eq("user_id", sub.user_id)
+            .eq("status", "active")
+            .neq("razorpay_subscription_id", razorpaySubscriptionId)
+            .limit(1);
+          if (!stillLive?.length) {
+            await supabaseAdmin
+              .from("profiles")
+              .update({ plan: "free" } as never)
+              .eq("id", sub.user_id);
+          }
         }
 
         return new Response("ok", { status: 200 });

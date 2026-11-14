@@ -128,6 +128,46 @@ export async function createSubscription(params: {
   });
 }
 
+interface RazorpayOrder {
+  id: string;
+  amount: number;
+  currency: string;
+  status: string;
+}
+
+/**
+ * Creates a one-time Razorpay Order for a 30-day plan period. The amount is
+ * always taken from our own plan table by the caller, never from the browser.
+ */
+export async function createOrder(params: {
+  amountPaise: number;
+  receipt: string;
+  notes: Record<string, string>;
+}): Promise<RazorpayOrder> {
+  return razorpayFetch<RazorpayOrder>("/orders", {
+    method: "POST",
+    body: JSON.stringify({
+      amount: params.amountPaise,
+      currency: "INR",
+      receipt: params.receipt.slice(0, 40),
+      notes: params.notes,
+    }),
+  });
+}
+
+/**
+ * Verifies the signature Razorpay Checkout returns for an Order payment:
+ * HMAC-SHA256 of "<order_id>|<payment_id>" with the key secret.
+ */
+export function verifyOrderPaymentSignature(params: {
+  razorpayOrderId: string;
+  razorpayPaymentId: string;
+  razorpaySignature: string;
+}): boolean {
+  const payload = `${params.razorpayOrderId}|${params.razorpayPaymentId}`;
+  return safeEqual(hmacHex(payload, keySecret()), params.razorpaySignature);
+}
+
 export async function cancelSubscription(razorpaySubscriptionId: string): Promise<void> {
   await razorpayFetch(`/subscriptions/${razorpaySubscriptionId}/cancel`, {
     method: "POST",

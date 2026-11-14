@@ -8,6 +8,10 @@ export async function publishItemToChannels(
 ): Promise<{ results: PublishResult[] }> {
   const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
 
+  // Posting is a paid feature: refuse once the 30-day plan has lapsed.
+  const { getGenerationEntitlement } = await import("@/lib/generation-entitlements");
+  await getGenerationEntitlement(supabaseAdmin, userId);
+
   const { data } = await supabaseAdmin
     .from("content_items")
     .select(
@@ -17,7 +21,8 @@ export async function publishItemToChannels(
     .eq("user_id", userId)
     .maybeSingle();
 
-  const item = data as unknown as (PublishItem & { published_channels: string[] | null; brand_id: string | null }) | null;
+  const item = data as unknown as
+    (PublishItem & { published_channels: string[] | null; brand_id: string | null }) | null;
   if (!item) throw new Error("Content not found");
 
   const already = new Set(item.published_channels ?? []);
@@ -25,7 +30,13 @@ export async function publishItemToChannels(
   const results: PublishResult[] = [];
 
   for (const channel of targets) {
-    const result = await publishToChannel(supabaseAdmin as never, userId, channel, item, item.brand_id);
+    const result = await publishToChannel(
+      supabaseAdmin as never,
+      userId,
+      channel,
+      item,
+      item.brand_id,
+    );
     results.push(result);
     await supabaseAdmin.from("publish_log").insert({
       user_id: userId,

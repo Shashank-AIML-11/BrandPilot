@@ -195,6 +195,7 @@ export type Database = {
       content_items: {
         Row: {
           reviewed_at: string | null
+          calendar_hidden: boolean
           carousel_image_urls: string[]
           carousel_slides: Json
           brand_id: string | null
@@ -231,6 +232,7 @@ export type Database = {
         }
         Insert: {
           reviewed_at?: string | null
+          calendar_hidden?: boolean
           carousel_image_urls?: string[]
           carousel_slides?: Json
           brand_id?: string | null
@@ -267,6 +269,7 @@ export type Database = {
         }
         Update: {
           reviewed_at?: string | null
+          calendar_hidden?: boolean
           carousel_image_urls?: string[]
           carousel_slides?: Json
           brand_id?: string | null

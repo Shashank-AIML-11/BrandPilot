@@ -170,6 +170,7 @@ export async function processGenerationQueue(admin: AdminClient, userId?: string
       .eq("user_id", job.user_id)
       .eq("brand_id", brand.id)
       .in("scheduled_date", batchDates)
+      .eq("calendar_hidden", false)
       .eq("status", "draft")
       .order("scheduled_date", { ascending: true })
       .order("scheduled_time", { ascending: true });

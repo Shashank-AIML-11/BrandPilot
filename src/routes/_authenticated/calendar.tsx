@@ -170,6 +170,7 @@ function CalendarPage() {
         .from("content_items")
         .select("*")
         .match(brandFilter)
+        .eq("calendar_hidden", false)
         .gte(
           "scheduled_date",
           format(view === "week" && weekStart < monthStart ? weekStart : monthStart, "yyyy-MM-dd"),
@@ -222,6 +223,7 @@ function CalendarPage() {
         .from("content_items")
         .select("id", { count: "exact", head: true })
         .match(brandFilter)
+        .eq("calendar_hidden", false)
         .gte("scheduled_date", format(targetWeekStart, "yyyy-MM-dd"))
         .lte("scheduled_date", format(targetWeekEnd, "yyyy-MM-dd"));
       if (error) throw error;
@@ -634,103 +636,49 @@ function CalendarPage() {
    *  - account data
    */
   async function refreshCalendar() {
-    if (refreshing) return;
+    if (refreshing || view !== "week") return;
 
+    const label = `${format(targetWeekStart, "d MMM")} – ${format(targetWeekEnd, "d MMM yyyy")}`;
     const confirmed = window.confirm(
-      `Clear ALL generated content from ${format(
-        cursor,
-        "MMMM yyyy",
-      )}?\n\nThis will remove the content from this month's calendar.`,
+      `Clear the calendar for ${label}?\n\nThe content is NOT deleted: it stays in the Content Library. The week becomes empty and "Generate Content" is enabled again.`,
     );
-
     if (!confirmed) return;
 
     setRefreshing(true);
-
     try {
-      const {
-        data: userData,
-        error: userError,
-      } = await supabase.auth.getUser();
-
+      const { data: userData, error: userError } = await supabase.auth.getUser();
       if (userError || !userData.user) {
-        throw new Error(
-          "Your login session could not be verified.",
-        );
+        throw new Error("Your login session could not be verified.");
       }
 
-      /*
-       * First remove/cancel the generation job.
-       */
+      // Stop any generation job for this week.
       const { error: jobError } = await supabase
         .from("content_generation_jobs")
         .delete()
         .eq("user_id", userData.user.id)
         .match(brandFilter)
-        .eq("month", monthKey);
+        .eq("month", format(targetWeekStart, "yyyy-MM"));
+      if (jobError) throw new Error(`Could not clear generation job: ${jobError.message}`);
 
-      if (jobError) {
-        throw new Error(
-          `Could not clear generation job: ${jobError.message}`,
-        );
-      }
-
-      /*
-       * Then delete this month's calendar content.
-       */
-      const { error: contentError } = await supabase
+      // Hide (not delete) this week's content from the calendar. It stays in the database and the Library.
+      const { error: hideError } = await supabase
         .from("content_items")
-        .delete()
+        .update({ calendar_hidden: true } as never)
         .eq("user_id", userData.user.id)
         .match(brandFilter)
-        .gte(
-          "scheduled_date",
-          format(monthStart, "yyyy-MM-dd"),
-        )
-        .lte(
-          "scheduled_date",
-          format(monthEnd, "yyyy-MM-dd"),
-        );
+        .gte("scheduled_date", format(targetWeekStart, "yyyy-MM-dd"))
+        .lte("scheduled_date", format(targetWeekEnd, "yyyy-MM-dd"));
+      if (hideError) throw new Error(`Could not clear the calendar: ${hideError.message}`);
 
-      if (contentError) {
-        throw new Error(
-          `Could not clear calendar content: ${contentError.message}`,
-        );
-      }
-
-      /*
-       * Close opened panels.
-       */
       setOpenDay(null);
       setDetail(null);
+      await queryClient.invalidateQueries({ queryKey: ["content"] });
+      await queryClient.invalidateQueries({ queryKey: ["generation-job"] });
+      await queryClient.refetchQueries({ queryKey: ["content"] });
 
-      /*
-       * Force fresh database reads.
-       */
-      await queryClient.invalidateQueries({
-        queryKey: ["content", monthKey],
-      });
-
-      await queryClient.invalidateQueries({
-        queryKey: ["generation-job", monthKey],
-      });
-
-      await queryClient.refetchQueries({
-        queryKey: ["content", monthKey],
-      });
-
-      toast.success(
-        `${format(
-          cursor,
-          "MMMM yyyy",
-        )} calendar has been completely cleared.`,
-      );
+      toast.success(`${label} calendar cleared. The content is still in the Content Library.`);
     } catch (error) {
-      toast.error(
-        error instanceof Error
-          ? error.message
-          : "Could not refresh calendar.",
-      );
+      toast.error(error instanceof Error ? error.message : "Could not refresh calendar.");
     } finally {
       setRefreshing(false);
     }
@@ -879,14 +827,20 @@ function CalendarPage() {
           {/* Generate */}
           <Button
             onClick={generateMonth}
-            // The current week stays clickable so it can explain it is already generated;
-            // any other week is disabled once generated (and past weeks never generate).
+            // Disabled once this week has content (hover shows why); Refresh Calendar re-enables it.
+            title={
+              weekGenerated
+                ? targetIsCurrent
+                  ? "Content for Current week is already Generated"
+                  : "Content for this week is already Generated"
+                : undefined
+            }
             disabled={
               queueing ||
               Boolean(activeJob) ||
               refreshing ||
               targetIsPast ||
-              (weekGenerated && !targetIsCurrent)
+              weekGenerated
             }
           >
             {queueing ? (
@@ -925,13 +879,14 @@ function CalendarPage() {
           </Button>
 
           {/* REFRESH CALENDAR — testing tool, not shown in Production */}
-          {!IS_PRODUCTION_APP && (
+          {!IS_PRODUCTION_APP && view === "week" && (
           <Button
             variant="outline"
             onClick={refreshCalendar}
             disabled={
               refreshing ||
-              queueing
+              queueing ||
+              Boolean(activeJob)
             }
           >
             {refreshing ? (

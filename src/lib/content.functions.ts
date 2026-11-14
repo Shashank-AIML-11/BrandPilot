@@ -1139,6 +1139,7 @@ export const queueMonthGeneration = createServerFn({ method: "POST" })
         .select("id", { count: "exact", head: true })
         .eq("user_id", context.userId)
         .eq("brand_id", brand.id)
+        .eq("calendar_hidden", false)
         .gte("scheduled_date", data.weekStart)
         .lte("scheduled_date", isoOf(endMs));
       if (existing) throw new Error("Content for this week is already generated.");
@@ -1257,6 +1258,7 @@ export const queueMonthGeneration = createServerFn({ method: "POST" })
       .eq("user_id", context.userId)
       .eq("brand_id", brand.id)
       .in("scheduled_date", scheduledDates)
+      .eq("calendar_hidden", false)
       .neq("status", "posted");
 
     if (deleteContentError) {

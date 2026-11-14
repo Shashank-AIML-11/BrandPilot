@@ -360,8 +360,18 @@ function parseFalVideoStatus(raw?: string): VideoJob["status"] {
 
 export async function createVideoJob(
   prompt: string,
-  options: { aspectRatio?: "9:16" | "16:9"; durationSeconds?: number } = {},
+  options: {
+    aspectRatio?: "9:16" | "16:9";
+    durationSeconds?: number;
+    explainer?: import("@/lib/explainer.server").ExplainerInput;
+  } = {},
 ): Promise<VideoJob> {
+  // VIDEO_PROVIDER=shotstack: build a branded explainer (text, voice, logo) instead of a raw fal clip.
+  const ex = await import("@/lib/explainer.server");
+  if (ex.explainerEnabled() && options.explainer) {
+    const id = await ex.submitExplainerRender(options.explainer);
+    return { id: `ss:${id}`, status: "queued" };
+  }
   const model = falVideoModel();
   const res = await fetch(`https://queue.fal.run/${model}`, {
     method: "POST",
@@ -384,6 +394,10 @@ export async function createVideoJob(
 }
 
 export async function getVideoJob(id: string): Promise<VideoJob> {
+  if (id.startsWith("ss:")) {
+    const st = await (await import("@/lib/explainer.server")).explainerStatus(id.slice(3));
+    return { id, status: st.status, error: st.status === "failed" ? { message: st.error || "Video failed." } : null };
+  }
   const model = falVideoModel();
   const res = await fetch(`https://queue.fal.run/${falAppId(model)}/requests/${id}/status`, {
     headers: falHeaders(),
@@ -406,6 +420,7 @@ export async function getVideoJob(id: string): Promise<VideoJob> {
 }
 
 export async function downloadVideoBytes(id: string): Promise<Uint8Array> {
+  if (id.startsWith("ss:")) return (await import("@/lib/explainer.server")).explainerBytes(id.slice(3));
   const model = falVideoModel();
   const res = await fetch(`https://queue.fal.run/${falAppId(model)}/requests/${id}`, {
     headers: falHeaders(),

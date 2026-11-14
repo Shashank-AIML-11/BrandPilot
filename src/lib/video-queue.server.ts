@@ -21,6 +21,31 @@ import {
 import { loadBrand } from "@/lib/brand.server";
 import { posterComposerEnabled } from "@/lib/content.server";
 
+/** Brand text, colours and logo link for the branded explainer video (only used with VIDEO_PROVIDER=shotstack). */
+async function explainerInputFor(
+  admin: AdminClient,
+  item: { id: string; type: string; title: string; summary: string | null; image_prompt: string | null },
+  brand: Record<string, unknown> | null,
+) {
+  let logoUrl: string | null = null;
+  const logoPath = String(brand?.["logo_url"] ?? "");
+  if (logoPath) {
+    const { data } = await admin.storage.from("content-media").createSignedUrl(logoPath, 60 * 60 * 6);
+    logoUrl = data?.signedUrl ?? null;
+  }
+  return {
+    item,
+    brandName: String(brand?.["business_name"] ?? ""),
+    website: String(brand?.["website"] ?? ""),
+    colors: (brand?.["brand_colors"] as Record<string, string> | null) ?? null,
+    logoUrl,
+    photoPrompt: imagePromptFor(
+      { type: item.type, title: item.title, summary: item.summary ?? "", image_prompt: "" },
+      brand as never,
+    ),
+  };
+}
+
 /**
  * Turns the plain AI photo into a designed poster (headline, logo, brand colours).
  * Never throws: if composing fails the plain photo is used so generation keeps working.
@@ -344,6 +369,9 @@ export async function processVideoQueue(admin: AdminClient, userId?: string) {
               // keep per-generation cost predictable — raise once
               // volume/cost is confirmed acceptable.
               durationSeconds: envInt("VIDEO_SECONDS", 6, 10),
+              explainer: (await import("@/lib/explainer.server")).explainerEnabled()
+                ? await explainerInputFor(admin, item, brand as never)
+                : undefined,
             },
           );
           } catch (submitError) {

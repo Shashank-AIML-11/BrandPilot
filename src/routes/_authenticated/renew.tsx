@@ -1,10 +1,19 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { CalendarClock, Check, Loader2, Lock } from "lucide-react";
-import { formatINR, planById } from "@/lib/plans";
-import { formatIstDate, formatIstDateTime } from "@/lib/plan-access";
+import {
+  formatINR,
+  parseBillingCycle,
+  periodDaysFor,
+  planById,
+  planPerMonthInr,
+  planTotalInr,
+  type BillingCycle,
+} from "@/lib/plans";
+import { BillingToggle } from "@/components/billing-toggle";
+import { formatIstDate, formatIstDateTime, nextPeriodEnd } from "@/lib/plan-access";
 import { confirmPlanPayment, createPlanOrder, getPlanStatus } from "@/lib/payments.functions";
 import { loadRazorpayScript } from "@/lib/payments/load-razorpay-script";
 import { Button } from "@/components/ui/button";
@@ -30,13 +39,19 @@ function RenewPage() {
     queryFn: () => getPlanStatus(),
   });
 
+  // Renew for the same period as last time (monthly or annual); the customer can switch here.
+  const [cycle, setCycle] = useState<BillingCycle>("monthly");
+  useEffect(() => {
+    if (status) setCycle(parseBillingCycle(status.billingCycle));
+  }, [status]);
+
   async function renew() {
     if (!status?.plan) return;
     setBusy(true);
     try {
       await loadRazorpayScript();
       const order = await createPlanOrder({
-        data: { planId: status.plan as "starter" | "growth" | "scale" },
+        data: { planId: status.plan as "starter" | "growth" | "scale", billingCycle: cycle },
       });
 
       const checkout = new window.Razorpay({
@@ -45,7 +60,7 @@ function RenewPage() {
         amount: order.amountPaise,
         currency: order.currency,
         name: "LOVIZA",
-        description: `${order.planName} plan · 30 days`,
+        description: `${order.planName} plan · ${cycle === "annual" ? "1 year" : "30 days"}`,
         prefill: { name: order.customerName, email: order.customerEmail },
         theme: { color: "#00a8c6" },
         handler: async (response) => {
@@ -103,6 +118,12 @@ function RenewPage() {
     );
   }
 
+  const totalInr = planTotalInr(plan, cycle);
+  const newEnd = nextPeriodEnd(
+    status.state === "expired" ? null : status.periodEnd,
+    new Date(),
+    periodDaysFor(cycle),
+  );
   const expired = status.state === "expired";
   const left = status.daysLeft ?? 0;
 
@@ -111,8 +132,9 @@ function RenewPage() {
       <div>
         <h1 className="text-2xl font-bold">Renew your plan</h1>
         <p className="mt-1 text-sm text-muted-foreground">
-          Pay for another 30 days of your {plan.name} plan.
+          Pay for another {cycle === "annual" ? "year" : "30 days"} of your {plan.name} plan.
         </p>
+        <BillingToggle value={cycle} onChange={setCycle} className="mt-4" />
       </div>
 
       <section className="surface p-6">
@@ -140,32 +162,40 @@ function RenewPage() {
             <p className="text-muted-foreground">
               {expired
                 ? "Content generation and posting are paused until you renew. Your brand profile and content are safe."
-                : "Renew now and the 30 days are added after your current end date, so you don't lose any days."}
+                : `Renew now and the ${cycle === "annual" ? "year" : "30 days"} is added after your current end date, so you don't lose any days.`}
             </p>
           </div>
         </div>
 
         <ul className="mt-5 space-y-2 text-sm">
           <li className="flex items-center justify-between">
-            <span className="text-muted-foreground">{plan.name} · 30 days</span>
-            <span className="font-medium">{formatINR(plan.priceMonthly)}</span>
+            <span className="text-muted-foreground">
+              {plan.name} · {cycle === "annual" ? "1 year" : "30 days"}
+            </span>
+            <span className="font-medium">{formatINR(totalInr)}</span>
           </li>
+          {cycle === "annual" && (
+            <li className="text-xs text-primary">
+              {formatINR(planPerMonthInr(plan, "annual"))}/month, billed once a year (40% off
+              monthly).
+            </li>
+          )}
           <li className="flex items-center justify-between">
             <span className="text-muted-foreground">New end date</span>
             <span className="flex items-center gap-1.5 font-medium">
               <Check className="h-4 w-4 text-primary" />
-              {status.renewedUntil ? formatIstDate(status.renewedUntil) : "-"}
+              {formatIstDate(newEnd)}
             </span>
           </li>
           <li className="flex items-center justify-between border-t border-border pt-3 font-display text-lg font-semibold">
             <span>Total due</span>
-            <span>{formatINR(plan.priceMonthly)}</span>
+            <span>{formatINR(totalInr)}</span>
           </li>
         </ul>
 
         <Button className="mt-6 w-full" onClick={renew} disabled={busy}>
           {busy && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-          Renew for {formatINR(plan.priceMonthly)}
+          Renew for {formatINR(totalInr)}
         </Button>
         <p className="mt-3 flex items-center gap-2 text-xs text-muted-foreground">
           <Lock className="h-3.5 w-3.5" />
@@ -178,7 +208,7 @@ function RenewPage() {
         <Link to="/pricing" className="text-primary underline underline-offset-4">
           Change plan
         </Link>{" "}
-        (a new plan starts a fresh 30 days from the day you pay).
+        (a new plan starts a fresh period from the day you pay).
       </p>
     </div>
   );

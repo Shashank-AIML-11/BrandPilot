@@ -3,7 +3,7 @@ import { useQuery } from "@tanstack/react-query";
 import { format } from "date-fns";
 import { Check, Loader2 } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
-import { formatINR, planById } from "@/lib/plans";
+import { formatINR, planById, parseBillingCycle, planPerMonthInr } from "@/lib/plans";
 import {
   formatIstDate,
   formatIstDateTime,
@@ -58,6 +58,7 @@ function PlanPage() {
     (s) => s.status === "active" && isPeriodActive(s.current_period_end),
   );
   const current = activeSub ? planById(activeSub.plan) : null;
+  const isAnnual = parseBillingCycle(activeSub?.billing_period) === "annual";
 
   // Most recent plan that has run out, so we can offer a renewal.
   const lapsedSub = activeSub
@@ -91,8 +92,12 @@ function PlanPage() {
               <h2 className="mt-1 font-display text-2xl font-bold">{current.name}</h2>
             </div>
             <p className="font-display text-2xl font-bold">
-              {formatINR(current.priceMonthly)}
-              <span className="text-sm font-normal text-muted-foreground">/30 days</span>
+              {isAnnual
+                ? formatINR(planPerMonthInr(current, "annual"))
+                : formatINR(current.priceMonthly)}
+              <span className="text-sm font-normal text-muted-foreground">
+                {isAnnual ? "/month, billed yearly" : "/30 days"}
+              </span>
             </p>
           </div>
           <ul className="mt-5 grid gap-2 sm:grid-cols-2">
@@ -119,7 +124,7 @@ function PlanPage() {
                 )}
               </p>
               <p className="mt-1 text-muted-foreground">
-                Renew any time before then and 30 days are added after this date.
+                Renew any time before then and the new period is added after this date.
               </p>
             </div>
           )}

@@ -103,7 +103,7 @@ export function renewalReminderEmail(input: RenewalEmailInput) {
     `<p style="line-height:1.6;margin:0 0 12px">${hello}</p>
      <p style="line-height:1.6;margin:0 0 12px">Your <strong>${escapeHtml(input.planName)}</strong> plan ends on <strong>${escapeHtml(input.expiresAt)}</strong>.
      After that, content generation, auto-posting and the rest of LOVIZA's automation will pause until you renew.</p>
-     <p style="line-height:1.6;margin:0">Renew before then and your plan is extended by 30 days from the date it ends, so you don't lose a single day.</p>`,
+     <p style="line-height:1.6;margin:0">Renew before then and your plan is extended by a full period (30 days, or a year for annual plans) from the date it ends, so you don't lose a single day.</p>`,
     "Renew my plan",
     renewUrl,
   );
@@ -111,7 +111,7 @@ export function renewalReminderEmail(input: RenewalEmailInput) {
 
 Your LOVIZA ${input.planName} plan ends on ${input.expiresAt}. After that, content generation and auto-posting will pause until you renew.
 
-Renew before then and your plan is extended by 30 days from the date it ends.
+Renew before then and your plan is extended by a full period (30 days, or a year for annual plans) from the date it ends.
 
 Renew: ${renewUrl}`;
   return { subject, html, text };

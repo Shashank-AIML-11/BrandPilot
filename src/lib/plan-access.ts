@@ -48,10 +48,11 @@ export function isPeriodActive(
 export function nextPeriodEnd(
   currentEnd: Date | string | null | undefined,
   now: Date = new Date(),
+  periodDays: number = PERIOD_DAYS,
 ): Date {
   const end = currentEnd ? new Date(currentEnd) : null;
   const base = end && end.getTime() > now.getTime() ? end : now;
-  return new Date(base.getTime() + PERIOD_DAYS * DAY_MS);
+  return new Date(base.getTime() + periodDays * DAY_MS);
 }
 
 const dateFmt = new Intl.DateTimeFormat("en-IN", {

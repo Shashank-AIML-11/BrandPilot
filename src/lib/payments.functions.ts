@@ -1,7 +1,14 @@
 import { createServerFn } from "@tanstack/react-start";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import { z } from "zod";
-import { PLANS, planById } from "@/lib/plans";
+import {
+  parseBillingCycle,
+  periodDaysFor,
+  planById,
+  planTotalInr,
+  PLANS,
+  type BillingCycle,
+} from "@/lib/plans";
 import {
   daysUntilExpiry,
   isPeriodActive,
@@ -27,6 +34,8 @@ const orderInput = z.object({
   planId: z.enum(["starter", "growth", "scale"]),
   /** Optional referral code. Checked on the server; the amount is never taken from the browser. */
   referralCode: z.string().max(64).optional(),
+  /** Monthly = 30 days, annual = 12 months paid up front for 365 days. Defaults to monthly. */
+  billingCycle: z.enum(["monthly", "annual"]).optional(),
 });
 
 export const createPlanOrder = createServerFn({ method: "POST" })
@@ -42,7 +51,7 @@ export const createPlanOrder = createServerFn({ method: "POST" })
     // The most recent plan this user paid for (running or lapsed).
     const { data: lastSub, error: subError } = await supabaseAdmin
       .from("subscriptions")
-      .select("id, plan, status, current_period_end, razorpay_subscription_id")
+      .select("id, plan, status, current_period_end, razorpay_subscription_id, billing_period")
       .eq("user_id", context.userId)
       .in("status", ["active", "expired"])
       .order("created_at", { ascending: false })
@@ -77,7 +86,9 @@ export const createPlanOrder = createServerFn({ method: "POST" })
     }
 
     // Referral discount: first plan only, validated here against the database.
-    const listAmountPaise = plan.priceMonthly * 100;
+    const billingCycle: BillingCycle = data.billingCycle ?? "monthly";
+    const periodDays = periodDaysFor(billingCycle);
+    const listAmountPaise = planTotalInr(plan, billingCycle) * 100;
     let amountPaise = listAmountPaise;
     let discountPercent = 0;
     let referralId: string | null = null;
@@ -99,6 +110,7 @@ export const createPlanOrder = createServerFn({ method: "POST" })
         userId: context.userId,
         planId: plan.id,
         kind,
+        billingCycle,
         ...(referralId ? { referralId, discountPercent: String(discountPercent) } : {}),
       },
     });
@@ -112,6 +124,9 @@ export const createPlanOrder = createServerFn({ method: "POST" })
         kind,
         amount_paise: amountPaise,
         currency: "INR",
+        // Annual orders carry their length; monthly ones leave these columns at
+        // their defaults (monthly, 30 days), so they never depend on that migration.
+        ...(billingCycle === "annual" ? { billing_cycle: "annual", period_days: periodDays } : {}),
         // Only touch the referral columns when a referral is actually used, so
         // a normal purchase never depends on the referral migration.
         ...(referralId
@@ -127,7 +142,7 @@ export const createPlanOrder = createServerFn({ method: "POST" })
     // Preview of the new expiry, shown before the customer pays.
     const running =
       kind === "renew" && lastSub?.current_period_end ? lastSub.current_period_end : null;
-    const newPeriodEnd = nextPeriodEnd(running).toISOString();
+    const newPeriodEnd = nextPeriodEnd(running, new Date(), periodDays).toISOString();
 
     return {
       orderId: order.id,
@@ -138,6 +153,7 @@ export const createPlanOrder = createServerFn({ method: "POST" })
       keyId: razorpay.publicKeyId(),
       planName: plan.name,
       kind,
+      billingCycle,
       newPeriodEnd,
       customerEmail: email,
       customerName: profile?.full_name ?? undefined,
@@ -208,6 +224,8 @@ export interface PlanStatus {
   plan: string | null;
   planName: string | null;
   priceInr: number | null;
+  /** The billing cycle of the plan they paid for last (monthly unless they bought annual). */
+  billingCycle: BillingCycle;
   periodEnd: string | null;
   /** Whole IST days until expiry (0 = expires today, negative = already expired). */
   daysLeft: number | null;
@@ -221,6 +239,7 @@ const NO_PLAN: PlanStatus = {
   plan: null,
   planName: null,
   priceInr: null,
+  billingCycle: "monthly",
   periodEnd: null,
   daysLeft: null,
   renewedUntil: null,
@@ -274,6 +293,7 @@ export const getPlanStatus = createServerFn({ method: "POST" })
         .eq("id", context.userId);
     }
 
+    const cycle = parseBillingCycle((sub as { billing_period?: string | null }).billing_period);
     const periodEnd = sub.current_period_end;
     const daysLeft = periodEnd ? daysUntilExpiry(periodEnd, now) : null;
     const state: PlanState = lapsed
@@ -287,9 +307,14 @@ export const getPlanStatus = createServerFn({ method: "POST" })
       isRoot,
       plan: plan.id,
       planName: plan.name,
-      priceInr: plan.priceMonthly,
+      priceInr: planTotalInr(plan, cycle),
+      billingCycle: cycle,
       periodEnd,
       daysLeft,
-      renewedUntil: nextPeriodEnd(lapsed ? null : periodEnd, now).toISOString(),
+      renewedUntil: nextPeriodEnd(
+        lapsed ? null : periodEnd,
+        now,
+        periodDaysFor(cycle),
+      ).toISOString(),
     };
   });

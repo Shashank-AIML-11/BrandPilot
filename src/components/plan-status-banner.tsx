@@ -44,7 +44,7 @@ export function PlanStatusBanner() {
     ? `Your ${data.planName} plan ended on ${end}. Content generation and posting are paused until you renew.`
     : left <= 0
       ? `Your ${data.planName} plan ends today. Renew now to keep everything running.`
-      : `Your ${data.planName} plan ends in ${left} ${left === 1 ? "day" : "days"} (${end}). Renew now and we add 30 days on top, so you lose nothing.`;
+      : `Your ${data.planName} plan ends in ${left} ${left === 1 ? "day" : "days"} (${end}). Renew now and the new period is added on top, so you lose nothing.`;
 
   return (
     <div

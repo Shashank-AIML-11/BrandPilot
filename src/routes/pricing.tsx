@@ -3,7 +3,16 @@ import { createFileRoute, Link } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
 import { Check } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
-import { formatINR, PLANS } from "@/lib/plans";
+import {
+  annualSavingInr,
+  formatINR,
+  parseBillingCycle,
+  planPerMonthInr,
+  planTotalInr,
+  PLANS,
+  type BillingCycle,
+} from "@/lib/plans";
+import { BillingToggle } from "@/components/billing-toggle";
 import { previewReferral } from "@/lib/referrals.functions";
 import { normalizeReferralCode, REF_STORAGE_KEY } from "@/lib/referrals.shared";
 import { Button } from "@/components/ui/button";
@@ -31,6 +40,10 @@ function PricingPage() {
   // A referral link (…/pricing?ref=CODE) is remembered in this browser so the
   // discount survives signing up / signing in before checkout.
   const [refCode, setRefCode] = useState("");
+  const [cycle, setCycle] = useState<BillingCycle>("monthly");
+  useEffect(() => {
+    setCycle(parseBillingCycle(new URLSearchParams(window.location.search).get("cycle")));
+  }, []);
   useEffect(() => {
     const fromUrl = normalizeReferralCode(new URLSearchParams(window.location.search).get("ref"));
     let stored = "";
@@ -99,6 +112,10 @@ function PricingPage() {
           </p>
         )}
 
+        <div className="mt-5 flex justify-center">
+          <BillingToggle value={cycle} onChange={setCycle} />
+        </div>
+
         <div className="mt-6 grid gap-5 lg:grid-cols-3">
           {PLANS.map((plan) => {
             const isCurrent = currentPlanId === plan.id;
@@ -123,8 +140,18 @@ function PricingPage() {
                 <h2 className="text-lg font-semibold">{plan.name}</h2>
                 <p className="mt-1 text-sm text-muted-foreground">{plan.tagline}</p>
                 <p className="mt-4 font-display text-3xl font-bold">
-                  {formatINR(plan.priceMonthly)}
+                  {cycle === "annual" && (
+                    <span className="mr-2 text-base font-normal text-muted-foreground line-through">
+                      {formatINR(plan.priceMonthly)}
+                    </span>
+                  )}
+                  {formatINR(planPerMonthInr(plan, cycle))}
                   <span className="text-sm font-normal text-muted-foreground">/month</span>
+                </p>
+                <p className="mt-1 min-h-[1.25rem] text-xs text-muted-foreground">
+                  {cycle === "annual"
+                    ? `Billed ${formatINR(planTotalInr(plan, "annual"))} once a year. You save ${formatINR(annualSavingInr(plan))}.`
+                    : "Billed monthly."}
                 </p>
                 <ul className="mt-4 flex-1 space-y-2 text-sm">
                   {plan.features.map((f) => (
@@ -145,7 +172,7 @@ function PricingPage() {
                     asChild
                   >
                     {session ? (
-                      <Link to="/checkout" search={{ plan: plan.id }}>
+                      <Link to="/checkout" search={{ plan: plan.id, cycle }}>
                         {currentPlanId ? `Switch to ${plan.name}` : `Choose ${plan.name}`}
                       </Link>
                     ) : (

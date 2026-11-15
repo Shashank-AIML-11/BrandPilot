@@ -4,7 +4,18 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { ArrowLeft, Check, Loader2, Lock } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
-import { formatINR, planById, PLANS, type PlanId } from "@/lib/plans";
+import {
+  annualSavingInr,
+  formatINR,
+  parseBillingCycle,
+  planById,
+  planPerMonthInr,
+  planTotalInr,
+  PLANS,
+  type BillingCycle,
+  type PlanId,
+} from "@/lib/plans";
+import { BillingToggle } from "@/components/billing-toggle";
 import { confirmPlanPayment, createPlanOrder } from "@/lib/payments.functions";
 import { checkReferralForCheckout } from "@/lib/referrals.functions";
 import {
@@ -33,16 +44,23 @@ export const Route = createFileRoute("/_authenticated/checkout")({
   validateSearch: (search: Record<string, unknown>) => ({
     plan: (typeof search["plan"] === "string" ? search["plan"] : "growth") as PlanId,
     ...(typeof search["ref"] === "string" ? { ref: search["ref"] } : {}),
+    cycle: parseBillingCycle(search["cycle"]),
   }),
   component: CheckoutPage,
 });
 
 function CheckoutPage() {
-  const { plan: planParam, ref: refParam } = useSearch({ from: "/_authenticated/checkout" });
+  const {
+    plan: planParam,
+    ref: refParam,
+    cycle: cycleParam,
+  } = useSearch({ from: "/_authenticated/checkout" });
   const navigate = useNavigate();
   const queryClient = useQueryClient();
 
   const [busy, setBusy] = useState(false);
+  const [cycle, setCycle] = useState<BillingCycle>(cycleParam);
+  useEffect(() => setCycle(cycleParam), [cycleParam]);
 
   // Referral code: from the link (?ref=) or remembered from the pricing page.
   const [refCode, setRefCode] = useState("");
@@ -156,6 +174,7 @@ function CheckoutPage() {
   }, [loadingCurrentPlan, currentPlanId]);
 
   const plan = selectedPlanId ? planById(selectedPlanId) : null;
+  const totalInr = plan ? planTotalInr(plan, cycle) : 0;
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
@@ -167,6 +186,7 @@ function CheckoutPage() {
       const order = await createPlanOrder({
         data: {
           planId: plan.id,
+          billingCycle: cycle,
           ...(referralCheck?.ok ? { referralCode: refCode } : {}),
         },
       });
@@ -177,7 +197,7 @@ function CheckoutPage() {
         amount: order.amountPaise,
         currency: order.currency,
         name: "LOVIZA",
-        description: `${order.planName} plan · 30 days`,
+        description: `${order.planName} plan · ${cycle === "annual" ? "1 year" : "30 days"}`,
         prefill: { name: order.customerName, email: order.customerEmail },
         theme: { color: "#00a8c6" },
         handler: async (response) => {
@@ -251,9 +271,6 @@ function CheckoutPage() {
                       Active
                     </span>
                   </span>
-                  <span className="font-display font-semibold">
-                    {formatINR(currentPlan.priceMonthly)}/mo
-                  </span>
                 </div>
                 <p className="mt-1 text-sm text-muted-foreground">{currentPlan.tagline}</p>
               </div>
@@ -261,7 +278,10 @@ function CheckoutPage() {
           )}
 
           <section className="surface p-5">
-            <h2 className="text-sm font-semibold">{currentPlan ? "Switch to" : "Plan"}</h2>
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <h2 className="text-sm font-semibold">{currentPlan ? "Switch to" : "Plan"}</h2>
+              <BillingToggle value={cycle} onChange={setCycle} />
+            </div>
 
             {loadingCurrentPlan ? (
               <div className="mt-4 flex items-center gap-2 text-sm text-muted-foreground">
@@ -289,7 +309,7 @@ function CheckoutPage() {
                         <div className="flex items-center justify-between">
                           <span className="font-medium">{p.name}</span>
                           <span className="font-display font-semibold">
-                            {formatINR(p.priceMonthly)}/mo
+                            {formatINR(planPerMonthInr(p, cycle))}/mo
                           </span>
                         </div>
                         <p className="mt-1 text-sm text-muted-foreground">{p.tagline}</p>
@@ -304,9 +324,12 @@ function CheckoutPage() {
           <section className="surface p-5">
             <h2 className="text-sm font-semibold">Payment</h2>
             <p className="mt-2 text-sm text-muted-foreground">
-              Each payment covers 30 days of your plan. It does not renew automatically — we'll
-              email you 5 days before it ends so you can renew from the Renew page. Card, UPI,
-              netbanking and wallets are all available in the next step.
+              {cycle === "annual"
+                ? "One payment covers 1 year (365 days) of your plan."
+                : "Each payment covers 30 days of your plan."}{" "}
+              It does not renew automatically — we'll email you 5 days before it ends so you can
+              renew from the Renew page. Card, UPI, netbanking and wallets are all available in the
+              next step.
             </p>
             <p className="mt-4 flex items-center gap-2 text-xs text-muted-foreground">
               <Lock className="h-3.5 w-3.5" />
@@ -321,9 +344,17 @@ function CheckoutPage() {
           {plan ? (
             <>
               <div className="mt-4 flex items-center justify-between text-sm">
-                <span className="text-muted-foreground">{plan.name} · 30 days</span>
-                <span className="font-medium">{formatINR(plan.priceMonthly)}</span>
+                <span className="text-muted-foreground">
+                  {plan.name} · {cycle === "annual" ? "1 year" : "30 days"}
+                </span>
+                <span className="font-medium">{formatINR(totalInr)}</span>
               </div>
+              {cycle === "annual" && (
+                <p className="mt-1 text-xs text-primary">
+                  {formatINR(plan.priceAnnualPerMonth)}/month, billed once a year. You save{" "}
+                  {formatINR(annualSavingInr(plan))} (40% off monthly).
+                </p>
+              )}
               {referralCheck?.ok && (
                 <div className="mt-2 flex items-center justify-between text-sm text-primary">
                   <span>
@@ -332,8 +363,7 @@ function CheckoutPage() {
                   <span>
                     &minus;
                     {formatRupeesFromPaise(
-                      plan.priceMonthly * 100 -
-                        discountedPaise(plan.priceMonthly * 100, discountPercent),
+                      totalInr * 100 - discountedPaise(totalInr * 100, discountPercent),
                     )}
                   </span>
                 </div>
@@ -345,7 +375,7 @@ function CheckoutPage() {
               <div className="mt-4 flex items-center justify-between border-t border-border pt-4 font-display text-lg font-semibold">
                 <span>Total due</span>
                 <span>
-                  {formatRupeesFromPaise(discountedPaise(plan.priceMonthly * 100, discountPercent))}
+                  {formatRupeesFromPaise(discountedPaise(totalInr * 100, discountPercent))}
                 </span>
               </div>
               <ul className="mt-5 space-y-2 text-sm">

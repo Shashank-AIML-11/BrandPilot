@@ -88,15 +88,6 @@ function RenewPage() {
     );
   }
 
-  if (status?.state === "root") {
-    return (
-      <div className="mx-auto max-w-xl space-y-3">
-        <h1 className="text-2xl font-bold">Renew your plan</h1>
-        <p className="text-sm text-muted-foreground">This account doesn't need a paid plan.</p>
-      </div>
-    );
-  }
-
   const plan = planById(status?.plan);
   if (!status || status.state === "none" || !plan) {
     return (

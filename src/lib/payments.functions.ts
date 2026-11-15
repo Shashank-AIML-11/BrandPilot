@@ -165,10 +165,12 @@ export const confirmPlanPayment = createServerFn({ method: "POST" })
 // getPlanStatus
 // ---------------------------------------------------------------------------
 
-export type PlanState = "none" | "active" | "expiring" | "expired" | "root";
+export type PlanState = "none" | "active" | "expiring" | "expired";
 
 export interface PlanStatus {
   state: PlanState;
+  /** The owner account never loses features; it can still renew like anyone else. */
+  isRoot: boolean;
   plan: string | null;
   planName: string | null;
   priceInr: number | null;
@@ -181,6 +183,7 @@ export interface PlanStatus {
 
 const NO_PLAN: PlanStatus = {
   state: "none",
+  isRoot: false,
   plan: null,
   planName: null,
   priceInr: null,
@@ -205,9 +208,7 @@ export const getPlanStatus = createServerFn({ method: "POST" })
       .select("email")
       .eq("id", context.userId)
       .maybeSingle();
-    if (profile?.email?.trim().toLowerCase() === ROOT_EMAIL) {
-      return { ...NO_PLAN, state: "root" };
-    }
+    const isRoot = profile?.email?.trim().toLowerCase() === ROOT_EMAIL;
 
     const { data: sub, error } = await supabaseAdmin
       .from("subscriptions")
@@ -218,10 +219,10 @@ export const getPlanStatus = createServerFn({ method: "POST" })
       .limit(1)
       .maybeSingle();
     if (error) throw new Error(error.message);
-    if (!sub) return NO_PLAN;
+    if (!sub) return { ...NO_PLAN, isRoot };
 
     const plan = planById(sub.plan);
-    if (!plan) return NO_PLAN;
+    if (!plan) return { ...NO_PLAN, isRoot };
 
     const now = new Date();
     const grace = sub.razorpay_subscription_id ? LEGACY_AUTOPAY_GRACE_DAYS : 0;
@@ -249,6 +250,7 @@ export const getPlanStatus = createServerFn({ method: "POST" })
 
     return {
       state,
+      isRoot,
       plan: plan.id,
       planName: plan.name,
       priceInr: plan.priceMonthly,

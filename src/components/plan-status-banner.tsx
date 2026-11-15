@@ -32,7 +32,9 @@ export function PlanStatusBanner() {
     }
   }, [data?.state, queryClient]);
 
-  if (!data || (data.state !== "expiring" && data.state !== "expired")) return null;
+  // The owner account never loses features, so it is not nagged.
+  if (!data || data.isRoot) return null;
+  if (data.state !== "expiring" && data.state !== "expired") return null;
   if (pathname === "/renew" || pathname === "/checkout") return null;
 
   const expired = data.state === "expired";

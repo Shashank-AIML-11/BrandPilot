@@ -1,4 +1,5 @@
 import React from "react";
+import { createFileRoute } from "@tanstack/react-router";
 
 /**
  * LOVIZA Analytics Dashboard
@@ -34,3 +35,10 @@ export default function Analytics() {
     </div>
   );
 }
+
+
+// Register this page with LOVIZA's TanStack file-based router.
+export const Route = createFileRoute("/_authenticated/analytics")({
+  head: () => ({ meta: [{ title: "Analytics — LOVIZA" }] }),
+  component: Analytics,
+});

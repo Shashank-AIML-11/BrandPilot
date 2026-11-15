@@ -1,0 +1,126 @@
+*** Begin Patch
+*** Update File: src/components/app-shell.tsx
+@@
+   LogOut,
+   Menu,
++  ChevronDown,
+ } from "lucide-react";
+@@
+   const pathname = useRouterState({ select: (s) => s.location.pathname });
+   const [open, setOpen] = useState(false);
++  const [analyticsExpanded, setAnalyticsExpanded] = useState(
++    pathname.startsWith("/analytics"),
++  );
+@@
+-            {nav.map((item) => (
++            {nav.filter((item) => item.to !== "/analytics").map((item) => (
+               <Link
+@@
+               </Link>
+             ))}
++            <div className="space-y-1">
++              <div className="flex items-center">
++                <Link
++                  to="/analytics"
++                  hash="overview"
++                  className={cn(
++                    "flex min-w-0 flex-1 items-center gap-3 rounded-lg px-3 py-2 text-sm text-sidebar-foreground transition-colors hover:bg-sidebar-accent",
++                    pathname.startsWith("/analytics") &&
++                      "bg-sidebar-accent font-medium text-sidebar-accent-foreground ring-1 ring-sidebar-border",
++                  )}
++                >
++                  <BarChart3 className="h-4 w-4" />
++                  Analytics
++                </Link>
++                <button
++                  type="button"
++                  onClick={() => setAnalyticsExpanded((value) => !value)}
++                  aria-label={analyticsExpanded ? "Collapse Analytics submenu" : "Expand Analytics submenu"}
++                  aria-expanded={analyticsExpanded}
++                  className="mr-1 rounded-md p-2 text-sidebar-foreground transition-colors hover:bg-sidebar-accent"
++                >
++                  <ChevronDown
++                    className={cn(
++                      "h-4 w-4 transition-transform",
++                      analyticsExpanded && "rotate-180",
++                    )}
++                  />
++                </button>
++              </div>
++              {analyticsExpanded && (
++                <div className="ml-5 space-y-1 border-l border-sidebar-border pl-3">
++                  {[
++                    ["Overview", "overview"],
++                    ["Content Performance", "content-performance"],
++                    ["Platform Analytics", "platform-analytics"],
++                    ["Audience Insights", "audience-insights"],
++                    ["Content Intelligence", "content-intelligence"],
++                    ["AI Recommendations", "ai-recommendations"],
++                    ["Data & Integrations", "data-integrations"],
++                  ].map(([label, hash]) => (
++                    <Link
++                      key={hash}
++                      to="/analytics"
++                      hash={hash}
++                      className="block rounded-md px-3 py-2 text-xs text-sidebar-foreground/80 transition-colors hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
++                      activeProps={{
++                        className:
++                          "bg-sidebar-accent text-sidebar-accent-foreground font-medium",
++                      }}
++                    >
++                      {label}
++                    </Link>
++                  ))}
++                </div>
++              )}
++            </div>
+*** Update File: src/routes/_authenticated/analytics.tsx
+@@
+-    <div className="space-y-6">
++    <div id="overview" className="space-y-6">
+@@
+-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
++      <section id="content-performance" className="scroll-mt-24 space-y-4">
++      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+@@
+-      <div className="grid gap-4 lg:grid-cols-2">
++      </section>
++
++      <section id="platform-analytics" className="scroll-mt-24">
++      <div className="grid gap-4 lg:grid-cols-2">
+@@
+-      {typeStats.length > 0 && (
++      </section>
++
++      <section id="content-intelligence" className="scroll-mt-24 space-y-4">
++      {typeStats.length > 0 && (
+@@
+-      <div className="surface p-5">
++      </section>
++
++      <section id="data-integrations" className="scroll-mt-24">
++      <div className="surface p-5">
+         <h2 className="text-sm font-semibold">Measurement status</h2>
+@@
+-      <div className="surface p-5">
++      </section>
++
++      <section id="ai-recommendations" className="scroll-mt-24">
++      <div className="surface p-5">
+@@
+-      {rows.length === 0 ? (
++      </section>
++
++      <section id="audience-insights" className="scroll-mt-24">
++        <div className="surface p-5">
++          <h2 className="text-sm font-semibold">Audience insights</h2>
++          <p className="mt-2 text-sm text-muted-foreground">
++            Audience demographics and profile-level insights are not currently available in
++            the connected analytics data. This section will populate when supported audience
++            data sources are connected.
++          </p>
++        </div>
++      </section>
++
++      {rows.length === 0 ? (
+*** End Patch

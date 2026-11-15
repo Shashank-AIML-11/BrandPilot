@@ -18,6 +18,21 @@ type AdminClient = SupabaseClient<Database>;
 
 const DAYS_PER_CYCLE = 7;
 
+/** Email the user once when a job has just finished. Never breaks generation. */
+async function notifyIfDone(
+  admin: AdminClient,
+  job: { id: string; user_id: string; brand_id?: string | null },
+  status: string,
+) {
+  if (status !== "completed") return;
+  try {
+    const { notifyContentReady } = await import("@/lib/content-ready.server");
+    await notifyContentReady(admin, job);
+  } catch (error) {
+    console.error("[content-ready] notify failed", error);
+  }
+}
+
 /**
  * Generates one chunk of days for a queued month job.
  *
@@ -51,6 +66,7 @@ export async function processGenerationQueue(admin: AdminClient, userId?: string
       .from("content_generation_jobs")
       .update({ status: "completed", pending_dates: [] })
       .eq("id", job.id);
+    await notifyIfDone(admin, job, "completed");
     return { job: job.id, generated: 0 };
   }
 
@@ -98,6 +114,7 @@ export async function processGenerationQueue(admin: AdminClient, userId?: string
           error: null,
         })
         .eq("id", job.id);
+      await notifyIfDone(admin, job, rest.length ? "running" : "completed");
       return { job: job.id, generated: 0 };
     }
 
@@ -170,7 +187,6 @@ export async function processGenerationQueue(admin: AdminClient, userId?: string
       .eq("user_id", job.user_id)
       .eq("brand_id", brand.id)
       .in("scheduled_date", batchDates)
-      .eq("calendar_hidden", false)
       .eq("status", "draft")
       .order("scheduled_date", { ascending: true })
       .order("scheduled_time", { ascending: true });
@@ -283,6 +299,7 @@ export async function processGenerationQueue(admin: AdminClient, userId?: string
       })
       .eq("id", job.id);
 
+    await notifyIfDone(admin, job, remaining.length ? "running" : "completed");
     return { job: job.id, generated: finished };
   } catch (error) {
     console.error("Generation queue error:", error);

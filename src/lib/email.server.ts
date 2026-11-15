@@ -139,3 +139,51 @@ Your LOVIZA ${input.planName} plan ended on ${input.expiresAt}, so content gener
 Renew: ${renewUrl}`;
   return { subject, html, text };
 }
+
+export interface ContentReadyEmailInput {
+  name?: string | null;
+  brandName?: string | null;
+  /** true = Autopost is ON (and in the plan); false = the user must review and submit. */
+  autopost: boolean;
+}
+
+/** Sent once when a week of content has finished generating. */
+export function contentReadyEmail(input: ContentReadyEmailInput) {
+  const calendarUrl = `${appUrl()}/calendar`;
+  const hello = input.name ? `Hi ${escapeHtml(input.name)},` : "Hi,";
+  const textHello = input.name ? `Hi ${input.name},` : "Hi,";
+  const brandLine = input.brandName ? ` for ${input.brandName}` : "";
+  const headline = "Current Week Content Generated";
+  const action = input.autopost
+    ? "it will be autoposted as per Schedule"
+    : "Please review and Submit for Posting";
+  const subject = input.autopost
+    ? `${headline}${brandLine}: it will be autoposted`
+    : `${headline}${brandLine}: please review and submit`;
+  const html = layout(
+    headline,
+    `<p style="line-height:1.6;margin:0 0 12px">${hello}</p>
+     <p style="line-height:1.6;margin:0 0 12px"><strong>${escapeHtml(headline)}${escapeHtml(brandLine)}, ${escapeHtml(action)}.</strong></p>
+     <p style="line-height:1.6;margin:0">${
+       input.autopost
+         ? "Autopost is ON, so each post goes out on its scheduled day. You can still open the calendar to preview or edit anything first."
+         : "Autopost is OFF, so nothing goes out until you approve it. Open the calendar, review your posts and submit them for posting."
+     }</p>
+     <p style="line-height:1.6;margin:12px 0 0;font-size:13px;color:#64748b">You will be asked to sign in. Only your own account can see this calendar.</p>`,
+    "Open my calendar",
+    calendarUrl,
+  );
+  const text = `${textHello}
+
+${headline}${brandLine}, ${action}.
+
+${
+  input.autopost
+    ? "Autopost is ON, so each post goes out on its scheduled day. You can still open the calendar to preview or edit first."
+    : "Autopost is OFF, so nothing goes out until you approve it. Open the calendar, review your posts and submit them for posting."
+}
+
+Calendar: ${calendarUrl}
+(You will be asked to sign in. Only your own account can see this calendar.)`;
+  return { subject, html, text };
+}

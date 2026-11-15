@@ -6,6 +6,13 @@ import { ArrowLeft, Check, Loader2, Lock } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { formatINR, planById, PLANS, type PlanId } from "@/lib/plans";
 import { confirmPlanPayment, createPlanOrder } from "@/lib/payments.functions";
+import { checkReferralForCheckout } from "@/lib/referrals.functions";
+import {
+  discountedPaise,
+  formatRupeesFromPaise,
+  normalizeReferralCode,
+  REF_STORAGE_KEY,
+} from "@/lib/referrals.shared";
 import { formatIstDate } from "@/lib/plan-access";
 import { loadRazorpayScript } from "@/lib/payments/load-razorpay-script";
 import { Button } from "@/components/ui/button";
@@ -23,16 +30,48 @@ export const Route = createFileRoute("/_authenticated/checkout")({
   }),
   validateSearch: (search: Record<string, unknown>) => ({
     plan: (typeof search["plan"] === "string" ? search["plan"] : "growth") as PlanId,
+    ...(typeof search["ref"] === "string" ? { ref: search["ref"] } : {}),
   }),
   component: CheckoutPage,
 });
 
 function CheckoutPage() {
-  const { plan: planParam } = useSearch({ from: "/_authenticated/checkout" });
+  const { plan: planParam, ref: refParam } = useSearch({ from: "/_authenticated/checkout" });
   const navigate = useNavigate();
   const queryClient = useQueryClient();
 
   const [busy, setBusy] = useState(false);
+
+  // Referral code: from the link (?ref=) or remembered from the pricing page.
+  const [refCode, setRefCode] = useState("");
+  useEffect(() => {
+    const fromUrl = normalizeReferralCode(refParam);
+    let stored = "";
+    try {
+      if (fromUrl) localStorage.setItem(REF_STORAGE_KEY, fromUrl);
+      stored = localStorage.getItem(REF_STORAGE_KEY) ?? "";
+    } catch {
+      // Storage blocked: fall back to the URL value only.
+    }
+    setRefCode(fromUrl || normalizeReferralCode(stored));
+  }, [refParam]);
+
+  const { data: referralCheck } = useQuery({
+    queryKey: ["referral-check", refCode],
+    enabled: Boolean(refCode),
+    retry: false,
+    queryFn: () => checkReferralForCheckout({ data: { code: refCode } }),
+  });
+  const discountPercent = referralCheck?.ok ? referralCheck.discountPercent : 0;
+
+  function dropReferral() {
+    try {
+      localStorage.removeItem(REF_STORAGE_KEY);
+    } catch {
+      // ignore
+    }
+    setRefCode("");
+  }
 
   // The plan the user is currently subscribed to (if any). Same query
   // pricing.tsx uses, so it's served from cache when arriving via a
@@ -85,7 +124,12 @@ function CheckoutPage() {
     try {
       await loadRazorpayScript();
 
-      const order = await createPlanOrder({ data: { planId: plan.id } });
+      const order = await createPlanOrder({
+        data: {
+          planId: plan.id,
+          ...(referralCheck?.ok ? { referralCode: refCode } : {}),
+        },
+      });
 
       const checkout = new window.Razorpay({
         key: order.keyId,
@@ -105,6 +149,7 @@ function CheckoutPage() {
                 razorpaySignature: response.razorpay_signature,
               },
             });
+            dropReferral();
             queryClient.invalidateQueries();
             toast.success(
               `${order.planName} plan activated until ${formatIstDate(result.periodEnd)}. Welcome aboard!`,
@@ -239,13 +284,46 @@ function CheckoutPage() {
                 <span className="text-muted-foreground">{plan.name} · 30 days</span>
                 <span className="font-medium">{formatINR(plan.priceMonthly)}</span>
               </div>
+              {refCode && (
+                <div className="mt-2 text-sm">
+                  {referralCheck?.ok ? (
+                    <div className="flex items-center justify-between text-primary">
+                      <span>
+                        Referral {referralCheck.code} ({discountPercent}% off)
+                      </span>
+                      <span>
+                        &minus;
+                        {formatRupeesFromPaise(
+                          plan.priceMonthly * 100 -
+                            discountedPaise(plan.priceMonthly * 100, discountPercent),
+                        )}
+                      </span>
+                    </div>
+                  ) : referralCheck ? (
+                    <p className="text-xs text-muted-foreground">
+                      Referral code not applied: {referralCheck.reason}
+                    </p>
+                  ) : null}
+                  {referralCheck && (
+                    <button
+                      type="button"
+                      onClick={dropReferral}
+                      className="mt-1 text-xs text-muted-foreground underline underline-offset-4"
+                    >
+                      Remove code
+                    </button>
+                  )}
+                </div>
+              )}
               <div className="mt-2 flex items-center justify-between text-sm">
                 <span className="text-muted-foreground">Taxes</span>
                 <span className="text-muted-foreground">Calculated at checkout</span>
               </div>
               <div className="mt-4 flex items-center justify-between border-t border-border pt-4 font-display text-lg font-semibold">
                 <span>Total due</span>
-                <span>{formatINR(plan.priceMonthly)}</span>
+                <span>
+                  {formatRupeesFromPaise(discountedPaise(plan.priceMonthly * 100, discountPercent))}
+                </span>
               </div>
               <ul className="mt-5 space-y-2 text-sm">
                 {plan.features.slice(0, 4).map((f) => (

@@ -1,8 +1,11 @@
+import { useEffect, useState } from "react";
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
 import { Check } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { formatINR, PLANS } from "@/lib/plans";
+import { previewReferral } from "@/lib/referrals.functions";
+import { normalizeReferralCode, REF_STORAGE_KEY } from "@/lib/referrals.shared";
 import { Button } from "@/components/ui/button";
 
 export const Route = createFileRoute("/pricing")({
@@ -25,6 +28,28 @@ export const Route = createFileRoute("/pricing")({
 });
 
 function PricingPage() {
+  // A referral link (…/pricing?ref=CODE) is remembered in this browser so the
+  // discount survives signing up / signing in before checkout.
+  const [refCode, setRefCode] = useState("");
+  useEffect(() => {
+    const fromUrl = normalizeReferralCode(new URLSearchParams(window.location.search).get("ref"));
+    let stored = "";
+    try {
+      if (fromUrl) localStorage.setItem(REF_STORAGE_KEY, fromUrl);
+      stored = localStorage.getItem(REF_STORAGE_KEY) ?? "";
+    } catch {
+      // Storage blocked: the code in the URL still works for this visit.
+    }
+    setRefCode(fromUrl || normalizeReferralCode(stored));
+  }, []);
+
+  const { data: refPreview } = useQuery({
+    queryKey: ["referral-preview", refCode],
+    enabled: Boolean(refCode),
+    retry: false,
+    queryFn: () => previewReferral({ data: { code: refCode } }),
+  });
+
   const { data: session } = useQuery({
     queryKey: ["session-check"],
     queryFn: async () => (await supabase.auth.getSession()).data.session,
@@ -66,6 +91,13 @@ function PricingPage() {
             Upgrade or downgrade at any time.
           </p>
         </div>
+
+        {refPreview?.valid && (
+          <p className="mx-auto mt-4 max-w-xl rounded-xl border border-primary/30 bg-primary/10 px-4 py-2.5 text-center text-sm">
+            Referral code <span className="font-mono font-semibold">{refPreview.code}</span>{" "}
+            applied: <strong>{refPreview.discountPercent}% off</strong> your first plan at checkout.
+          </p>
+        )}
 
         <div className="mt-6 grid gap-5 lg:grid-cols-3">
           {PLANS.map((plan) => {

@@ -12,14 +12,28 @@ import {
   UserX,
   Pencil,
 } from "lucide-react";
-import { getAdminStats, grantRole, revokeRole, deleteUser, editSubscriber } from "@/lib/admin.functions";
+import {
+  getAdminStats,
+  grantRole,
+  revokeRole,
+  deleteUser,
+  editSubscriber,
+} from "@/lib/admin.functions";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
-import { Table, TableHeader, TableBody, TableHead, TableRow, TableCell } from "@/components/ui/table";
+import { AdminReferrals } from "@/components/admin-referrals";
+import {
+  Table,
+  TableHeader,
+  TableBody,
+  TableHead,
+  TableRow,
+  TableCell,
+} from "@/components/ui/table";
 import {
   Dialog,
   DialogContent,
@@ -172,6 +186,7 @@ function AdminPage() {
           <TabsTrigger value="dashboard">Dashboard</TabsTrigger>
           <TabsTrigger value="subscribers">Subscribers</TabsTrigger>
           <TabsTrigger value="access">User Access</TabsTrigger>
+          {data.isRoot && <TabsTrigger value="referrals">Referrals</TabsTrigger>}
         </TabsList>
 
         {/* ===================== DASHBOARD ===================== */}
@@ -225,12 +240,18 @@ function AdminPage() {
               <h2 className="text-sm font-semibold">Billing cycle split</h2>
               <div className="mt-4 grid grid-cols-2 gap-4 text-center">
                 <div>
-                  <p className="font-display text-3xl font-bold">{data.billingCycleSplit.monthly}</p>
-                  <p className="mt-1 text-xs uppercase tracking-wide text-muted-foreground">Monthly</p>
+                  <p className="font-display text-3xl font-bold">
+                    {data.billingCycleSplit.monthly}
+                  </p>
+                  <p className="mt-1 text-xs uppercase tracking-wide text-muted-foreground">
+                    Monthly
+                  </p>
                 </div>
                 <div>
                   <p className="font-display text-3xl font-bold">{data.billingCycleSplit.yearly}</p>
-                  <p className="mt-1 text-xs uppercase tracking-wide text-muted-foreground">Yearly</p>
+                  <p className="mt-1 text-xs uppercase tracking-wide text-muted-foreground">
+                    Yearly
+                  </p>
                 </div>
               </div>
 
@@ -313,8 +334,8 @@ function AdminPage() {
           <div className="surface p-5">
             <h2 className="text-sm font-semibold">Access control (RBAC)</h2>
             <p className="mt-1 text-sm text-muted-foreground">
-              Enter any email and grant a role. If they haven't signed up yet the role is held as
-              an invite and applies automatically on their first sign-in.
+              Enter any email and grant a role. If they haven't signed up yet the role is held as an
+              invite and applies automatically on their first sign-in.
             </p>
             <form
               className="mt-4 flex flex-wrap items-end gap-3"
@@ -352,8 +373,7 @@ function AdminPage() {
                 </Select>
               </div>
               <Button type="submit" disabled={grant.isPending}>
-                {grant.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-                + Add
+                {grant.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}+ Add
               </Button>
             </form>
 
@@ -429,10 +449,19 @@ function AdminPage() {
             </div>
           )}
         </TabsContent>
+
+        {data.isRoot && (
+          <TabsContent value="referrals" className="pt-4">
+            <AdminReferrals />
+          </TabsContent>
+        )}
       </Tabs>
 
       {/* Edit subscriber dialog */}
-      <Dialog open={!!editingSubscriber} onOpenChange={(open) => !open && setEditingSubscriber(null)}>
+      <Dialog
+        open={!!editingSubscriber}
+        onOpenChange={(open) => !open && setEditingSubscriber(null)}
+      >
         <DialogContent>
           <DialogHeader>
             <DialogTitle>Edit subscriber</DialogTitle>
@@ -455,7 +484,10 @@ function AdminPage() {
               </div>
               <div className="space-y-2">
                 <Label>Status</Label>
-                <Select value={editStatus} onValueChange={(v) => setEditStatus(v as "active" | "cancelled")}>
+                <Select
+                  value={editStatus}
+                  onValueChange={(v) => setEditStatus(v as "active" | "cancelled")}
+                >
                   <SelectTrigger>
                     <SelectValue />
                   </SelectTrigger>

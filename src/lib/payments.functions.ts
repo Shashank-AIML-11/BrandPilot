@@ -25,6 +25,8 @@ import {
 
 const orderInput = z.object({
   planId: z.enum(["starter", "growth", "scale"]),
+  /** Optional referral code. Checked on the server; the amount is never taken from the browser. */
+  referralCode: z.string().max(64).optional(),
 });
 
 export const createPlanOrder = createServerFn({ method: "POST" })
@@ -74,12 +76,31 @@ export const createPlanOrder = createServerFn({ method: "POST" })
         .eq("id", context.userId);
     }
 
+    // Referral discount: first plan only, validated here against the database.
+    const listAmountPaise = plan.priceMonthly * 100;
+    let amountPaise = listAmountPaise;
+    let discountPercent = 0;
+    let referralId: string | null = null;
+    if (data.referralCode?.trim()) {
+      const { checkReferralForUser } = await import("@/lib/referrals.server");
+      const { discountedPaise } = await import("@/lib/referrals.shared");
+      const check = await checkReferralForUser(data.referralCode, { id: context.userId, email });
+      if (!check.ok) throw new Error(check.reason);
+      discountPercent = check.referral.discount_percent;
+      referralId = check.referral.id;
+      amountPaise = discountedPaise(listAmountPaise, discountPercent);
+    }
+
     const razorpay = await import("@/lib/payments/razorpay.server");
-    const amountPaise = plan.priceMonthly * 100;
     const order = await razorpay.createOrder({
       amountPaise,
       receipt: `lv_${context.userId.slice(0, 8)}_${Date.now()}`,
-      notes: { userId: context.userId, planId: plan.id, kind },
+      notes: {
+        userId: context.userId,
+        planId: plan.id,
+        kind,
+        ...(referralId ? { referralId, discountPercent: String(discountPercent) } : {}),
+      },
     });
 
     const { error: insertError } = await untyped(supabaseAdmin).from("plan_orders").insert({
@@ -89,6 +110,9 @@ export const createPlanOrder = createServerFn({ method: "POST" })
       kind,
       amount_paise: amountPaise,
       currency: "INR",
+      list_amount_paise: listAmountPaise,
+      discount_percent: discountPercent,
+      referral_code_id: referralId,
     });
     if (insertError) throw new Error(insertError.message);
 
@@ -100,6 +124,8 @@ export const createPlanOrder = createServerFn({ method: "POST" })
     return {
       orderId: order.id,
       amountPaise,
+      listAmountPaise,
+      discountPercent,
       currency: "INR" as const,
       keyId: razorpay.publicKeyId(),
       planName: plan.name,

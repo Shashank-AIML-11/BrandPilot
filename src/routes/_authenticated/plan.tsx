@@ -130,6 +130,9 @@ function PlanPage() {
             <Button variant="outline" asChild>
               <Link to="/pricing">Change plan</Link>
             </Button>
+            <Button variant="outline" asChild>
+              <Link to="/referrals">Refer &amp; save 20%</Link>
+            </Button>
           </div>
         </div>
       ) : lapsedPlan ? (

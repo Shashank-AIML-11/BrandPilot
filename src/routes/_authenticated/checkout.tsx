@@ -9,6 +9,7 @@ import { confirmPlanPayment, createPlanOrder } from "@/lib/payments.functions";
 import { checkReferralForCheckout } from "@/lib/referrals.functions";
 import {
   discountedPaise,
+  extractReferralCode,
   formatRupeesFromPaise,
   normalizeReferralCode,
   REF_STORAGE_KEY,
@@ -16,6 +17,7 @@ import {
 import { formatIstDate } from "@/lib/plan-access";
 import { loadRazorpayScript } from "@/lib/payments/load-razorpay-script";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 
@@ -71,6 +73,44 @@ function CheckoutPage() {
       // ignore
     }
     setRefCode("");
+  }
+
+  // Typing or pasting a referral link/code and pressing "Apply".
+  const [codeText, setCodeText] = useState("");
+  const [applying, setApplying] = useState(false);
+  const [applyError, setApplyError] = useState<string | null>(null);
+
+  async function applyCode() {
+    const code = extractReferralCode(codeText);
+    if (!code) {
+      setApplyError("Paste your referral link or enter the code.");
+      return;
+    }
+    setApplying(true);
+    setApplyError(null);
+    try {
+      const result = await queryClient.fetchQuery({
+        queryKey: ["referral-check", code],
+        queryFn: () => checkReferralForCheckout({ data: { code } }),
+        staleTime: 0,
+      });
+      if (!result.ok) {
+        setApplyError(result.reason);
+        return;
+      }
+      try {
+        localStorage.setItem(REF_STORAGE_KEY, code);
+      } catch {
+        // Storage blocked: the code still applies for this visit.
+      }
+      setRefCode(code);
+      setCodeText("");
+      toast.success(`${result.discountPercent}% discount applied`);
+    } catch (err) {
+      setApplyError(err instanceof Error ? err.message : "Could not check the code");
+    } finally {
+      setApplying(false);
+    }
   }
 
   // The plan the user is currently subscribed to (if any). Same query
@@ -284,35 +324,18 @@ function CheckoutPage() {
                 <span className="text-muted-foreground">{plan.name} · 30 days</span>
                 <span className="font-medium">{formatINR(plan.priceMonthly)}</span>
               </div>
-              {refCode && (
-                <div className="mt-2 text-sm">
-                  {referralCheck?.ok ? (
-                    <div className="flex items-center justify-between text-primary">
-                      <span>
-                        Referral {referralCheck.code} ({discountPercent}% off)
-                      </span>
-                      <span>
-                        &minus;
-                        {formatRupeesFromPaise(
-                          plan.priceMonthly * 100 -
-                            discountedPaise(plan.priceMonthly * 100, discountPercent),
-                        )}
-                      </span>
-                    </div>
-                  ) : referralCheck ? (
-                    <p className="text-xs text-muted-foreground">
-                      Referral code not applied: {referralCheck.reason}
-                    </p>
-                  ) : null}
-                  {referralCheck && (
-                    <button
-                      type="button"
-                      onClick={dropReferral}
-                      className="mt-1 text-xs text-muted-foreground underline underline-offset-4"
-                    >
-                      Remove code
-                    </button>
-                  )}
+              {referralCheck?.ok && (
+                <div className="mt-2 flex items-center justify-between text-sm text-primary">
+                  <span>
+                    Referral {referralCheck.code} ({discountPercent}% off)
+                  </span>
+                  <span>
+                    &minus;
+                    {formatRupeesFromPaise(
+                      plan.priceMonthly * 100 -
+                        discountedPaise(plan.priceMonthly * 100, discountPercent),
+                    )}
+                  </span>
                 </div>
               )}
               <div className="mt-2 flex items-center justify-between text-sm">
@@ -336,6 +359,65 @@ function CheckoutPage() {
             </>
           ) : (
             <p className="mt-4 text-sm text-muted-foreground">Select a plan to continue.</p>
+          )}
+          {plan && (
+            <div className="mt-5">
+              {referralCheck?.ok ? (
+                <div className="flex items-center justify-between gap-2 rounded-lg border border-primary/30 bg-primary/10 px-3 py-2 text-sm">
+                  <span>
+                    Code <span className="font-mono font-semibold">{referralCheck.code}</span>{" "}
+                    applied: {discountPercent}% off
+                  </span>
+                  <button
+                    type="button"
+                    onClick={dropReferral}
+                    className="text-xs text-muted-foreground underline underline-offset-4"
+                  >
+                    Remove
+                  </button>
+                </div>
+              ) : (
+                <>
+                  <Label htmlFor="referral-code" className="text-xs text-muted-foreground">
+                    Have a referral link or code?
+                  </Label>
+                  <div className="mt-1.5 flex gap-2">
+                    <Input
+                      id="referral-code"
+                      value={codeText}
+                      placeholder="Paste link or enter code"
+                      autoComplete="off"
+                      onChange={(e) => {
+                        setCodeText(e.target.value);
+                        setApplyError(null);
+                      }}
+                      onKeyDown={(e) => {
+                        // Enter applies the code instead of submitting the payment form.
+                        if (e.key === "Enter") {
+                          e.preventDefault();
+                          void applyCode();
+                        }
+                      }}
+                    />
+                    <Button
+                      type="button"
+                      variant="outline"
+                      onClick={() => void applyCode()}
+                      disabled={applying || !codeText.trim()}
+                    >
+                      {applying ? <Loader2 className="h-4 w-4 animate-spin" /> : "Apply"}
+                    </Button>
+                  </div>
+                  {(applyError ??
+                    (referralCheck && !referralCheck.ok ? referralCheck.reason : null)) && (
+                    <p className="mt-1.5 text-xs text-destructive">
+                      {applyError ??
+                        (referralCheck && !referralCheck.ok ? referralCheck.reason : "")}
+                    </p>
+                  )}
+                </>
+              )}
+            </div>
           )}
           <Label htmlFor="submit" className="sr-only">
             Submit

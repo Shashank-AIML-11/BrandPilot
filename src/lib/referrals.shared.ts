@@ -46,3 +46,20 @@ export function formatRupeesFromPaise(paise: number): string {
     maximumFractionDigits: 2,
   }).format(rupees)}`;
 }
+
+/**
+ * Accepts what people actually paste: the full link
+ * ("https://app.loviza.click/pricing?ref=K7M2QX9A"), "ref=K7M2QX9A", or just the code.
+ */
+export function extractReferralCode(input: string | null | undefined): string {
+  const text = (input ?? "").trim();
+  if (!text) return "";
+  try {
+    const fromUrl = new URL(text).searchParams.get("ref");
+    if (fromUrl) return normalizeReferralCode(fromUrl);
+  } catch {
+    // Not a URL; fall through.
+  }
+  const match = /[?&]?ref=([A-Za-z0-9]+)/i.exec(text);
+  return normalizeReferralCode(match ? match[1] : text);
+}

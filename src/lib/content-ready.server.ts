@@ -49,11 +49,11 @@ export async function notifyContentReady(admin: unknown, job: JobRef): Promise<v
     }
     if (!email) return;
 
-    // Same meaning as the header toggle: ON unless the user switched it off.
+    // ON only when the user accepted Autopost (saved as true), same as the daily posting job.
     // It only counts as autoposting if the plan includes autoposting too.
     const entitlement = await getGenerationEntitlement(admin as never, job.user_id);
     const autopost =
-      (profile?.autopost_enabled as boolean | null) !== false && entitlement.plan.autoPost;
+      (profile?.autopost_enabled as boolean | null) === true && entitlement.plan.autoPost;
 
     // Claim the job first; if it was already claimed, someone else sent it.
     const { error: claimError } = await db.from("content_ready_notifications").insert({

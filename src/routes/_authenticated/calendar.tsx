@@ -1,4 +1,6 @@
 import { useBrandScope } from "@/lib/brand-scope";
+import { useMe } from "@/components/app-shell";
+import { AUTOPOST_SCHEDULE_NOTE, isAutopostOn } from "@/lib/autopost";
 import { useEffect, useMemo, useState, useRef, } from "react";
 import { createFileRoute } from "@tanstack/react-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
@@ -89,8 +91,9 @@ const REVIEW_TABS: Array<{ id: ReviewTab; label: string }> = [
   { id: "reviewed", label: "Reviewed - Ready to Post" },
   { id: "posted", label: "Posted" },
 ];
-const reviewTabOf = (item: ContentItem): ReviewTab =>
-  item.status === "posted" ? "posted" : item.reviewed_at ? "reviewed" : "generated";
+// With Autopost ON there is no review step: everything not yet posted sits in "Generated".
+const reviewTabOf = (item: ContentItem, autopostOn = false): ReviewTab =>
+  item.status === "posted" ? "posted" : !autopostOn && item.reviewed_at ? "reviewed" : "generated";
 
 /** Channels each format may be posted to (same split the detail dialog uses). */
 const CHANNELS_BY_TYPE: Record<string, string[]> = {
@@ -115,6 +118,13 @@ function CalendarPage() {
   const [view, setView] = useState<"month" | "week">("month");
   const [weekStart, setWeekStart] = useState(() => startOfWeek(new Date(), { weekStartsOn: 1 }));
   const [reviewTab, setReviewTab] = useState<ReviewTab>("generated");
+  // Autopost ON = manual review is off: no Review buttons, no "Reviewed - Ready to Post" tab.
+  const { data: me } = useMe();
+  const autopostOn = isAutopostOn(me);
+  const reviewTabs = autopostOn ? REVIEW_TABS.filter((t) => t.id !== "reviewed") : REVIEW_TABS;
+  useEffect(() => {
+    if (autopostOn && reviewTab === "reviewed") setReviewTab("generated");
+  }, [autopostOn, reviewTab]);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [finishing, setFinishing] = useState(false);
   const [postProgress, setPostProgress] = useState<{ done: number; total: number } | null>(null);
@@ -170,7 +180,6 @@ function CalendarPage() {
         .from("content_items")
         .select("*")
         .match(brandFilter)
-        .eq("calendar_hidden", false)
         .gte(
           "scheduled_date",
           format(view === "week" && weekStart < monthStart ? weekStart : monthStart, "yyyy-MM-dd"),
@@ -223,7 +232,6 @@ function CalendarPage() {
         .from("content_items")
         .select("id", { count: "exact", head: true })
         .match(brandFilter)
-        .eq("calendar_hidden", false)
         .gte("scheduled_date", format(targetWeekStart, "yyyy-MM-dd"))
         .lte("scheduled_date", format(targetWeekEnd, "yyyy-MM-dd"));
       if (error) throw error;
@@ -508,12 +516,12 @@ function CalendarPage() {
     }, [items, weekStart, weekEnd]);
     const reviewCounts = useMemo(() => {
       const c: Record<ReviewTab, number> = { generated: 0, reviewed: 0, posted: 0 };
-      for (const i of weekItems) c[reviewTabOf(i)] += 1;
+      for (const i of weekItems) c[reviewTabOf(i, autopostOn)] += 1;
       return c;
-    }, [weekItems]);
+    }, [weekItems, autopostOn]);
     const selectedItems = useMemo(
-      () => items.filter((i) => selectedIds.has(i.id) && reviewTabOf(i) === "reviewed"),
-      [items, selectedIds],
+      () => items.filter((i) => selectedIds.has(i.id) && reviewTabOf(i, autopostOn) === "reviewed"),
+      [items, selectedIds, autopostOn],
     );
 
     async function finishReview(item: ContentItem) {
@@ -636,49 +644,103 @@ function CalendarPage() {
    *  - account data
    */
   async function refreshCalendar() {
-    if (refreshing || view !== "week") return;
+    if (refreshing) return;
 
-    const label = `${format(targetWeekStart, "d MMM")} – ${format(targetWeekEnd, "d MMM yyyy")}`;
     const confirmed = window.confirm(
-      `Clear the calendar for ${label}?\n\nThe content is NOT deleted: it stays in the Content Library. The week becomes empty and "Generate Content" is enabled again.`,
+      `Clear ALL generated content from ${format(
+        cursor,
+        "MMMM yyyy",
+      )}?\n\nThis will remove the content from this month's calendar.`,
     );
+
     if (!confirmed) return;
 
     setRefreshing(true);
+
     try {
-      const { data: userData, error: userError } = await supabase.auth.getUser();
+      const {
+        data: userData,
+        error: userError,
+      } = await supabase.auth.getUser();
+
       if (userError || !userData.user) {
-        throw new Error("Your login session could not be verified.");
+        throw new Error(
+          "Your login session could not be verified.",
+        );
       }
 
-      // Stop any generation job for this week.
+      /*
+       * First remove/cancel the generation job.
+       */
       const { error: jobError } = await supabase
         .from("content_generation_jobs")
         .delete()
         .eq("user_id", userData.user.id)
         .match(brandFilter)
-        .eq("month", format(targetWeekStart, "yyyy-MM"));
-      if (jobError) throw new Error(`Could not clear generation job: ${jobError.message}`);
+        .eq("month", monthKey);
 
-      // Hide (not delete) this week's content from the calendar. It stays in the database and the Library.
-      const { error: hideError } = await supabase
+      if (jobError) {
+        throw new Error(
+          `Could not clear generation job: ${jobError.message}`,
+        );
+      }
+
+      /*
+       * Then delete this month's calendar content.
+       */
+      const { error: contentError } = await supabase
         .from("content_items")
-        .update({ calendar_hidden: true } as never)
+        .delete()
         .eq("user_id", userData.user.id)
         .match(brandFilter)
-        .gte("scheduled_date", format(targetWeekStart, "yyyy-MM-dd"))
-        .lte("scheduled_date", format(targetWeekEnd, "yyyy-MM-dd"));
-      if (hideError) throw new Error(`Could not clear the calendar: ${hideError.message}`);
+        .gte(
+          "scheduled_date",
+          format(monthStart, "yyyy-MM-dd"),
+        )
+        .lte(
+          "scheduled_date",
+          format(monthEnd, "yyyy-MM-dd"),
+        );
 
+      if (contentError) {
+        throw new Error(
+          `Could not clear calendar content: ${contentError.message}`,
+        );
+      }
+
+      /*
+       * Close opened panels.
+       */
       setOpenDay(null);
       setDetail(null);
-      await queryClient.invalidateQueries({ queryKey: ["content"] });
-      await queryClient.invalidateQueries({ queryKey: ["generation-job"] });
-      await queryClient.refetchQueries({ queryKey: ["content"] });
 
-      toast.success(`${label} calendar cleared. The content is still in the Content Library.`);
+      /*
+       * Force fresh database reads.
+       */
+      await queryClient.invalidateQueries({
+        queryKey: ["content", monthKey],
+      });
+
+      await queryClient.invalidateQueries({
+        queryKey: ["generation-job", monthKey],
+      });
+
+      await queryClient.refetchQueries({
+        queryKey: ["content", monthKey],
+      });
+
+      toast.success(
+        `${format(
+          cursor,
+          "MMMM yyyy",
+        )} calendar has been completely cleared.`,
+      );
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "Could not refresh calendar.");
+      toast.error(
+        error instanceof Error
+          ? error.message
+          : "Could not refresh calendar.",
+      );
     } finally {
       setRefreshing(false);
     }
@@ -688,13 +750,13 @@ function CalendarPage() {
    * POST CONTENT
    */
   function postContent() {
-    // Posting is a manual, per-card choice: open this week's "Reviewed - Ready to Post" tab,
-    // where cards are ticked and published with "Post now".
+    // Manual mode: open this week's "Reviewed - Ready to Post" tab, where cards are ticked and
+    // published with "Post now". With Autopost ON there is nothing to post by hand.
     const thisWeek = startOfWeek(new Date(), { weekStartsOn: 1 });
     setWeekStart(thisWeek);
     setCursor(startOfMonth(thisWeek));
     setView("week");
-    setReviewTab("reviewed");
+    setReviewTab(autopostOn ? "generated" : "reviewed");
   }
 
   /*
@@ -827,20 +889,14 @@ function CalendarPage() {
           {/* Generate */}
           <Button
             onClick={generateMonth}
-            // Disabled once this week has content (hover shows why); Refresh Calendar re-enables it.
-            title={
-              weekGenerated
-                ? targetIsCurrent
-                  ? "Content for Current week is already Generated"
-                  : "Content for this week is already Generated"
-                : undefined
-            }
+            // The current week stays clickable so it can explain it is already generated;
+            // any other week is disabled once generated (and past weeks never generate).
             disabled={
               queueing ||
               Boolean(activeJob) ||
               refreshing ||
               targetIsPast ||
-              weekGenerated
+              (weekGenerated && !targetIsCurrent)
             }
           >
             {queueing ? (
@@ -879,14 +935,13 @@ function CalendarPage() {
           </Button>
 
           {/* REFRESH CALENDAR — testing tool, not shown in Production */}
-          {!IS_PRODUCTION_APP && view === "week" && (
+          {!IS_PRODUCTION_APP && (
           <Button
             variant="outline"
             onClick={refreshCalendar}
             disabled={
               refreshing ||
-              queueing ||
-              Boolean(activeJob)
+              queueing
             }
           >
             {refreshing ? (
@@ -932,8 +987,8 @@ function CalendarPage() {
 
       {view === "week" && (
         <div className="flex flex-wrap items-center justify-between gap-3">
-          <div className="flex flex-wrap gap-1.5">
-            {REVIEW_TABS.map((t) => (
+          <div className="flex flex-wrap items-center gap-1.5">
+            {reviewTabs.map((t) => (
               <Button
                 key={t.id}
                 type="button"
@@ -945,6 +1000,9 @@ function CalendarPage() {
                 {t.label} ({reviewCounts[t.id]})
               </Button>
             ))}
+            {autopostOn && (
+              <p className="ml-2 text-xs text-muted-foreground">{AUTOPOST_SCHEDULE_NOTE}</p>
+            )}
           </div>
           {reviewTab === "reviewed" && (
             <div className="flex items-center gap-2">
@@ -953,7 +1011,7 @@ function CalendarPage() {
               variant="outline"
               disabled={reviewCounts.reviewed === 0 || postProgress !== null}
               onClick={() => {
-                const ids = weekItems.filter((i) => reviewTabOf(i) === "reviewed").map((i) => i.id);
+                const ids = weekItems.filter((i) => reviewTabOf(i, autopostOn) === "reviewed").map((i) => i.id);
                 const allSelected = ids.length > 0 && ids.every((id) => selectedIds.has(id));
                 setSelectedIds((prev) => {
                   const next = new Set(prev);
@@ -965,7 +1023,7 @@ function CalendarPage() {
                 });
               }}
             >
-              {weekItems.filter((i) => reviewTabOf(i) === "reviewed").every((i) => selectedIds.has(i.id)) &&
+              {weekItems.filter((i) => reviewTabOf(i, autopostOn) === "reviewed").every((i) => selectedIds.has(i.id)) &&
               reviewCounts.reviewed > 0
                 ? "Clear selection"
                 : "Select all"}
@@ -1009,7 +1067,7 @@ function CalendarPage() {
           <div className="grid grid-cols-7">
             {weekDays.map((day) => {
               const key = format(day, "yyyy-MM-dd");
-              const list = (byDate.get(key) ?? []).filter((i) => reviewTabOf(i) === reviewTab);
+              const list = (byDate.get(key) ?? []).filter((i) => reviewTabOf(i, autopostOn) === reviewTab);
               return (
                 <div key={key} className="min-h-[34rem] min-w-0 border-b border-r border-border p-2">
                   <div className="space-y-2">
@@ -1051,7 +1109,7 @@ function CalendarPage() {
 
                           {/* Bottom-right action */}
                           <div className="flex justify-end px-2 pb-2">
-                            {reviewTab === "generated" && (
+                            {reviewTab === "generated" && (rendering || !autopostOn) && (
                               <Button size="sm" className="h-7 px-2.5 text-xs" disabled={rendering} onClick={() => setDetail(item)}>
                                 {rendering ? "Generating…" : "Review"}
                               </Button>
@@ -1372,7 +1430,7 @@ function CalendarPage() {
 
       <ContentDetailDialog
         item={detail}
-        {...(view === "week" ? { onFinishReview: (i: ContentItem) => void finishReview(i), finishing } : {})}
+        {...(view === "week" && !autopostOn ? { onFinishReview: (i: ContentItem) => void finishReview(i), finishing } : {})}
         onOpenChange={(open) =>
           !open &&
           setDetail(null)

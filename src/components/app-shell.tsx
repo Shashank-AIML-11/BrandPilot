@@ -14,9 +14,12 @@ import {
   LifeBuoy,
   LogOut,
   Menu,
+  Info,
+  Loader2,
 } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { planById } from "@/lib/plans";
+import { AUTOPOST_CONSENT_TEXT, isAutopostOn } from "@/lib/autopost";
 import { AgencySidebar } from "@/components/agency-sidebar";
 import {
   agencyPlanFor,
@@ -106,9 +109,10 @@ export function AppShell({ children }: { children: ReactNode }) {
 
   const activePlan = planById(me?.activeSubscription?.plan);
 
-  // Account-wide Autopost switch. ON (default) = scheduled posts publish by themselves.
-  const autopostOn =
-    (me?.profile as { autopost_enabled?: boolean } | null | undefined)?.autopost_enabled !== false;
+  // Account-wide Autopost switch. It is ON only after the user presses "Accept" on the
+  // notice below; until then the request is "pending" and nothing is saved.
+  const autopostOn = isAutopostOn(me);
+  const [autopostPending, setAutopostPending] = useState(false);
   const setAutopost = useMutation({
     mutationFn: async (next: boolean) => {
       if (!me?.user) throw new Error("Not signed in");
@@ -145,11 +149,8 @@ export function AppShell({ children }: { children: ReactNode }) {
       return { previous };
     },
     onSuccess: (next) => {
-      toast.success(
-        next
-          ? "Autopost is ON. Scheduled posts will go out to your connected channels."
-          : "Autopost is OFF. Nothing posts by itself; use Post now on a card.",
-      );
+      // Turning ON is confirmed by the Accept button, so it needs no extra pop-up.
+      if (!next) toast.success("Autopost is OFF. Nothing posts by itself; use Post now on a card.");
       void queryClient.invalidateQueries({ queryKey: ["me"] });
     },
     onError: (e: unknown, _next, ctx) => {
@@ -157,6 +158,19 @@ export function AppShell({ children }: { children: ReactNode }) {
       toast.error(e instanceof Error ? e.message : "Could not change Autopost.");
     },
   });
+
+  // Switching ON only asks for confirmation; the setting is saved when "Accept" is pressed.
+  // Switching OFF (or back off while still pending) takes effect straight away.
+  const toggleAutopost = (wantOn: boolean) => {
+    if (wantOn) {
+      setAutopostPending(true);
+      return;
+    }
+    setAutopostPending(false);
+    if (autopostOn) setAutopost.mutate(false);
+  };
+  const acceptAutopost = () =>
+    setAutopost.mutate(true, { onSuccess: () => setAutopostPending(false) });
 
   // Scale-plan users get the agency sidebar (brand switcher) instead of the single-brand nav.
   const agencyPlan = agencyPlanFor(me);
@@ -214,24 +228,30 @@ export function AppShell({ children }: { children: ReactNode }) {
           className="flex cursor-pointer items-center gap-2 rounded-full border border-border px-3 py-1.5 text-sm"
           title={
             autopostOn
-              ? "Autopost is ON: scheduled content posts to connected channels automatically"
-              : "Autopost is OFF: select cards and use Post now"
+              ? "Autopost is ON: content posts automatically at 7 AM daily, with no manual review"
+              : autopostPending
+                ? "Press Accept on the notice to turn Autopost on"
+                : "Autopost is OFF: review content, then use Post now"
           }
         >
           <span className="hidden font-medium sm:inline">Autopost</span>
           <Switch
-            checked={autopostOn}
+            checked={autopostOn || autopostPending}
             disabled={!me || setAutopost.isPending}
-            onCheckedChange={(v) => setAutopost.mutate(v)}
+            onCheckedChange={toggleAutopost}
             aria-label="Autopost on or off"
           />
           <span
             className={cn(
-              "w-7 text-xs font-semibold",
-              autopostOn ? "text-emerald-400" : "text-muted-foreground",
+              "min-w-[2rem] text-xs font-semibold",
+              autopostOn
+                ? "text-emerald-400"
+                : autopostPending
+                  ? "text-amber-400"
+                  : "text-muted-foreground",
             )}
           >
-            {autopostOn ? "ON" : "OFF"}
+            {autopostOn ? "ON" : autopostPending ? "Confirm" : "OFF"}
           </span>
         </label>
 
@@ -277,6 +297,27 @@ export function AppShell({ children }: { children: ReactNode }) {
         </DropdownMenu>
         </div>
       </header>
+
+      {/* Consent notice: sits below the header (never over the Autopost switch or the
+          profile), and stays until the user presses Accept. */}
+      {autopostPending && !autopostOn && (
+        <div
+          role="status"
+          aria-live="polite"
+          className="fixed right-4 top-20 z-50 w-[calc(100vw-2rem)] max-w-sm rounded-xl border border-emerald-500/40 bg-emerald-950/95 p-4 text-emerald-50 shadow-xl backdrop-blur"
+        >
+          <div className="flex items-start gap-3">
+            <Info className="mt-0.5 h-5 w-5 shrink-0 text-emerald-300" />
+            <p className="text-sm leading-snug">{AUTOPOST_CONSENT_TEXT}</p>
+          </div>
+          <div className="mt-3 flex justify-end">
+            <Button size="sm" onClick={acceptAutopost} disabled={setAutopost.isPending}>
+              {setAutopost.isPending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+              Accept
+            </Button>
+          </div>
+        </div>
+      )}
 
       <div className="mx-auto flex max-w-[1600px]">
         <aside

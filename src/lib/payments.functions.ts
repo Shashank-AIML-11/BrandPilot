@@ -103,17 +103,25 @@ export const createPlanOrder = createServerFn({ method: "POST" })
       },
     });
 
-    const { error: insertError } = await untyped(supabaseAdmin).from("plan_orders").insert({
-      razorpay_order_id: order.id,
-      user_id: context.userId,
-      plan: plan.id,
-      kind,
-      amount_paise: amountPaise,
-      currency: "INR",
-      list_amount_paise: listAmountPaise,
-      discount_percent: discountPercent,
-      referral_code_id: referralId,
-    });
+    const { error: insertError } = await untyped(supabaseAdmin)
+      .from("plan_orders")
+      .insert({
+        razorpay_order_id: order.id,
+        user_id: context.userId,
+        plan: plan.id,
+        kind,
+        amount_paise: amountPaise,
+        currency: "INR",
+        // Only touch the referral columns when a referral is actually used, so
+        // a normal purchase never depends on the referral migration.
+        ...(referralId
+          ? {
+              list_amount_paise: listAmountPaise,
+              discount_percent: discountPercent,
+              referral_code_id: referralId,
+            }
+          : {}),
+      });
     if (insertError) throw new Error(insertError.message);
 
     // Preview of the new expiry, shown before the customer pays.

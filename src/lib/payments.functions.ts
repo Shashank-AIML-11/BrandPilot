@@ -231,6 +231,8 @@ export interface PlanStatus {
   daysLeft: number | null;
   /** Expiry date if the customer renews right now. */
   renewedUntil: string | null;
+  /** A paid one-time "generate this week" pass that is still valid (INR 300), if any. */
+  oneTime: { expiresAt: string; used: boolean } | null;
 }
 
 const NO_PLAN: PlanStatus = {
@@ -243,6 +245,7 @@ const NO_PLAN: PlanStatus = {
   periodEnd: null,
   daysLeft: null,
   renewedUntil: null,
+  oneTime: null,
 };
 
 /**
@@ -263,6 +266,10 @@ export const getPlanStatus = createServerFn({ method: "POST" })
       .maybeSingle();
     const isRoot = profile?.email?.trim().toLowerCase() === ROOT_EMAIL;
 
+    const { activeOneTimePass } = await import("@/lib/generation-entitlements");
+    const pass = await activeOneTimePass(supabaseAdmin, context.userId);
+    const oneTime = pass ? { expiresAt: pass.expiresAt, used: Boolean(pass.usedAt) } : null;
+
     const { data: sub, error } = await supabaseAdmin
       .from("subscriptions")
       .select("id, plan, status, current_period_end, razorpay_subscription_id")
@@ -272,10 +279,10 @@ export const getPlanStatus = createServerFn({ method: "POST" })
       .limit(1)
       .maybeSingle();
     if (error) throw new Error(error.message);
-    if (!sub) return { ...NO_PLAN, isRoot };
+    if (!sub) return { ...NO_PLAN, isRoot, oneTime };
 
     const plan = planById(sub.plan);
-    if (!plan) return { ...NO_PLAN, isRoot };
+    if (!plan) return { ...NO_PLAN, isRoot, oneTime };
 
     const now = new Date();
     const grace = sub.razorpay_subscription_id ? LEGACY_AUTOPAY_GRACE_DAYS : 0;
@@ -316,5 +323,109 @@ export const getPlanStatus = createServerFn({ method: "POST" })
         now,
         periodDaysFor(cycle),
       ).toISOString(),
+      oneTime,
     };
+  });
+
+// ---------------------------------------------------------------------------
+// One-time "generate this week" pass (INR 300)
+// ---------------------------------------------------------------------------
+
+/** Opens a payment for the one-time pass. Only for people without a running plan. */
+export const createOneTimeOrder = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .handler(async ({ context }) => {
+    const { ONE_TIME_PRICE_INR, ONE_TIME_PASS_DAYS } = await import("@/lib/one-time-pass");
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    const { untyped } = await import("@/lib/untyped-db.server");
+    const { activeOneTimePass } = await import("@/lib/generation-entitlements");
+
+    // A running paid plan does not need this; an unused pass does not need a second one.
+    const { data: subs, error: subError } = await supabaseAdmin
+      .from("subscriptions")
+      .select("status, current_period_end, razorpay_subscription_id")
+      .eq("user_id", context.userId)
+      .in("status", ["pending", "active"]);
+    if (subError) throw new Error(subError.message);
+    const now = new Date();
+    const hasPlan = (subs ?? []).some((s) =>
+      isPeriodActive(
+        s.current_period_end,
+        now,
+        s.razorpay_subscription_id ? LEGACY_AUTOPAY_GRACE_DAYS : 0,
+      ),
+    );
+    if (hasPlan) throw new Error("You already have an active plan.");
+    const pass = await activeOneTimePass(supabaseAdmin, context.userId);
+    if (pass && !pass.usedAt) {
+      throw new Error("You already have an unused one-time generation. Open the Content Calendar.");
+    }
+
+    const { data: profile, error: profileError } = await context.supabase
+      .from("profiles")
+      .select("email, full_name")
+      .eq("id", context.userId)
+      .maybeSingle();
+    if (profileError) throw new Error(profileError.message);
+    const claimsEmail =
+      typeof context.claims === "object" && context.claims && "email" in context.claims
+        ? (context.claims as { email?: unknown }).email
+        : undefined;
+    const email = profile?.email || (typeof claimsEmail === "string" ? claimsEmail : "");
+    if (!email) throw new Error("Your account is missing an email address.");
+
+    const amountPaise = ONE_TIME_PRICE_INR * 100;
+    const razorpay = await import("@/lib/payments/razorpay.server");
+    const order = await razorpay.createOrder({
+      amountPaise,
+      receipt: `lv1_${context.userId.slice(0, 8)}_${Date.now()}`,
+      notes: { userId: context.userId, kind: "one_time_week" },
+    });
+
+    const { error: insertError } = await untyped(supabaseAdmin).from("one_time_passes").insert({
+      razorpay_order_id: order.id,
+      user_id: context.userId,
+      amount_paise: amountPaise,
+    });
+    if (insertError) throw new Error(insertError.message);
+
+    return {
+      orderId: order.id,
+      amountPaise,
+      currency: "INR" as const,
+      keyId: razorpay.publicKeyId(),
+      validDays: ONE_TIME_PASS_DAYS,
+      customerEmail: email,
+      customerName: profile?.full_name ?? undefined,
+    };
+  });
+
+/** Verifies the one-time payment and unlocks the current week's generation. */
+export const confirmOneTimePayment = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((input: unknown) => confirmInput.parse(input))
+  .handler(async ({ data, context }) => {
+    const razorpay = await import("@/lib/payments/razorpay.server");
+    const valid = razorpay.verifyOrderPaymentSignature({
+      razorpayOrderId: data.razorpayOrderId,
+      razorpayPaymentId: data.razorpayPaymentId,
+      razorpaySignature: data.razorpaySignature,
+    });
+    if (!valid) throw new Error("Payment verification failed.");
+
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    const { untyped } = await import("@/lib/untyped-db.server");
+    const { data: order, error: orderError } = await untyped(supabaseAdmin)
+      .from("one_time_passes")
+      .select("user_id")
+      .eq("razorpay_order_id", data.razorpayOrderId)
+      .maybeSingle();
+    if (orderError) throw new Error(orderError.message);
+    if (!order || order.user_id !== context.userId) {
+      throw new Error("Order not found for this user.");
+    }
+
+    const { applyOneTimePayment } = await import("@/lib/one-time-pass.server");
+    const result = await applyOneTimePayment(data.razorpayOrderId, data.razorpayPaymentId);
+    return { expiresAt: result.expiresAt };
   });

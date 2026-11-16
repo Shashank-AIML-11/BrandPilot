@@ -1,11 +1,8 @@
 import { useBrandScope } from "@/lib/brand-scope";
-import { useMe } from "@/components/app-shell";
-import { AUTOPOST_SCHEDULE_NOTE, isAutopostOn } from "@/lib/autopost";
 import { useEffect, useMemo, useState, useRef, } from "react";
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
-  addDays,
   addMonths,
   eachDayOfInterval,
   endOfMonth,
@@ -25,16 +22,13 @@ import {
   RefreshCw,
   Send,
   Sparkles,
-  ImageOff,
-  CheckCircle2,
 } from "lucide-react";
 
 import { supabase } from "@/integrations/supabase/client";
-import { cachedMediaUrl, prefetchMediaUrls } from "@/lib/media";
+import { prefetchMediaUrls } from "@/lib/media";
 import { queueMonthGeneration, processGenerationQueueNow, processVideoQueueNow } from "@/lib/content.functions";
-import { publishAllContent, publishContentItem } from "@/lib/channels.functions";
-import { useServerFn } from "@tanstack/react-start";
-import { Checkbox } from "@/components/ui/checkbox";
+import { getPlanStatus } from "@/lib/payments.functions";
+import { publishAllContent } from "@/lib/channels.functions";
 
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -77,58 +71,11 @@ export const Route = createFileRoute("/_authenticated/calendar")({
 
 const DOW = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
 
-/**
- * Production app (app.loviza.click). "Refresh Calendar" is a testing tool, so it is
- * hidden there. Set VITE_APP_ENV=production in Vercel to override the host check.
- */
-const IS_PRODUCTION_APP =
-  import.meta.env["VITE_APP_ENV"] === "production" ||
-  (typeof window !== "undefined" && window.location.hostname === "app.loviza.click");
-
-type ReviewTab = "generated" | "reviewed" | "posted";
-const REVIEW_TABS: Array<{ id: ReviewTab; label: string }> = [
-  { id: "generated", label: "Generated" },
-  { id: "reviewed", label: "Reviewed - Ready to Post" },
-  { id: "posted", label: "Posted" },
-];
-// With Autopost ON there is no review step: everything not yet posted sits in "Generated".
-const reviewTabOf = (item: ContentItem, autopostOn = false): ReviewTab =>
-  item.status === "posted" ? "posted" : !autopostOn && item.reviewed_at ? "reviewed" : "generated";
-
-/** Channels each format may be posted to (same split the detail dialog uses). */
-const CHANNELS_BY_TYPE: Record<string, string[]> = {
-  blog: ["Website", "LinkedIn", "Medium", "Quora"],
-  linkedin_post: ["LinkedIn"],
-  instagram_post: ["Instagram"],
-  instagram_reel: ["Instagram"],
-  facebook_post: ["Facebook"],
-  twitter_post: ["X"],
-  pinterest: ["Pinterest"],
-  youtube_short: ["YouTube"],
-  tiktok_video: ["TikTok"],
-  product_service_video: ["YouTube", "Website"],
-  carousel: ["LinkedIn", "Instagram"],
-};
-
 function CalendarPage() {
   const queryClient = useQueryClient();
+  const navigate = useNavigate();
 
   const [cursor, setCursor] = useState(() => startOfMonth(new Date()));
-  // Month grid (default) or a single week with the full cards listed under each day.
-  const [view, setView] = useState<"month" | "week">("month");
-  const [weekStart, setWeekStart] = useState(() => startOfWeek(new Date(), { weekStartsOn: 1 }));
-  const [reviewTab, setReviewTab] = useState<ReviewTab>("generated");
-  // Autopost ON = manual review is off: no Review buttons, no "Reviewed - Ready to Post" tab.
-  const { data: me } = useMe();
-  const autopostOn = isAutopostOn(me);
-  const reviewTabs = autopostOn ? REVIEW_TABS.filter((t) => t.id !== "reviewed") : REVIEW_TABS;
-  useEffect(() => {
-    if (autopostOn && reviewTab === "reviewed") setReviewTab("generated");
-  }, [autopostOn, reviewTab]);
-  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
-  const [finishing, setFinishing] = useState(false);
-  const [postProgress, setPostProgress] = useState<{ done: number; total: number } | null>(null);
-  const publishItem = useServerFn(publishContentItem);
   const [openDay, setOpenDay] = useState<string | null>(null);
   const [detail, setDetail] = useState<ContentItem | null>(null);
 
@@ -146,18 +93,6 @@ function CalendarPage() {
   const monthStart = startOfMonth(cursor);
   const monthEnd = endOfMonth(cursor);
 
-  const weekEnd = endOfWeek(weekStart, { weekStartsOn: 1 });
-  const weekDays = useMemo(() => Array.from({ length: 7 }, (_, i) => addDays(weekStart, i)), [weekStart]);
-  const weekLabel = `${format(weekStart, "d MMM")} – ${format(weekEnd, "d MMM yyyy")}`;
-
-  // The week the "Generate Content" button works on: the selected week in Weekly view,
-  // otherwise the current week.
-  const currentWeekStart = startOfWeek(new Date(), { weekStartsOn: 1 });
-  const targetWeekStart = view === "week" ? weekStart : currentWeekStart;
-  const targetWeekEnd = endOfWeek(targetWeekStart, { weekStartsOn: 1 });
-  const targetIsCurrent = format(targetWeekStart, "yyyy-MM-dd") === format(currentWeekStart, "yyyy-MM-dd");
-  const targetIsPast = format(targetWeekEnd, "yyyy-MM-dd") < format(new Date(), "yyyy-MM-dd");
-
   const days = useMemo(
     () =>
       eachDayOfInterval({
@@ -171,8 +106,7 @@ function CalendarPage() {
    * LOAD CURRENT MONTH CONTENT
    */
   const { data: items = [], isLoading } = useQuery({
-    // In week view the range also covers the selected week (it can span two months).
-    queryKey: ["content", monthKey, scope.brandId, view === "week" ? format(weekStart, "yyyy-MM-dd") : "month"],
+    queryKey: ["content", monthKey, scope.brandId],
     enabled: !scope.loading,
 
     queryFn: async () => {
@@ -182,11 +116,11 @@ function CalendarPage() {
         .match(brandFilter)
         .gte(
           "scheduled_date",
-          format(view === "week" && weekStart < monthStart ? weekStart : monthStart, "yyyy-MM-dd"),
+          format(monthStart, "yyyy-MM-dd"),
         )
         .lte(
           "scheduled_date",
-          format(view === "week" && weekEnd > monthEnd ? weekEnd : monthEnd, "yyyy-MM-dd"),
+          format(monthEnd, "yyyy-MM-dd"),
         )
         .order("scheduled_time", {
           ascending: true,
@@ -220,22 +154,6 @@ function CalendarPage() {
       });
 
       return hasRenderingAssets ? 15000 : false;
-    },
-  });
-
-  // Has this week already been generated? (any content for the brand in Mon-Sun)
-  const { data: weekGenerated = false } = useQuery({
-    queryKey: ["content", monthKey, "weekgen", scope.brandId, format(targetWeekStart, "yyyy-MM-dd")],
-    enabled: !scope.loading,
-    queryFn: async () => {
-      const { count, error } = await supabase
-        .from("content_items")
-        .select("id", { count: "exact", head: true })
-        .match(brandFilter)
-        .gte("scheduled_date", format(targetWeekStart, "yyyy-MM-dd"))
-        .lte("scheduled_date", format(targetWeekEnd, "yyyy-MM-dd"));
-      if (error) throw error;
-      return (count ?? 0) > 0;
     },
   });
 
@@ -508,68 +426,6 @@ function CalendarPage() {
       return map;
     }, [items]);
 
-    // Items of the selected week and how many sit in each review tab.
-    const weekItems = useMemo(() => {
-      const from = format(weekStart, "yyyy-MM-dd");
-      const to = format(weekEnd, "yyyy-MM-dd");
-      return items.filter((i) => i.scheduled_date >= from && i.scheduled_date <= to);
-    }, [items, weekStart, weekEnd]);
-    const reviewCounts = useMemo(() => {
-      const c: Record<ReviewTab, number> = { generated: 0, reviewed: 0, posted: 0 };
-      for (const i of weekItems) c[reviewTabOf(i, autopostOn)] += 1;
-      return c;
-    }, [weekItems, autopostOn]);
-    const selectedItems = useMemo(
-      () => items.filter((i) => selectedIds.has(i.id) && reviewTabOf(i, autopostOn) === "reviewed"),
-      [items, selectedIds, autopostOn],
-    );
-
-    async function finishReview(item: ContentItem) {
-      setFinishing(true);
-      const { error } = await supabase
-        .from("content_items")
-        .update({ reviewed_at: new Date().toISOString() } as never)
-        .eq("id", item.id);
-      setFinishing(false);
-      if (error) {
-        toast.error(error.message);
-        return;
-      }
-      toast.success("Review finished — moved to “Reviewed - Ready to Post”.");
-      setDetail(null);
-      await queryClient.invalidateQueries({ queryKey: ["content"] });
-    }
-
-    async function postSelected() {
-      const queue = selectedItems;
-      if (queue.length === 0) return;
-      if (!window.confirm(`Post ${queue.length} reviewed piece${queue.length === 1 ? "" : "s"} now? This publishes immediately to your connected handles.`)) return;
-      setPostProgress({ done: 0, total: queue.length });
-      const done: string[] = [];
-      for (let i = 0; i < queue.length; i += 1) {
-        const item = queue[i]!;
-        const allowed = CHANNELS_BY_TYPE[item.type] ?? [];
-        const chosen = (item.platforms ?? []).filter((c) => allowed.includes(c));
-        try {
-          const { results } = await publishItem({ data: { itemId: item.id, channels: chosen.length ? chosen : allowed } });
-          const failed = results.filter((r) => !r.ok);
-          for (const f of failed) toast.error(`“${item.title}” → ${f.channel}: ${f.error}`);
-          if (results.some((r) => r.ok && !r.manual)) toast.success(`Posted “${item.title}”`);
-          if (failed.length === 0) done.push(item.id);
-        } catch (error) {
-          toast.error(`“${item.title}”: ${error instanceof Error ? error.message : "Could not post"}`);
-        }
-        setPostProgress({ done: i + 1, total: queue.length });
-      }
-      setPostProgress(null);
-      setSelectedIds((prev) => {
-        const next = new Set(prev);
-        for (const id of done) next.delete(id);
-        return next;
-      });
-      await queryClient.invalidateQueries({ queryKey: ["content"] });
-    }
-
     /*
     * GENERATE MONTH
     *
@@ -578,29 +434,45 @@ function CalendarPage() {
     * It does NOT wait for AI generation.
     */
     async function generateMonth() {
-      if (queueing || activeJob || refreshing) return;
-
-      if (weekGenerated) {
-        toast.info(
-          targetIsCurrent
-            ? "Content for Current week is already Generated."
-            : "Content for this week is already Generated.",
-        );
-        return;
-      }
+        if (
+    queueing ||
+    activeJob ||
+    items.length > 0 ||
+    refreshing
+  ) {
+    return;
+  }
 
       const monthDays = eachDayOfInterval({
-        start: targetWeekStart,
-        end: targetWeekEnd,
-      }).map((day) => format(day, "yyyy-MM-dd"));
+        start: monthStart,
+        end: monthEnd,
+      }).map((day) =>
+        format(day, "yyyy-MM-dd"),
+      );
+
+      // No plan (never had one, or it expired) and no one-time pass: go to the Plan page.
+      try {
+        const planStatus = await queryClient.fetchQuery({
+          queryKey: ["plan-status"],
+          queryFn: () => getPlanStatus(),
+          staleTime: 0,
+        });
+        const noPlan = planStatus.state === "none" || planStatus.state === "expired";
+        if (noPlan && !planStatus.isRoot && !planStatus.oneTime) {
+          toast.info("Choose a plan, or pay once to generate this week's content.");
+          void navigate({ to: "/plan" });
+          return;
+        }
+      } catch {
+        // Could not check; the server still enforces the plan below.
+      }
 
       setQueueing(true);
 
       try {
         const result = await queueMonthGeneration({
           data: {
-            month: format(targetWeekStart, "yyyy-MM"),
-            weekStart: format(targetWeekStart, "yyyy-MM-dd"),
+            month: monthKey,
             dates: monthDays,
             ...(scope.brandId ? { brandId: scope.brandId } : {}),
           },
@@ -616,15 +488,22 @@ function CalendarPage() {
 
         toast.success(
           result?.queued
-            ? `${result.queued} days queued for the week of ${format(targetWeekStart, "d MMM")}. Generation will continue in the background.`
-            : `Generation queued for the week of ${format(targetWeekStart, "d MMM")}.`,
+            ? `${result.queued} days queued for ${format(
+                cursor,
+                "MMMM yyyy",
+              )}. Generation will continue in the background.`
+            : `${format(
+                cursor,
+                "MMMM yyyy",
+              )} generation queued.`,
         );
       } catch (error) {
-        toast.error(
-          error instanceof Error
-            ? error.message
-            : "Could not start generation.",
-        );
+        const message = error instanceof Error ? error.message : "Could not start generation.";
+        toast.error(message);
+        // The server says there is no usable plan: send them to the Plan page.
+        if (/upgrade plan|plan has expired|one-time generation has already/i.test(message)) {
+          void navigate({ to: "/plan" });
+        }
       } finally {
         setQueueing(false);
       }
@@ -750,13 +629,9 @@ function CalendarPage() {
    * POST CONTENT
    */
   function postContent() {
-    // Manual mode: open this week's "Reviewed - Ready to Post" tab, where cards are ticked and
-    // published with "Post now". With Autopost ON there is nothing to post by hand.
-    const thisWeek = startOfWeek(new Date(), { weekStartsOn: 1 });
-    setWeekStart(thisWeek);
-    setCursor(startOfMonth(thisWeek));
-    setView("week");
-    setReviewTab(autopostOn ? "generated" : "reviewed");
+    // Posting is a manual, per-card choice: open the Content Library, where cards can
+    // be selected and published with the "Post now" button.
+    void navigate({ to: "/content-library" });
   }
 
   /*
@@ -806,6 +681,8 @@ function CalendarPage() {
     }
   }, [items, detail]);
 
+  const hasCalendarContent = items.length > 0;
+
   return (
     <div className="space-y-6">
 
@@ -813,75 +690,41 @@ function CalendarPage() {
       {/* HEADER */}
       {/* ====================================================== */}
 
-      {/* Stays pinned under the top bar while the calendar scrolls. */}
-      <div className="sticky top-16 z-20 -mx-4 flex flex-wrap items-end justify-between gap-4 border-b border-border bg-background px-4 pb-3 pt-2 sm:-mx-8 sm:px-8">
+      <div className="flex flex-wrap items-end justify-between gap-4">
 
         <div>
           <h1 className="text-2xl font-bold">
             Content Calendar
           </h1>
         </div>
-
         <div className="flex flex-wrap items-center gap-2">
-
-          {/* Month / Week toggle */}
-          <div className="inline-flex rounded-md border border-border p-0.5">
-            {(["month", "week"] as const).map((v) => (
-              <Button
-                key={v}
-                type="button"
-                size="sm"
-                variant={view === v ? "default" : "ghost"}
-                className="h-8 px-3 capitalize"
-                onClick={() => {
-                  if (v === "week" && view !== "week") {
-                    // Show the week containing today when it is in the visible month, else the month's first week.
-                    const today = new Date();
-                    setWeekStart(
-                      isSameMonth(today, cursor)
-                        ? startOfWeek(today, { weekStartsOn: 1 })
-                        : startOfWeek(startOfMonth(cursor), { weekStartsOn: 1 }),
-                    );
-                  }
-                  setView(v);
-                }}
-              >
-                {v === "month" ? "Monthly" : "Weekly"}
-              </Button>
-            ))}
-          </div>
-
-          {/* Previous */}
+          {/* Previous Month */}
           <Button
             variant="outline"
             size="icon"
-            onClick={() => {
-              if (view === "week") {
-                const next = addDays(weekStart, -7);
-                setWeekStart(next);
-                setCursor(startOfMonth(next));
-              } else setCursor(addMonths(cursor, -1));
-            }}
+            onClick={() =>
+              setCursor(
+                addMonths(cursor, -1),
+              )
+            }
           >
             <ChevronLeft className="h-4 w-4" />
           </Button>
 
-          {/* Current period */}
-          <span className="w-44 text-center font-display text-lg font-semibold">
-            {view === "week" ? weekLabel : format(cursor, "MMMM yyyy")}
+          {/* Current Month */}
+          <span className="w-40 text-center font-display text-lg font-semibold">
+            {format(cursor, "MMMM yyyy")}
           </span>
 
-          {/* Next */}
+          {/* Next Month */}
           <Button
             variant="outline"
             size="icon"
-            onClick={() => {
-              if (view === "week") {
-                const next = addDays(weekStart, 7);
-                setWeekStart(next);
-                setCursor(startOfMonth(next));
-              } else setCursor(addMonths(cursor, 1));
-            }}
+            onClick={() =>
+              setCursor(
+                addMonths(cursor, 1),
+              )
+            }
           >
             <ChevronRight className="h-4 w-4" />
           </Button>
@@ -889,14 +732,11 @@ function CalendarPage() {
           {/* Generate */}
           <Button
             onClick={generateMonth}
-            // The current week stays clickable so it can explain it is already generated;
-            // any other week is disabled once generated (and past weeks never generate).
             disabled={
               queueing ||
               Boolean(activeJob) ||
               refreshing ||
-              targetIsPast ||
-              (weekGenerated && !targetIsCurrent)
+              hasCalendarContent
             }
           >
             {queueing ? (
@@ -934,8 +774,7 @@ function CalendarPage() {
               : "Post Content"}
           </Button>
 
-          {/* REFRESH CALENDAR — testing tool, not shown in Production */}
-          {!IS_PRODUCTION_APP && (
+          {/* REFRESH CALENDAR */}
           <Button
             variant="outline"
             onClick={refreshCalendar}
@@ -954,7 +793,6 @@ function CalendarPage() {
               ? "Refreshing…"
               : "Refresh Calendar"}
           </Button>
-          )}
 
         </div>
       </div>
@@ -985,58 +823,6 @@ function CalendarPage() {
         </div>
       )}
 
-      {view === "week" && (
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <div className="flex flex-wrap items-center gap-1.5">
-            {reviewTabs.map((t) => (
-              <Button
-                key={t.id}
-                type="button"
-                size="sm"
-                variant={reviewTab === t.id ? "default" : "outline"}
-                className="rounded-full"
-                onClick={() => setReviewTab(t.id)}
-              >
-                {t.label} ({reviewCounts[t.id]})
-              </Button>
-            ))}
-            {autopostOn && (
-              <p className="ml-2 text-xs text-muted-foreground">{AUTOPOST_SCHEDULE_NOTE}</p>
-            )}
-          </div>
-          {reviewTab === "reviewed" && (
-            <div className="flex items-center gap-2">
-            <Button
-              size="sm"
-              variant="outline"
-              disabled={reviewCounts.reviewed === 0 || postProgress !== null}
-              onClick={() => {
-                const ids = weekItems.filter((i) => reviewTabOf(i, autopostOn) === "reviewed").map((i) => i.id);
-                const allSelected = ids.length > 0 && ids.every((id) => selectedIds.has(id));
-                setSelectedIds((prev) => {
-                  const next = new Set(prev);
-                  for (const id of ids) {
-                    if (allSelected) next.delete(id);
-                    else next.add(id);
-                  }
-                  return next;
-                });
-              }}
-            >
-              {weekItems.filter((i) => reviewTabOf(i, autopostOn) === "reviewed").every((i) => selectedIds.has(i.id)) &&
-              reviewCounts.reviewed > 0
-                ? "Clear selection"
-                : "Select all"}
-            </Button>
-            <Button size="sm" onClick={() => void postSelected()} disabled={selectedItems.length === 0 || postProgress !== null}>
-              {postProgress ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Send className="mr-2 h-4 w-4" />}
-              {postProgress ? `Posting ${postProgress.done}/${postProgress.total}…` : selectedItems.length ? `Post now (${selectedItems.length})` : "Post now"}
-            </Button>
-            </div>
-          )}
-        </div>
-      )}
-
       {/* ====================================================== */}
       {/* CALENDAR */}
       {/* ====================================================== */}
@@ -1045,15 +831,12 @@ function CalendarPage() {
 
         <div className="grid grid-cols-7 border-b border-border bg-card">
 
-          {DOW.map((day, i) => (
+          {DOW.map((day) => (
             <div
               key={day}
-              className={`border-r border-border px-3 py-2 text-center text-xs uppercase tracking-wide ${
-                view === "week" && isToday(weekDays[i]!) ? "font-semibold text-primary" : "text-muted-foreground"
-              }`}
+              className="px-3 py-2 text-center text-xs uppercase tracking-wide text-muted-foreground"
             >
               {day}
-              {view === "week" ? ` ${format(weekDays[i]!, "d MMM")}` : ""}
             </div>
           ))}
 
@@ -1062,92 +845,6 @@ function CalendarPage() {
         {isLoading ? (
           <div className="flex h-72 items-center justify-center">
             <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
-          </div>
-        ) : view === "week" ? (
-          <div className="grid grid-cols-7">
-            {weekDays.map((day) => {
-              const key = format(day, "yyyy-MM-dd");
-              const list = (byDate.get(key) ?? []).filter((i) => reviewTabOf(i, autopostOn) === reviewTab);
-              return (
-                <div key={key} className="min-h-[34rem] min-w-0 border-b border-r border-border p-2">
-                  <div className="space-y-2">
-                    {list.length === 0 && (
-                      <p className="pt-6 text-center text-[11px] text-muted-foreground">
-                        {reviewTab === "generated" ? "Nothing to review" : reviewTab === "reviewed" ? "None reviewed" : "Nothing posted"}
-                      </p>
-                    )}
-                    {list.map((item) => {
-                      const raw = item.image_url ?? item.carousel_image_urls?.[0] ?? null;
-                      const thumb = cachedMediaUrl(raw) ?? raw;
-                      const rendering = item.status === "draft";
-                      const isSelected = selectedIds.has(item.id);
-                      return (
-                        <div
-                          key={item.id}
-                          className={`relative overflow-hidden rounded-lg border transition-colors hover:border-primary/50 ${
-                            isSelected ? "border-primary ring-1 ring-primary" : "border-border"
-                          }`}
-                        >
-                          <button type="button" onClick={() => setDetail(item)} className="block w-full text-left">
-                            <div className="relative aspect-square w-full bg-muted/20">
-                              {thumb ? (
-                                <img src={thumb} alt={item.title} className="h-full w-full object-cover" />
-                              ) : (
-                                <div className="flex h-full w-full items-center justify-center text-muted-foreground/40">
-                                  {rendering ? <Loader2 className="h-5 w-5 animate-spin" /> : <ImageOff className="h-5 w-5" />}
-                                </div>
-                              )}
-                              <Badge variant="outline" className={`absolute left-1.5 top-1.5 text-[10px] ${typeStyles[item.type] ?? ""}`}>
-                                {item.type}
-                              </Badge>
-                            </div>
-                            <div className="space-y-1 p-2 pb-1">
-                              <p className="line-clamp-2 text-xs font-medium leading-snug">{item.title}</p>
-                              <span className="text-[11px] text-muted-foreground">{item.scheduled_time?.slice(0, 5) ?? ""}</span>
-                            </div>
-                          </button>
-
-                          {/* Bottom-right action */}
-                          <div className="flex justify-end px-2 pb-2">
-                            {reviewTab === "generated" && (rendering || !autopostOn) && (
-                              <Button size="sm" className="h-7 px-2.5 text-xs" disabled={rendering} onClick={() => setDetail(item)}>
-                                {rendering ? "Generating…" : "Review"}
-                              </Button>
-                            )}
-                            {reviewTab === "reviewed" && (
-                              <Button size="sm" variant="secondary" className="h-7 gap-1 px-2 text-[11px] text-success" onClick={() => setDetail(item)}>
-                                <CheckCircle2 className="h-3 w-3" /> Reviewed - Ready to Post
-                              </Button>
-                            )}
-                            {reviewTab === "posted" && (
-                              <Badge className="bg-success text-[10px] text-success-foreground">Posted</Badge>
-                            )}
-                          </div>
-
-                          {reviewTab === "reviewed" && (
-                            <div className="absolute right-1.5 top-1.5 z-10 rounded-md bg-background/80 p-1 shadow-sm backdrop-blur-sm">
-                              <Checkbox
-                                className="h-5 w-5"
-                                checked={isSelected}
-                                onCheckedChange={() =>
-                                  setSelectedIds((prev) => {
-                                    const next = new Set(prev);
-                                    if (next.has(item.id)) next.delete(item.id);
-                                    else next.add(item.id);
-                                    return next;
-                                  })
-                                }
-                                aria-label={`Select “${item.title}” to post`}
-                              />
-                            </div>
-                          )}
-                        </div>
-                      );
-                    })}
-                  </div>
-                </div>
-              );
-            })}
           </div>
         ) : (
           <div className="grid grid-cols-7">
@@ -1430,7 +1127,6 @@ function CalendarPage() {
 
       <ContentDetailDialog
         item={detail}
-        {...(view === "week" && !autopostOn ? { onFinishReview: (i: ContentItem) => void finishReview(i), finishing } : {})}
         onOpenChange={(open) =>
           !open &&
           setDetail(null)

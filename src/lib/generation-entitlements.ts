@@ -10,6 +10,12 @@ export interface GenerationEntitlement {
   isRoot: boolean;
   /** When the paid period ends (ISO). Null for the root account / legacy rows. */
   periodEnd?: string | null;
+  /**
+   * Set when the person has no plan but paid for the one-time pass: a single
+   * generation for the current week, no autoposting. `usedAt` is set once that
+   * generation has been started.
+   */
+  oneTimePass?: { id: string; expiresAt: string; usedAt: string | null };
 }
 
 export const PLAN_EXPIRED_MESSAGE = "Your plan has expired. Renew to continue.";
@@ -25,6 +31,30 @@ type SubRow = {
 function rowIsCurrent(row: SubRow, now: Date): boolean {
   const grace = row.razorpay_subscription_id ? LEGACY_AUTOPAY_GRACE_DAYS : 0;
   return isPeriodActive(row.current_period_end, now, grace);
+}
+
+type LooseClient = SupabaseClient<any, "public", any>; // eslint-disable-line @typescript-eslint/no-explicit-any
+
+/** A paid, unexpired one-time pass for this user, if any. Never throws. */
+export async function activeOneTimePass(
+  supabase: unknown,
+  userId: string,
+): Promise<{ id: string; expiresAt: string; usedAt: string | null } | null> {
+  try {
+    const { data } = await (supabase as LooseClient)
+      .from("one_time_passes")
+      .select("id, expires_at, used_at")
+      .eq("user_id", userId)
+      .eq("status", "paid")
+      .gt("expires_at", new Date().toISOString())
+      .order("expires_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    if (!data) return null;
+    return { id: data.id, expiresAt: data.expires_at, usedAt: data.used_at ?? null };
+  } catch {
+    return null;
+  }
 }
 
 /** Returns the paid plan recorded by checkout. Profile.plan is deliberately not
@@ -69,6 +99,17 @@ export async function getGenerationEntitlement(
 
   const plan = planById(current?.plan);
   if (!plan) {
+    // No plan: a paid one-time pass still allows the current week's generation.
+    const pass = await activeOneTimePass(supabase, userId);
+    const starter = planById("starter");
+    if (pass && starter) {
+      return {
+        plan: { ...starter, name: "One-time week", autoPost: false },
+        isRoot: false,
+        periodEnd: pass.expiresAt,
+        oneTimePass: pass,
+      };
+    }
     // Had a plan that has since lapsed vs. never had one.
     throw new Error(rows.length > 0 ? PLAN_EXPIRED_MESSAGE : "Upgrade Plan");
   }
@@ -95,6 +136,19 @@ export async function usersWithAccess(
       .in("status", ["pending", "active"]),
     supabase.from("profiles").select("id, email").in("id", userIds),
   ]);
+
+  // People holding a valid one-time pass count as having access too.
+  try {
+    const { data: passes } = await (supabase as unknown as LooseClient)
+      .from("one_time_passes")
+      .select("user_id")
+      .in("user_id", userIds)
+      .eq("status", "paid")
+      .gt("expires_at", new Date().toISOString());
+    for (const p of passes ?? []) allowed.add(p.user_id as string);
+  } catch {
+    /* table not created yet: no passes */
+  }
 
   const now = new Date();
   for (const row of (subs ?? []) as unknown as Array<SubRow & { user_id: string }>) {

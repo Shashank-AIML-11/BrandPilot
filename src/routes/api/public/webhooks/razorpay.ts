@@ -99,6 +99,22 @@ export const Route = createFileRoute("/api/public/webhooks/razorpay")({
                 return new Response("Apply failed", { status: 500 });
               }
             }
+            // One-time "generate this week" pass (INR 300).
+            const { data: ourPass } = await untyped(adminDb)
+              .from("one_time_passes")
+              .select("razorpay_order_id")
+              .eq("razorpay_order_id", orderId)
+              .maybeSingle();
+            if (ourPass) {
+              try {
+                const { applyOneTimePayment } = await import("@/lib/one-time-pass.server");
+                await applyOneTimePayment(orderId, paymentId);
+                return new Response("ok", { status: 200 });
+              } catch (err) {
+                console.error("[webhook:razorpay] applying one-time payment failed", err);
+                return new Response("Apply failed", { status: 500 });
+              }
+            }
           }
         }
         const razorpaySubscriptionId = subscriptionEntity?.id ?? paymentEntity?.subscription_id;

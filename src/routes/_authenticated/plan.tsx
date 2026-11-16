@@ -12,6 +12,7 @@ import {
 } from "@/lib/plan-access";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { OneTimeGenerate } from "@/components/one-time-generate";
 
 export const Route = createFileRoute("/_authenticated/plan")({
   head: () => ({
@@ -158,6 +159,7 @@ function PlanPage() {
               <Link to="/pricing">Change plan</Link>
             </Button>
           </div>
+          <OneTimeGenerate />
         </div>
       ) : (
         <div className="surface p-6">
@@ -170,6 +172,7 @@ function PlanPage() {
           <Button className="mt-6" asChild>
             <Link to="/pricing">Choose a plan</Link>
           </Button>
+          <OneTimeGenerate />
         </div>
       )}
 

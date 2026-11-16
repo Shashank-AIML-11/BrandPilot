@@ -1,7 +1,8 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Link, useNavigate } from "@tanstack/react-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
+import { supabase } from "@/integrations/supabase/client";
 import { Loader2, Sparkles } from "lucide-react";
 import { confirmOneTimePayment, createOneTimeOrder, getPlanStatus } from "@/lib/payments.functions";
 import { loadRazorpayScript } from "@/lib/payments/load-razorpay-script";
@@ -15,16 +16,11 @@ import { Button } from "@/components/ui/button";
  * returns to the Content Calendar where the current week's content can be
  * generated one time (no autoposting).
  */
-export function OneTimeGenerate() {
+/** Starts the one-time payment; after paying, returns to the Content Calendar. */
+export function useOneTimePayment() {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const [busy, setBusy] = useState(false);
-  const { data: status } = useQuery({
-    queryKey: ["plan-status"],
-    queryFn: () => getPlanStatus(),
-  });
-
-  const pass = status?.oneTime ?? null;
 
   async function pay() {
     setBusy(true);
@@ -71,6 +67,18 @@ export function OneTimeGenerate() {
     }
   }
 
+  return { pay, busy };
+}
+
+export function OneTimeGenerate() {
+  const { pay, busy } = useOneTimePayment();
+  const { data: status } = useQuery({
+    queryKey: ["plan-status"],
+    queryFn: () => getPlanStatus(),
+  });
+
+  const pass = status?.oneTime ?? null;
+
   if (pass && !pass.used) {
     return (
       <div className="mt-6 rounded-xl border border-border bg-muted/40 p-4 text-sm">
@@ -102,5 +110,101 @@ export function OneTimeGenerate() {
         Generate One Time with {formatINR(ONE_TIME_PRICE_INR)}
       </Button>
     </div>
+  );
+}
+
+const ONE_TIME_FLAG = "loviza_onetime";
+
+/**
+ * "Generate One Time with INR 300" for the public Pricing page, shown beside
+ * "Pick your plan". Signed-out visitors are sent to sign in first and the
+ * payment then starts by itself when they come back (no query string is put in
+ * the sign-in redirect). A visit to /pricing?onetime=1 (from the landing page)
+ * does the same.
+ */
+export function OneTimePricingButton() {
+  const navigate = useNavigate();
+  const { pay, busy } = useOneTimePayment();
+  const started = useRef(false);
+
+  const { data: session, isFetched } = useQuery({
+    queryKey: ["session-check"],
+    queryFn: async () => (await supabase.auth.getSession()).data.session,
+  });
+  const { data: status } = useQuery({
+    queryKey: ["plan-status"],
+    enabled: Boolean(session),
+    queryFn: () => getPlanStatus(),
+  });
+
+  const hasPlan = Boolean(
+    status && (status.isRoot || status.state === "active" || status.state === "expiring"),
+  );
+  const passReady = Boolean(status?.oneTime && !status.oneTime.used);
+
+  function rememberIntent() {
+    try {
+      localStorage.setItem(ONE_TIME_FLAG, "1");
+    } catch {
+      /* storage blocked: the visitor can press the button again after signing in */
+    }
+  }
+
+  async function click() {
+    if (!session) {
+      rememberIntent();
+      void navigate({ to: "/auth", search: { redirect: "/pricing" } });
+      return;
+    }
+    if (passReady) {
+      void navigate({ to: "/calendar" });
+      return;
+    }
+    await pay();
+  }
+
+  // Resume after sign-in, or when arriving from the landing page with ?onetime=1.
+  useEffect(() => {
+    if (!isFetched || started.current) return;
+    let wanted = new URLSearchParams(window.location.search).get("onetime") === "1";
+    try {
+      if (localStorage.getItem(ONE_TIME_FLAG) === "1") wanted = true;
+    } catch {
+      /* ignore */
+    }
+    if (!wanted) return;
+
+    if (!session) {
+      started.current = true;
+      rememberIntent();
+      void navigate({ to: "/auth", search: { redirect: "/pricing" } });
+      return;
+    }
+    if (!status) return;
+    started.current = true;
+    try {
+      localStorage.removeItem(ONE_TIME_FLAG);
+    } catch {
+      /* ignore */
+    }
+    window.history.replaceState(null, "", window.location.pathname);
+    if (hasPlan) return;
+    if (passReady) void navigate({ to: "/calendar" });
+    else void pay();
+  }, [isFetched, session, status, hasPlan, passReady, navigate, pay]);
+
+  if (hasPlan) return null;
+
+  return (
+    <Button onClick={click} disabled={busy} variant="outline">
+      {busy ? (
+        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+      ) : (
+        <Sparkles className="mr-2 h-4 w-4" />
+      )}
+      {passReady
+        ? "Go to Content Calendar"
+        : `Generate One Time with ${formatINR(ONE_TIME_PRICE_INR)}`}
+    </Button>
   );
 }

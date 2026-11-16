@@ -13,6 +13,7 @@ import {
   type BillingCycle,
 } from "@/lib/plans";
 import { BillingToggle } from "@/components/billing-toggle";
+import { OneTimePricingButton } from "@/components/one-time-generate";
 import { previewReferral } from "@/lib/referrals.functions";
 import { normalizeReferralCode, REF_STORAGE_KEY } from "@/lib/referrals.shared";
 import { Button } from "@/components/ui/button";
@@ -100,7 +101,15 @@ function PricingPage() {
       <main className="mx-auto w-full max-w-6xl flex-1 overflow-y-auto px-6 pb-6">
         <div className="text-center">
           <h1 className="text-2xl font-bold">Pick your plan</h1>
-          <p className="mx-auto mt-2 max-w-xl text-sm text-muted-foreground">
+          <div className="mt-3 flex items-center justify-center gap-3 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+            <span className="h-px w-10 bg-border" />
+            or
+            <span className="h-px w-10 bg-border" />
+          </div>
+          <div className="mt-3 flex justify-center">
+            <OneTimePricingButton />
+          </div>
+          <p className="mx-auto mt-3 max-w-xl text-sm text-muted-foreground">
             Upgrade or downgrade at any time.
           </p>
         </div>

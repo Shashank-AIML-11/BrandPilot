@@ -109,9 +109,6 @@ function PricingPage() {
           <div className="mt-3 flex justify-center">
             <OneTimePricingButton />
           </div>
-          <p className="mx-auto mt-3 max-w-xl text-sm text-muted-foreground">
-            Upgrade or downgrade at any time.
-          </p>
         </div>
 
         {refPreview?.valid && (

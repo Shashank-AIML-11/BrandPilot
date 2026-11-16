@@ -30,9 +30,6 @@ export const PricingSection: React.FC = () => {
           <h2 className="text-3xl sm:text-4xl font-extrabold text-white tracking-tight [text-wrap:balance]">
             Pick your plan
           </h2>
-          <p className="mt-4 text-zinc-400 text-sm sm:text-base leading-relaxed">
-            Upgrade or downgrade at any time.
-          </p>
         </div>
 
         {/* Pricing Cards Grid */}

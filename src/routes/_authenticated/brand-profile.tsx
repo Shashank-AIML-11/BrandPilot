@@ -2,9 +2,16 @@ import { useCallback, useEffect, useRef, useState, type Dispatch, type SetStateA
 import { createFileRoute } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { ChevronRight, Loader2, Save, Trash2, Upload } from "lucide-react";
+import { ChevronRight, FileText, Loader2, Save, Trash2, Upload } from "lucide-react";
 import { useServerFn } from "@tanstack/react-start";
-import { getBrandLogoUrl, removeBrandLogo, uploadBrandLogo } from "@/lib/brand-assets.functions";
+import {
+  getBrandLogoUrl,
+  listBrandAssets,
+  removeBrandAsset,
+  removeBrandLogo,
+  uploadBrandAsset,
+  uploadBrandLogo,
+} from "@/lib/brand-assets.functions";
 import { supabase } from "@/integrations/supabase/client";
 import { ChannelConnections } from "@/components/channel-connections";
 import { useMe } from "@/components/app-shell";
@@ -104,6 +111,51 @@ function BrandAssets({
   const remove = useServerFn(removeBrandLogo);
   const signed = useServerFn(getBrandLogoUrl);
   const fileRef = useRef<HTMLInputElement>(null);
+  const assetRef = useRef<HTMLInputElement>(null);
+  const replaceRef = useRef<HTMLInputElement>(null);
+  const replaceTarget = useRef<string | null>(null);
+  const listAssets = useServerFn(listBrandAssets);
+  const uploadAsset = useServerFn(uploadBrandAsset);
+  const removeAsset = useServerFn(removeBrandAsset);
+  const qc = useQueryClient();
+
+  const { data: assetData } = useQuery({
+    queryKey: ["brand-assets", brandId ?? "default"],
+    queryFn: () => listAssets({ data: brandId ? { brandId } : {} }),
+  });
+  const assets = assetData?.assets ?? [];
+
+  const upAsset = useMutation({
+    mutationFn: async ({ file, replacePath }: { file: File; replacePath?: string }) => {
+      if (file.size > 3_000_000) throw new Error("Each brand asset must be smaller than 3 MB.");
+      const base64 = await new Promise<string>((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(String(reader.result).split(",")[1] ?? "");
+        reader.onerror = () => reject(new Error("Could not read the file"));
+        reader.readAsDataURL(file);
+      });
+      return uploadAsset({
+        data: {
+          ...(brandId ? { brandId } : {}),
+          name: file.name,
+          mime: file.type,
+          base64,
+          ...(replacePath ? { replacePath } : {}),
+        },
+      });
+    },
+    onSuccess: () => {
+      toast.success("Brand asset saved");
+      void qc.invalidateQueries({ queryKey: ["brand-assets"] });
+    },
+    onError: (e) => toast.error(e instanceof Error ? e.message : "Upload failed"),
+  });
+
+  const delAsset = useMutation({
+    mutationFn: (path: string) => removeAsset({ data: { ...(brandId ? { brandId } : {}), path } }),
+    onSuccess: () => void qc.invalidateQueries({ queryKey: ["brand-assets"] }),
+    onError: (e) => toast.error(e instanceof Error ? e.message : "Delete failed"),
+  });
 
   const { data: logo } = useQuery({
     queryKey: ["brand-logo", form.logo_url],
@@ -142,39 +194,117 @@ function BrandAssets({
     setForm((f) => ({ ...f, brand_colors: { ...f.brand_colors, [key]: value } }));
 
   return (
-    <div className="grid gap-4 sm:grid-cols-2">
+    <div className="grid gap-4 lg:grid-cols-[minmax(0,3fr)_minmax(0,2fr)]">
       <div className="space-y-2">
         <Label>Brand logo</Label>
-        <div className="flex items-center gap-3">
-          <div className="flex h-16 w-28 items-center justify-center overflow-hidden rounded-md border border-border bg-muted/30">
-            {logo?.url ? (
-              <img src={logo.url} alt="Brand logo" className="max-h-full max-w-full object-contain" />
-            ) : (
-              <span className="text-xs text-muted-foreground">No logo</span>
+        <div className="flex flex-wrap items-start gap-6">
+          <div className="space-y-2">
+            <div className="flex h-16 w-28 items-center justify-center overflow-hidden rounded-md border border-border bg-muted/30">
+              {logo?.url ? (
+                <img src={logo.url} alt="Brand logo" className="max-h-full max-w-full object-contain" />
+              ) : (
+                <span className="text-xs text-muted-foreground">No logo</span>
+              )}
+            </div>
+            <input
+              ref={fileRef}
+              type="file"
+              accept="image/png,image/jpeg,image/svg+xml"
+              className="hidden"
+              onChange={(e) => {
+                const file = e.target.files?.[0];
+                if (file) up.mutate(file);
+                e.target.value = "";
+              }}
+            />
+            <div className="flex items-center gap-2">
+              <Button type="button" size="sm" variant="secondary" onClick={() => fileRef.current?.click()} disabled={up.isPending}>
+                {up.isPending ? <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" /> : <Upload className="mr-1.5 h-3.5 w-3.5" />}
+                {form.logo_url ? "Replace" : "Upload"}
+              </Button>
+              {form.logo_url && (
+                <Button type="button" size="sm" variant="ghost" onClick={() => del.mutate()} disabled={del.isPending} aria-label="Delete logo">
+                  <Trash2 className="h-4 w-4" />
+                </Button>
+              )}
+            </div>
+          </div>
+          <div className="min-w-0 flex-1 space-y-2">
+            <input
+              ref={assetRef}
+              type="file"
+              multiple
+              accept="image/png,image/jpeg,image/svg+xml,image/webp,application/pdf"
+              className="hidden"
+              onChange={(e) => {
+                for (const file of Array.from(e.target.files ?? [])) upAsset.mutate({ file });
+                e.target.value = "";
+              }}
+            />
+            <input
+              ref={replaceRef}
+              type="file"
+              accept="image/png,image/jpeg,image/svg+xml,image/webp,application/pdf"
+              className="hidden"
+              onChange={(e) => {
+                const file = e.target.files?.[0];
+                const target = replaceTarget.current;
+                if (file && target) upAsset.mutate({ file, replacePath: target });
+                replaceTarget.current = null;
+                e.target.value = "";
+              }}
+            />
+            <Button type="button" size="sm" variant="secondary" onClick={() => assetRef.current?.click()} disabled={upAsset.isPending}>
+              {upAsset.isPending ? <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" /> : <Upload className="mr-1.5 h-3.5 w-3.5" />}
+              Upload Brand Assets
+            </Button>
+            {assets.length > 0 && (
+              <div className="flex flex-wrap gap-3">
+                {assets.map((a) => (
+                  <div key={a.path} className="w-24 space-y-1">
+                    <div className="flex h-16 w-24 items-center justify-center overflow-hidden rounded-md border border-border bg-muted/30">
+                      {a.mime.startsWith("image/") && a.url ? (
+                        <img src={a.url} alt={a.name} className="max-h-full max-w-full object-contain" />
+                      ) : (
+                        <FileText className="h-6 w-6 text-muted-foreground" />
+                      )}
+                    </div>
+                    <p className="truncate text-[11px] text-muted-foreground" title={a.name}>{a.name}</p>
+                    <div className="flex items-center gap-1">
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="secondary"
+                        className="h-7 px-2 text-xs"
+                        disabled={upAsset.isPending}
+                        onClick={() => {
+                          replaceTarget.current = a.path;
+                          replaceRef.current?.click();
+                        }}
+                      >
+                        Replace
+                      </Button>
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="ghost"
+                        className="h-7 px-2"
+                        disabled={delAsset.isPending}
+                        onClick={() => delAsset.mutate(a.path)}
+                        aria-label={`Delete ${a.name}`}
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </Button>
+                    </div>
+                  </div>
+                ))}
+              </div>
             )}
           </div>
-          <input
-            ref={fileRef}
-            type="file"
-            accept="image/png,image/jpeg,image/svg+xml"
-            className="hidden"
-            onChange={(e) => {
-              const file = e.target.files?.[0];
-              if (file) up.mutate(file);
-              e.target.value = "";
-            }}
-          />
-          <Button type="button" size="sm" variant="secondary" onClick={() => fileRef.current?.click()} disabled={up.isPending}>
-            {up.isPending ? <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" /> : <Upload className="mr-1.5 h-3.5 w-3.5" />}
-            {form.logo_url ? "Replace" : "Upload"}
-          </Button>
-          {form.logo_url && (
-            <Button type="button" size="sm" variant="ghost" onClick={() => del.mutate()} disabled={del.isPending}>
-              <Trash2 className="h-4 w-4" />
-            </Button>
-          )}
         </div>
-        <p className="text-xs text-muted-foreground">PNG, JPG or SVG, up to 1.5 MB. A transparent PNG looks best.</p>
+        <p className="text-xs text-muted-foreground">
+          Logo: PNG, JPG or SVG, up to 1.5 MB (a transparent PNG looks best). Brand assets: PNG, JPG, SVG, WebP or PDF, up to 3 MB each, 20 per brand.
+        </p>
       </div>
       <div className="space-y-2">
         <Label>Brand colours</Label>

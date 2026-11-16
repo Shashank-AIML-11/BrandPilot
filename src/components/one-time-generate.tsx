@@ -196,7 +196,7 @@ export function OneTimePricingButton() {
   if (hasPlan) return null;
 
   return (
-    <Button onClick={click} disabled={busy} variant="outline">
+    <Button onClick={click} disabled={busy} size="sm">
       {busy ? (
         <Loader2 className="mr-2 h-4 w-4 animate-spin" />
       ) : (

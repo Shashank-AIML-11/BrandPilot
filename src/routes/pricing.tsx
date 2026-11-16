@@ -100,15 +100,16 @@ function PricingPage() {
 
       <main className="mx-auto w-full max-w-6xl flex-1 overflow-y-auto px-6 pb-6">
         <div className="text-center">
-          <h1 className="text-2xl font-bold">Pick your plan</h1>
-          <div className="mt-3 flex items-center justify-center gap-3 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-            <span className="h-px w-10 bg-border" />
-            or
-            <span className="h-px w-10 bg-border" />
-          </div>
-          <div className="mt-3 flex justify-center">
+          <div className="flex flex-wrap items-center justify-center gap-x-4 gap-y-2">
+            <h1 className="text-2xl font-bold">Pick your plan</h1>
+            <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+              or
+            </span>
             <OneTimePricingButton />
           </div>
+          <p className="mx-auto mt-2 max-w-xl text-sm text-muted-foreground">
+            Upgrade or downgrade at any time.
+          </p>
         </div>
 
         {refPreview?.valid && (

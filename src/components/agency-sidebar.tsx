@@ -5,6 +5,7 @@ import {
   CalendarDays,
   Check,
   ChevronsUpDown,
+  Layers,
   LibraryBig,
   Plus,
   ShieldCheck,
@@ -27,6 +28,7 @@ const WORKSPACE = [
   { to: "/calendar", label: "Content Calendar", icon: CalendarDays },
   { to: "/content-library", label: "Content Library", icon: LibraryBig },
   { to: "/analytics", label: "Analytics", icon: BarChart3 },
+  { to: "/brand-management", label: "Brand Management", icon: Layers },
 ] as const;
 
 const SWATCHES = [

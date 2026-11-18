@@ -217,17 +217,9 @@ export const WEEK_PLAN: ContentType[][] = [
 
 /** Quota for 7 consecutive dates (starting at the first date) following WEEK_PLAN. */
 export function weeklyContentPlan(dates: string[]): Record<string, DailyContentQuota> {
-  // With fewer than 7 days left in the week, whole groups of WEEK_PLAN are packed
-  // onto the remaining days so all 11 types still go out (group g -> day floor(g*n/7)).
-  const n = Math.max(dates.length, 1);
-  const typesByDay: ContentType[][] = dates.map(() => []);
-  WEEK_PLAN.forEach((group, g) => {
-    const day = Math.min(Math.floor((g * n) / WEEK_PLAN.length), n - 1);
-    typesByDay[day]?.push(...group);
-  });
   return Object.fromEntries(
     dates.map((date, i) => {
-      const types = typesByDay[i] ?? [];
+      const types = WEEK_PLAN[i % WEEK_PLAN.length] ?? [];
       return [
         date,
         Object.fromEntries(CONTENT_TYPES.map((t) => [t, types.includes(t) ? 1 : 0])) as DailyContentQuota,
@@ -378,6 +370,7 @@ These are measured results from content already posted for this brand. They OVER
 What we learned: ${strategy.insights}
 Strategy to apply to every piece you now write: ${strategy.directives}
 Double down on the formats, hooks, channels and posting times that performed. Drop or rework what underperformed.
+Posting time: each piece's "time" field (HH:MM, 24-hour, India time, between ${EARLIEST_POST} and ${LATEST_POST}) is the exact minute it is published. Set it inside the best-performing window above, and spread pieces of the same type across that window instead of stacking them.
 === END PERFORMANCE LEARNINGS ===`;
 }
 
@@ -640,13 +633,8 @@ Rules:
 - summary: which product/service + value prop + who it's for.
 - hashtags: one space-separated string, 4-6 tags from the brand's keywords/niche/name.
 - caption: ready-to-post, platform-appropriate length and tone, in the brand's voice.
-- script (video types): must clearly speak the same three selling points as the image_prompt features, then the CTA. Spoken narration, [HOOK]/[BODY]/[CTA] markers, full sentences (no bullet fragments), names the business + product. Reels/Shorts/TikTok: 15-45s. product_service_video: 60-90s.
-- image_prompt (ALL image and video types): the text printed on the poster/cover, in EXACTLY this format with "||" separators and nothing else:
-  HEADLINE || FEATURE 1 || FEATURE 2 || FEATURE 3 || CTA
-  HEADLINE: a scroll-stopping hook, max 7 words, about a real benefit or result for the ideal customer.
-  FEATURE 1-3: three DIFFERENT, concrete selling points taken from the brand's real products, services and value propositions (a price, speed, number, guarantee, capability or outcome), max 5 words each. No vague buzzwords ("innovative", "best-in-class").
-  CTA: max 4 words, e.g. "Start free today" or "Book a demo".
-  Plain English only, no emojis, no quotation marks. Example: Grow Faster With Less Effort || 11 platforms, one dashboard || Posts go live automatically || Plans from INR 2,499 || Start free today
+- script (video types): spoken narration, [HOOK]/[BODY]/[CTA] markers, full sentences (no bullet fragments), names the business + product. Reels/Shorts/TikTok: 15-45s. product_service_video: 60-90s.
+- image_prompt: on-image text lines for single-image types (drawn from real brand products/propositions); for video types, describes the thumbnail with a short (max 5 words) headline.
 - slides (carousel only): 3-6 objects, each with headline + one-line subtext + its own image_prompt, forming one argument (hook → proof → CTA).
 - time: 24h "HH:MM", spread through the working day.
 - Vary angles, no repeated hooks/structure: education, product spotlight, pain point, myth-busting, proof, behind-the-scenes, industry insight, offer — always this brand specifically.
@@ -668,9 +656,34 @@ function clean(value: unknown, fallback = ""): string {
   return typeof value === "string" ? value.trim() : fallback;
 }
 
+/** Earliest and latest posting time (India time) the generator may pick. */
+const EARLIEST_POST = "07:00";
+const LATEST_POST = "22:00";
+
+/**
+ * Validates a posting time suggested by the model: "HH:MM" 24h, kept inside normal posting
+ * hours so a stray "03:00" can never be scheduled. Falls back to the default slot.
+ */
+export function clampPostingTime(value: unknown, fallback: string): string {
+  const t = typeof value === "string" ? value.trim() : "";
+  const m = /^(\d{1,2}):(\d{2})$/.exec(t);
+  if (!m) return fallback;
+  const hh = Number(m[1]);
+  const mm = Number(m[2]);
+  if (hh > 23 || mm > 59) return fallback;
+  const clamped = `${String(hh).padStart(2, "0")}:${String(mm).padStart(2, "0")}`;
+  if (clamped < EARLIEST_POST) return EARLIEST_POST;
+  if (clamped > LATEST_POST) return LATEST_POST;
+  return clamped;
+}
+
+/** Carousels cost several images each, so they stay off unless CAROUSEL_ENABLED=true. */
+export function carouselsEnabled(): boolean {
+  return (process.env["CAROUSEL_ENABLED"] ?? "").trim().toLowerCase() === "true";
+}
+
 function timeOf(piece: GeneratedPiece, fallback: string): string {
-  const t = clean(piece.time);
-  return /^\d{2}:\d{2}$/.test(t) ? t : fallback;
+  return clampPostingTime(piece.time, fallback);
 }
 
 /** Default posting-time spread per type, so a busy day doesn't stack posts

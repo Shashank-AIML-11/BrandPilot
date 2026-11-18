@@ -39,26 +39,34 @@ async function runQueuePump(request: Request) {
     return Response.json({ success: true, task, generated, generation });
   }
 
-  // 07:00 IST: publish today's content for users with Autopost on, then pull performance.
-  if (task === "post") {
+  // Publishing. Each piece goes out at its own scheduled_time (India time), which is how the
+  // learned posting windows take effect.
+  //   task=publish  time-aware: posts only what is due now. Call it every 30-60 minutes.
+  //   task=post     07:00 IST: same posting, then pulls performance numbers. Until the
+  //                 frequent publish trigger exists (HOURLY_PUBLISH_ENABLED=true), it keeps
+  //                 the old behaviour and posts everything due today at once.
+  if (task === "post" || task === "publish") {
     const { processPublishQueue } = await import("@/lib/channels/publish-queue.server");
+    const timeAware = task === "publish" || process.env["HOURLY_PUBLISH_ENABLED"] === "true";
     const skipIds = new Set<string>();
     const total = { publishChecked: 0, publishPosted: 0, publishFailed: 0 };
     while (Date.now() - startedAt < budgetMs) {
-      const r = await processPublishQueue(supabaseAdmin as never, { ignoreTime: true, skipIds });
+      const r = await processPublishQueue(supabaseAdmin as never, { ignoreTime: !timeAware, skipIds });
       if (!r || r.publishChecked === 0) break;
       total.publishChecked += r.publishChecked;
       total.publishPosted += r.publishPosted;
       total.publishFailed += r.publishFailed;
     }
     let metrics = null;
-    try {
-      const { syncPostMetrics } = await import("@/lib/channels/metrics.server");
-      metrics = await syncPostMetrics(supabaseAdmin as never);
-    } catch (error) {
-      console.error(error);
+    if (task === "post") {
+      try {
+        const { syncPostMetrics } = await import("@/lib/channels/metrics.server");
+        metrics = await syncPostMetrics(supabaseAdmin as never);
+      } catch (error) {
+        console.error(error);
+      }
     }
-    return Response.json({ success: true, task, ...total, metrics });
+    return Response.json({ success: true, task, timeAware, ...total, metrics });
   }
 
   const { processGenerationQueue } = await import("@/lib/content-queue.server");
@@ -90,11 +98,15 @@ async function runQueuePump(request: Request) {
     console.error(error);
   }
 
+  // The weekly learning already runs before every automatic generation (learnForBrand).
+  // This older review also rebuilds the rest of the month, so it is opt-in.
   let strategy: Awaited<ReturnType<typeof processStrategyQueue>> | null = null;
-  try {
-    strategy = await processStrategyQueue(supabaseAdmin);
-  } catch (error) {
-    console.error(error);
+  if (process.env["STRATEGY_REBUILD_ENABLED"] === "true") {
+    try {
+      strategy = await processStrategyQueue(supabaseAdmin);
+    } catch (error) {
+      console.error(error);
+    }
   }
 
   let generation: Awaited<ReturnType<typeof processGenerationQueue>> | null = null;

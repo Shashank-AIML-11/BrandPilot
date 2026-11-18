@@ -7,8 +7,22 @@ type Admin = SupabaseClient<never, never, never>;
 
 const BATCH = 5;
 
+/**
+ * Posting times are India time: scheduled_time "10:00" means 10:00 IST. Dates and
+ * times are compared in IST so an item is never posted hours early or late.
+ */
+const IST_OFFSET_MS = 5.5 * 3600 * 1000;
+
+export function istNow(now: Date): { today: string; time: string } {
+  const ist = new Date(now.getTime() + IST_OFFSET_MS).toISOString();
+  return { today: ist.slice(0, 10), time: ist.slice(11, 19) };
+}
+
 export interface PublishQueueOptions {
-  /** Daily 7 AM autopost: publish everything due today, whatever time each item shows. */
+  /**
+   * Legacy daily autopost: publish everything due today whatever time each item shows.
+   * Leave false (the default) to post each item at its own scheduled_time.
+   */
   ignoreTime?: boolean;
   batch?: number;
   /** Items already tried in this run, so a failing item is not retried straight away. */
@@ -17,11 +31,9 @@ export interface PublishQueueOptions {
 
 export async function processPublishQueue(admin: Admin, opts: PublishQueueOptions = {}) {
   const batchSize = opts.batch ?? BATCH;
-  const now = new Date();
-  const today = now.toISOString().slice(0, 10);
-  const time = now.toISOString().slice(11, 19);
+  const { today, time } = istNow(new Date());
 
-  const { data } = await admin
+  let query = admin
     .from("content_items")
     .select(
       "id, user_id, type, platforms, scheduled_date, scheduled_time, image_url, video_url, carousel_slides, carousel_image_urls",
@@ -30,8 +42,17 @@ export async function processPublishQueue(admin: Admin, opts: PublishQueueOption
     .eq("enabled", true)
     .eq("autopost", true)
     .lte("scheduled_date", today)
-    .lt("publish_attempts", 3)
+    .lt("publish_attempts", 3);
+  // Only fetch what is already due, so posts that are due later today can never
+  // crowd out the ones that are due now.
+  if (!opts.ignoreTime) {
+    query = query.or(
+      `scheduled_date.lt.${today},and(scheduled_date.eq.${today},scheduled_time.lte.${time})`,
+    );
+  }
+  const { data } = await query
     .order("scheduled_date", { ascending: true })
+    .order("scheduled_time", { ascending: true })
     .limit(batchSize * 4);
 
   const rows = (data ?? []) as unknown as Array<{

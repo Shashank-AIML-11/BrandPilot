@@ -1,8 +1,13 @@
 import { loadBrand } from "@/lib/brand.server";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Database } from "@/integrations/supabase/types";
-import { chatJSON } from "@/lib/ai.server";
-import { brandContext, SAFETY_RULES, type StrategyDirective } from "@/lib/content.server";
+import { chatJSON, strategyChatOptions } from "@/lib/ai.server";
+import {
+  brandContext,
+  carouselsEnabled,
+  SAFETY_RULES,
+  type StrategyDirective,
+} from "@/lib/content.server";
 
 type AdminClient = SupabaseClient<Database>;
 
@@ -34,7 +39,7 @@ function addDays(date: Date, days: number) {
   return d;
 }
 
-interface Row {
+export interface Row {
   user_id: string;
   brand_id: string | null;
   scheduled_date: string;
@@ -46,10 +51,80 @@ interface Row {
   impressions: number | null;
   clicks: number | null;
   engagements: number | null;
+  /** Set only once a real measurement has been rolled up; null = never measured. */
+  metrics_updated_at?: string | null;
 }
 
 function score(r: Row) {
   return (r.impressions ?? 0) + (r.clicks ?? 0) * 5 + (r.engagements ?? 0) * 3;
+}
+
+/**
+ * Only posts that were really measured count as evidence. content_items.impressions
+ * defaults to 0, so an unmeasured or unmeasurable post would otherwise look like a flop.
+ */
+export function measuredRows<T extends Row>(rows: T[]): T[] {
+  return rows.filter((r) => !!r.metrics_updated_at);
+}
+
+function intEnv(name: string, fallback: number): number {
+  const n = Number.parseInt(process.env[name] ?? "", 10);
+  return Number.isFinite(n) && n >= 0 ? n : fallback;
+}
+
+/** Early on, a brand has few posts and few views: too thin to change strategy on. */
+export function assessSignal(rows: Row[]): {
+  enough: boolean;
+  pieces: number;
+  impressions: number;
+  reason?: string;
+} {
+  const minPieces = intEnv("LEARN_MIN_PIECES", 6);
+  const minImpressions = intEnv("LEARN_MIN_IMPRESSIONS", 300);
+  const measured = measuredRows(rows);
+  const impressions = measured.reduce((sum, r) => sum + (r.impressions ?? 0), 0);
+  if (measured.length < minPieces) {
+    return {
+      enough: false,
+      pieces: measured.length,
+      impressions,
+      reason: `only ${measured.length} measured posts (need ${minPieces})`,
+    };
+  }
+  if (impressions < minImpressions) {
+    return {
+      enough: false,
+      pieces: measured.length,
+      impressions,
+      reason: `only ${impressions} impressions (need ${minImpressions})`,
+    };
+  }
+  return { enough: true, pieces: measured.length, impressions };
+}
+
+/** Plain-words warning added to the prompt while the sample is still small. */
+function sampleNote(pieces: number): string {
+  if (pieces >= 20) return "";
+  return `\nSample size: only ${pieces} measured posts. Differences between formats, channels and times are weak evidence at this size. Keep what is working, change at most two things, and say "too early to judge" where the data cannot support a conclusion.`;
+}
+
+/**
+ * Strategy call: a stronger model than the content-writing one. If that model is
+ * unavailable or rate limited, fall back to the default model rather than skipping learning.
+ */
+async function strategyJSON(system: string, prompt: string) {
+  type Out = { insights?: string; directives?: string };
+  try {
+    return await chatJSON<Out>(
+      system,
+      prompt,
+      STRATEGY_SCHEMA as unknown as Record<string, unknown>,
+      strategyChatOptions(),
+    );
+  } catch (error) {
+    console.error("[strategy] stronger model failed, using the default model", error);
+    return await chatJSON<Out>(system, prompt, STRATEGY_SCHEMA as unknown as Record<string, unknown>);
+  }
 }
 
 function summarise(rows: Row[]) {
@@ -91,6 +166,7 @@ function summarise(rows: Row[]) {
   });
 
   return {
+    data_quality: { measured_posts: rows.length, enough_for_conclusions: rows.length >= 20 },
     totals,
     ctr: totals.impressions ? +(totals.clicks / totals.impressions).toFixed(4) : 0,
     engagement_rate: totals.impressions ? +(totals.engagements / totals.impressions).toFixed(4) : 0,
@@ -115,13 +191,13 @@ export async function processStrategyQueue(admin: AdminClient) {
   const { data: rowsData, error } = await admin
     .from("content_items")
     .select(
-      "user_id, brand_id, scheduled_date, scheduled_time, type, title, status, platforms, impressions, clicks, engagements",
+      "user_id, brand_id, scheduled_date, scheduled_time, type, title, status, platforms, impressions, clicks, engagements, metrics_updated_at",
     )
     .gte("scheduled_date", iso(weekStart))
     .lte("scheduled_date", iso(weekEnd));
   if (error) throw new Error(error.message);
 
-  const rows = (rowsData ?? []) as Row[];
+  const rows = (rowsData ?? []) as unknown as Row[];
   if (!rows.length) return { reviewed: 0 };
 
   const byUser: Record<string, Row[]> = {};
@@ -137,7 +213,7 @@ export async function processStrategyQueue(admin: AdminClient) {
   const done = new Set((existing ?? []).map((r) => `${r.user_id}|${r.brand_id ?? ""}`));
 
   const candidates = Object.entries(byUser)
-    .filter(([key, list]) => !done.has(key) && list.some((r) => score(r) > 0))
+    .filter(([key, list]) => !done.has(key) && assessSignal(list).enough)
     .slice(0, USERS_PER_CYCLE);
 
   let reviewed = 0;
@@ -149,13 +225,14 @@ export async function processStrategyQueue(admin: AdminClient) {
       const brand = await loadBrand(admin, userId, brandId);
       if (!brand || !brand.business_name) continue;
 
-      const metrics = summarise(list);
-      const analysis = await chatJSON<{ insights?: string; directives?: string }>(
+      const evidence = measuredRows(list);
+      const metrics = summarise(evidence);
+      const analysis = await strategyJSON(
         STRATEGY_SYSTEM,
         `${brandContext(brand as never)}
 
 Here is the measured performance of this brand's content for ${iso(weekStart)} to ${iso(weekEnd)} (JSON):
-${JSON.stringify(metrics)}
+${JSON.stringify(metrics)}${sampleNote(evidence.length)}
 
 Analyse reach (impressions), user adoption (clicks) and engagement. Then decide how next week's content must change.
 
@@ -164,14 +241,14 @@ Return JSON shaped exactly as:
   "insights": "3-5 sentences of concrete findings: which content types, channels, posting times, topics and hook styles won or lost, with the numbers that prove it.",
   "directives": "A single operational brief (max 200 words) written as instructions to the content generator: the exact formats to increase, formats to cut, channels to prioritise, best posting time windows, hook and topic angles to repeat, and what to stop doing."
 }`,
-        STRATEGY_SCHEMA as unknown as Record<string, unknown>,
       );
 
       const insights = (analysis.insights ?? "").trim();
       const directives = (analysis.directives ?? "").trim();
       if (!insights && !directives) continue;
 
-      // Rebuild the rest of the current month against the new strategy.
+      // Rebuilding the rest of the month is opt-in (see below).
+      const rebuildEnabled = process.env["STRATEGY_REBUILD_ENABLED"] === "true";
       const tomorrow = iso(addDays(today, 1));
       const monthEnd = iso(new Date(Date.UTC(today.getUTCFullYear(), today.getUTCMonth() + 1, 0)));
       const { data: upcoming } = await admin
@@ -182,7 +259,9 @@ Return JSON shaped exactly as:
         .gte("scheduled_date", tomorrow)
         .lte("scheduled_date", monthEnd)
         .neq("status", "posted");
-      const rebuildDates = [...new Set((upcoming ?? []).map((r) => r.scheduled_date))].sort();
+      const rebuildDates = rebuildEnabled
+        ? [...new Set((upcoming ?? []).map((r) => r.scheduled_date))].sort()
+        : [];
 
       await admin.from("content_strategies").insert({
         user_id: userId,
@@ -195,23 +274,18 @@ Return JSON shaped exactly as:
         rebuilt_dates: rebuildDates,
       } as never);
 
+      // Deleting and re-queueing upcoming days is destructive and bypasses the "4 generations
+      // per 30 days" cap, so rebuildDates stays empty unless STRATEGY_REBUILD_ENABLED=true.
       if (rebuildDates.length) {
         const month = tomorrow.slice(0, 7);
         const { getGenerationEntitlement } = await import("@/lib/generation-entitlements");
         const { distributeMonthlyContent, CONTENT_TYPES } = await import("@/lib/content.server");
         const entitlement = await getGenerationEntitlement(admin, userId);
 
-        /*
-         * TESTING MODE: keep this in sync with the same override in
-         * content.functions.ts (queueMonthGeneration) — only
-         * linkedin_post and instagram_post are enabled right now.
-         */
-        const ALLOWED_TYPES_FOR_NOW = ["linkedin_post", "instagram_post"] as const;
+        // Every format is on, except carousels unless CAROUSEL_ENABLED=true.
         const monthlyTotals = { ...entitlement.plan.monthlyContent };
-        for (const t of CONTENT_TYPES) {
-          if (!(ALLOWED_TYPES_FOR_NOW as readonly string[]).includes(t)) {
-            (monthlyTotals as Record<string, number>)[t] = 0;
-          }
+        if (!carouselsEnabled() && CONTENT_TYPES.includes("carousel")) {
+          (monthlyTotals as Record<string, number>)["carousel"] = 0;
         }
 
         await admin
@@ -286,7 +360,7 @@ export async function learnForBrand(
   const { data } = await admin
     .from("content_items")
     .select(
-      "user_id, brand_id, scheduled_date, scheduled_time, type, title, caption, body, status, platforms, impressions, clicks, engagements",
+      "user_id, brand_id, scheduled_date, scheduled_time, type, title, caption, body, status, platforms, impressions, clicks, engagements, metrics_updated_at",
     )
     .eq("user_id", userId)
     .eq("brand_id", brandId)
@@ -294,9 +368,11 @@ export async function learnForBrand(
     .gte("scheduled_date", from)
     .lte("scheduled_date", to);
   type R = Row & { caption: string | null; body: string | null };
-  const rows = (data ?? []) as unknown as R[];
-  if (!rows.length || !rows.some((r) => score(r) > 0)) {
-    return { learned: false, reason: "no measured posts yet" };
+  const rows = measuredRows((data ?? []) as unknown as R[]);
+  const signal = assessSignal(rows);
+  if (!signal.enough) {
+    // Too little real data to change strategy on: keep the previous strategy.
+    return { learned: false, reason: `not enough data yet: ${signal.reason}` };
   }
 
   const brand = await loadBrand(admin, userId, brandId);
@@ -319,12 +395,12 @@ export async function learnForBrand(
     .limit(1)
     .maybeSingle();
 
-  const analysis = await chatJSON<{ insights?: string; directives?: string }>(
+  const analysis = await strategyJSON(
     STRATEGY_SYSTEM,
     `${brandContext(brand as never)}
 
 Measured performance of this brand's posted content from ${from} to ${to} (JSON):
-${JSON.stringify({ ...metrics, ...hooks })}
+${JSON.stringify({ ...metrics, ...hooks })}${sampleNote(rows.length)}
 ${previous?.directives ? `\nThe previous strategy told the generator: ${previous.directives}\nSay whether it worked and what to change.` : ""}
 
 Analyse reach (impressions), clicks and engagement. Decide how the NEXT 7 days of content must change to grow this brand's reach and virality.
@@ -332,9 +408,8 @@ Analyse reach (impressions), clicks and engagement. Decide how the NEXT 7 days o
 Return JSON shaped exactly as:
 {
   "insights": "3-5 sentences of concrete findings with the numbers that prove them.",
-  "directives": "A single operational brief (max 200 words) written as instructions to the content generator: formats to increase, formats to cut, channels to prioritise, best posting windows, hook and topic angles to repeat, what to stop doing."
+  "directives": "A single operational brief (max 200 words) written as instructions to the content generator: formats to increase, formats to cut, channels to prioritise, best posting windows (exact HH:MM India-time ranges), hook and topic angles to repeat, what to stop doing."
 }`,
-    STRATEGY_SCHEMA as unknown as Record<string, unknown>,
   );
   const insights = (analysis.insights ?? "").trim();
   const directives = (analysis.directives ?? "").trim();

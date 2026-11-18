@@ -19,10 +19,36 @@ function groqKey() {
  *   "qwen/qwen3-32b"           (Qwen)
  *   "gemma2-9b-it"             (Google Gemma2)
  */
+export interface ChatOptions {
+  /** Groq model id. Default: the fast model used for all content writing. */
+  model?: string;
+  reasoningEffort?: "low" | "medium" | "high";
+  /** Output cap (reasoning tokens count towards it). */
+  maxTokens?: number;
+}
+
+/**
+ * Settings for the weekly strategy call only (one call per brand per cycle), so a
+ * stronger model can be used there without touching the 11-format writing call.
+ *   STRATEGY_MODEL      default "openai/gpt-oss-120b"
+ *   STRATEGY_REASONING  low | medium | high, default "medium"
+ * Groq lists its rate limits per model, so this call does not use up the writing
+ * model's tokens-per-minute budget.
+ */
+export function strategyChatOptions(): ChatOptions {
+  const effort = (process.env["STRATEGY_REASONING"] ?? "medium").trim().toLowerCase();
+  return {
+    model: process.env["STRATEGY_MODEL"]?.trim() || "openai/gpt-oss-120b",
+    reasoningEffort: effort === "low" || effort === "high" ? effort : "medium",
+    maxTokens: 3000,
+  };
+}
+
 export async function chatJSON<T>(
   system: string,
   prompt: string,
   schema?: Record<string, unknown>,
+  options: ChatOptions = {},
 ): Promise<T> {
   const responseFormat = schema
     ? {
@@ -44,13 +70,13 @@ export async function chatJSON<T>(
       "Content-Type": "application/json",
     },
     body: JSON.stringify({
-      model: "openai/gpt-oss-20b",
+      model: options.model ?? "openai/gpt-oss-20b",
       messages: [
         { role: "system", content: system },
         { role: "user", content: prompt },
       ],
       response_format: responseFormat,
-      reasoning_effort: "low",
+      reasoning_effort: options.reasoningEffort ?? "low",
       // Without an explicit cap, Groq reserves a large default output
       // budget from the model's context window and counts that reserved
       // amount against the per-minute token limit — regardless of how
@@ -83,7 +109,7 @@ export async function chatJSON<T>(
       // pins down the real input size precisely — trim weekPrompt()
       // further (or drop back toward 3200-3400) rather than raising this
       // again, since we're now close to the 8,000 ceiling either way.
-      max_completion_tokens: 3600,
+      max_completion_tokens: options.maxTokens ?? 3600,
     }),
   });
 
@@ -330,7 +356,7 @@ function falVideoBody(
       prompt,
       aspect_ratio: aspectRatio,
       duration: seconds,
-      resolution: process.env.VIDEO_RESOLUTION || "720p",
+      resolution: "1080p",
       generate_audio: true,
     };
   }
@@ -360,18 +386,8 @@ function parseFalVideoStatus(raw?: string): VideoJob["status"] {
 
 export async function createVideoJob(
   prompt: string,
-  options: {
-    aspectRatio?: "9:16" | "16:9";
-    durationSeconds?: number;
-    explainer?: import("@/lib/explainer.server").ExplainerInput;
-  } = {},
+  options: { aspectRatio?: "9:16" | "16:9"; durationSeconds?: number } = {},
 ): Promise<VideoJob> {
-  // VIDEO_PROVIDER=shotstack: build a branded explainer (text, voice, logo) instead of a raw fal clip.
-  const ex = await import("@/lib/explainer.server");
-  if (ex.explainerEnabled() && options.explainer) {
-    const id = await ex.submitExplainerRender(options.explainer);
-    return { id: `ss:${id}`, status: "queued" };
-  }
   const model = falVideoModel();
   const res = await fetch(`https://queue.fal.run/${model}`, {
     method: "POST",
@@ -394,10 +410,6 @@ export async function createVideoJob(
 }
 
 export async function getVideoJob(id: string): Promise<VideoJob> {
-  if (id.startsWith("ss:")) {
-    const st = await (await import("@/lib/explainer.server")).explainerStatus(id.slice(3));
-    return { id, status: st.status, error: st.status === "failed" ? { message: st.error || "Video failed." } : null };
-  }
   const model = falVideoModel();
   const res = await fetch(`https://queue.fal.run/${falAppId(model)}/requests/${id}/status`, {
     headers: falHeaders(),
@@ -420,7 +432,6 @@ export async function getVideoJob(id: string): Promise<VideoJob> {
 }
 
 export async function downloadVideoBytes(id: string): Promise<Uint8Array> {
-  if (id.startsWith("ss:")) return (await import("@/lib/explainer.server")).explainerBytes(id.slice(3));
   const model = falVideoModel();
   const res = await fetch(`https://queue.fal.run/${falAppId(model)}/requests/${id}`, {
     headers: falHeaders(),

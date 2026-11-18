@@ -1170,7 +1170,7 @@ export const queueMonthGeneration = createServerFn({ method: "POST" })
       throw new Error("No upcoming days left to generate in this month.");
     }
 
-    const { weeklyContentPlan, renderingRowsForDay, activePlatforms, CONTENT_TYPES } =
+    const { weeklyContentPlan, renderingRowsForDay, activePlatforms, CONTENT_TYPES, carouselsEnabled } =
       await import("@/lib/content.server");
 
     /*
@@ -1186,15 +1186,15 @@ export const queueMonthGeneration = createServerFn({ method: "POST" })
     const contentPlan = weeklyContentPlan(dates);
 
     /*
-     * COST-CONSCIOUS TESTING: carousel paused for now (multiple image
-     * generations per piece — 3-6 slides — makes it the most expensive
-     * single content type to test with, on top of the per-platform
-     * image sharing below). Remove this block to resume it once past
-     * the cost-sensitive testing phase.
+     * Carousels need 3-6 AI images each, so they are the costliest format.
+     * They stay off until CAROUSEL_ENABLED=true is set (same switch as the
+     * automatic weekly generation).
      */
-    for (const date of dates) {
-      const quota = contentPlan[date];
-      if (quota) quota.carousel = 0;
+    if (!carouselsEnabled()) {
+      for (const date of dates) {
+        const quota = contentPlan[date];
+        if (quota) quota.carousel = 0;
+      }
     }
 
     const scheduledDates = dates.filter((date) => {

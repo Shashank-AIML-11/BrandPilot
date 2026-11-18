@@ -6,20 +6,25 @@
  *  - First generation: the subscription day if bought before 01:00 IST, else the next day.
  *  - Exactly 4 generations in every 30-day window: day 0, 7, 14, 21 of the window. Days 22-29
  *    never generate, so a 5th generation can never happen inside 30 days.
- *  - One generation = 7 days of content (2,1,2,2,1,2,1 types per day); each day publishes at 7 AM on its own date.
+ *  - One generation = 7 days of content (2,1,2,2,1,2,1 types per day). Each piece publishes on its own date at its own
+ *    scheduled_time (India time), which the strategy steers. Carousels are included only when CAROUSEL_ENABLED=true.
  *  - Each generation first reads the last 14 days of measured results (learnForBrand).
  *  - Idempotent: auto_generation_log has a unique (brand_id, run_date).
  */
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { loadBrand } from "@/lib/brand.server";
 import { getGenerationEntitlement } from "@/lib/generation-entitlements";
-import { weeklyContentPlan, renderingRowsForDay, activePlatforms, CONTENT_TYPES } from "@/lib/content.server";
+import {
+  weeklyContentPlan,
+  renderingRowsForDay,
+  activePlatforms,
+  carouselsEnabled,
+  CONTENT_TYPES,
+} from "@/lib/content.server";
 import { learnForBrand } from "@/lib/strategy-queue.server";
 
 type Admin = SupabaseClient<any, any, any>;
 
-/** Carousels stay off while we are watching AI image cost. Set true to include them. */
-const INCLUDE_CAROUSEL = false;
 const CYCLE_DAYS = 30;
 const GENERATION_OFFSETS = [0, 7, 14, 21];
 const IST_MS = 5.5 * 3600 * 1000;
@@ -137,7 +142,7 @@ export async function runAutoGeneration(admin: Admin, now = new Date()) {
           const contentPlan = weeklyContentPlan(weekDates);
           for (const d of weekDates) {
             const q = contentPlan[d];
-            if (q && !INCLUDE_CAROUSEL) q.carousel = 0;
+            if (q && !carouselsEnabled()) q.carousel = 0;
           }
           const activeDates = weekDates.filter((d) => {
             const q = contentPlan[d];

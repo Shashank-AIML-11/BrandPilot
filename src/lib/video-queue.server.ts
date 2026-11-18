@@ -24,7 +24,7 @@ import { posterComposerEnabled } from "@/lib/content.server";
 /** Brand text, colours and logo link for the branded explainer video (only used with VIDEO_PROVIDER=shotstack). */
 async function explainerInputFor(
   admin: AdminClient,
-  item: { id: string; type: string; title: string; summary: string | null; image_prompt: string | null },
+  item: { id: string; type: string; title: string; summary: string | null; image_prompt: string | null; video_script?: string | null },
   brand: Record<string, unknown> | null,
 ) {
   let logoUrl: string | null = null;
@@ -33,7 +33,7 @@ async function explainerInputFor(
     const { data } = await admin.storage.from("content-media").createSignedUrl(logoPath, 60 * 60 * 6);
     logoUrl = data?.signedUrl ?? null;
   }
-  return {
+  const input = {
     item,
     brandName: String(brand?.["business_name"] ?? ""),
     website: String(brand?.["website"] ?? ""),
@@ -44,6 +44,9 @@ async function explainerInputFor(
       brand as never,
     ),
   };
+  const { prepareScenes } = await import("@/lib/explainer.server");
+  const scenes = await prepareScenes(admin, input, brand, item.video_script ?? "");
+  return { ...input, scenes };
 }
 
 /**

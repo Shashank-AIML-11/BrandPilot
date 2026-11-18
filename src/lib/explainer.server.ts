@@ -15,12 +15,19 @@
  */
 import { posterCopyFor, cleanColor } from "@/lib/poster.server";
 
+export interface ExplainerScene {
+  voice: string; // what the voice says in this scene
+  text: string; // short on-screen message that matches the voice line
+  imageUrl?: string | null; // background photo for the scene
+}
+
 export interface ExplainerInput {
   item: { id: string; title?: string | null; summary?: string | null; image_prompt?: string | null };
   brandName: string;
   website: string;
   colors?: { primary?: string; secondary?: string; accent?: string } | null;
   logoUrl?: string | null; // public/signed URL
+  scenes?: ExplainerScene[]; // written + illustrated by prepareScenes()
   photoPrompt?: string | null;
 }
 
@@ -42,21 +49,134 @@ export function explainerEnabled(): boolean {
   return (process.env["VIDEO_PROVIDER"] ?? "").trim().toLowerCase() === "shotstack";
 }
 
-/** Scene text + the spoken script, kept short so voice and scenes stay in sync. */
+/** Plain fallback script (hook, selling points, call to action) if the AI scene writer fails. */
 export function explainerPlan(input: ExplainerInput) {
   const copy = posterCopyFor(input.item, { website: input.website });
   const points = copy.points.length ? copy.points : [copy.subline].filter(Boolean);
-  const narration = [copy.headline, ...points, copy.cta]
-    .map((t) => t.replace(/[.!?]+$/, ""))
-    .join(". ") + ".";
-  return { headline: copy.headline, points: points.slice(0, 3), cta: copy.cta, narration };
+  return { headline: copy.headline, points: points.slice(0, 3), cta: copy.cta };
 }
 
-function sceneHtml(inner: string, css: string) {
+function fallbackScenes(input: ExplainerInput): ExplainerScene[] {
+  const plan = explainerPlan(input);
+  return [
+    { voice: plan.headline, text: plan.headline },
+    ...plan.points.map((p) => ({ voice: p, text: p })),
+    { voice: `${plan.cta} with ${input.brandName}`, text: plan.cta },
+  ];
+}
+
+const SCENE_SCHEMA = {
+  type: "object",
+  properties: {
+    scenes: {
+      type: "array",
+      items: {
+        type: "object",
+        properties: { voice: { type: "string" }, text: { type: "string" }, visual: { type: "string" } },
+        required: ["voice", "text", "visual"],
+        additionalProperties: false,
+      },
+    },
+  },
+  required: ["scenes"],
+  additionalProperties: false,
+} as const;
+
+const PHOTO_STYLE =
+  "Candid documentary photograph, natural window light, real people and real places, authentic imperfect composition, shallow depth of field, shot on a 35mm lens, no studio gloss, no illustration, no 3D render.";
+
+/**
+ * Writes the scene-by-scene script (voice line + matching on-screen text + a photo idea per scene),
+ * then paints one photo per scene and stores it so Shotstack can fetch it.
+ * Never throws: falls back to a plain script without photos.
+ */
+export async function prepareScenes(
+  admin: import("@supabase/supabase-js").SupabaseClient<import("@/integrations/supabase/types").Database>,
+  input: ExplainerInput,
+  brand: unknown,
+  videoScript: string,
+): Promise<ExplainerScene[]> {
+  const fallback = fallbackScenes(input);
+  let scenes: ExplainerScene[] = fallback;
+  let visuals: string[] = [];
+  try {
+    const [{ chatJSON }, { brandContext }] = await Promise.all([
+      import("@/lib/ai.server"),
+      import("@/lib/content.server"),
+    ]);
+    const plan = explainerPlan(input);
+    const out = await chatJSON<{ scenes?: { voice?: string; text?: string; visual?: string }[] }>(
+      "You write short vertical marketing videos (about 25 seconds) that sell one specific brand. Plain, human, specific. Never invent prices, awards, statistics or customers that are not in the brand information.",
+      `${brandContext(brand as never)}
+
+Topic of this video: ${input.item.title ?? ""}
+Summary: ${input.item.summary ?? ""}
+Draft script: ${videoScript}
+Selling points to use: ${plan.points.join(" | ")}
+Call to action: ${plan.cta}
+
+Write exactly 5 scenes:
+1. Hook: a bold, specific line that stops the scroll (a problem the audience feels).
+2-4. One concrete benefit of THIS brand per scene, using the brand's own products, services and words.
+5. Call to action that names the brand: ${input.brandName}.
+
+For each scene return:
+- "voice": what the presenter says, one spoken sentence, max 18 words, conversational.
+- "text": the on-screen message for that same scene, max 7 words, a punchy version of the voice line (same meaning, same key words).
+- "visual": a concrete real-world photo idea for the background (people, place, action). Never include words, logos or text in the photo.
+
+Return JSON: {"scenes":[{"voice":"...","text":"...","visual":"..."}, ...]}`,
+      SCENE_SCHEMA as unknown as Record<string, unknown>,
+    );
+    const good = (out.scenes ?? []).filter((x) => x.voice?.trim() && x.text?.trim()).slice(0, 6);
+    if (good.length >= 3) {
+      scenes = good.map((x) => ({ voice: x.voice!.trim(), text: x.text!.trim() }));
+      visuals = good.map((x) => (x.visual ?? "").trim());
+    }
+  } catch (error) {
+    console.error("[explainer] scene writer failed, using plain script:", error);
+  }
+
+  if ((process.env["EXPLAINER_IMAGES"] ?? "on").toLowerCase() === "off") return scenes;
+
+  try {
+    const { generateImageBytes } = await import("@/lib/ai.server");
+    const withTimeout = <T,>(p: Promise<T>, ms: number) =>
+      Promise.race([p, new Promise<T>((_, rej) => setTimeout(() => rej(new Error("image timeout")), ms))]);
+    const made = await Promise.allSettled(
+      scenes.map((_, i) =>
+        withTimeout(
+          generateImageBytes(
+            `${PHOTO_STYLE} ${visuals[i] || input.photoPrompt || input.item.title || input.brandName}. Vertical 9:16 composition with empty space in the lower third. No text, no letters, no logos.`,
+            "9:16",
+          ),
+          40_000,
+        ),
+      ),
+    );
+    for (let i = 0; i < scenes.length; i++) {
+      const r = made[i];
+      if (r.status !== "fulfilled") {
+        console.error("[explainer] scene image failed:", (r as PromiseRejectedResult).reason);
+        continue;
+      }
+      const path = `explainer/${input.item.id}/scene-${i + 1}.png`;
+      const up = await admin.storage.from("content-media").upload(path, r.value, { contentType: "image/png", upsert: true });
+      if (up.error) continue;
+      const { data } = await admin.storage.from("content-media").createSignedUrl(path, 60 * 60 * 6);
+      scenes[i]!.imageUrl = data?.signedUrl ?? null;
+    }
+  } catch (error) {
+    console.error("[explainer] scene images failed:", error);
+  }
+  return scenes;
+}
+
+function cardHtml(text: string, css: string, extra = "") {
   return {
     type: "html",
-    html: inner,
-    css: `*{box-sizing:border-box;margin:0;padding:0}body{width:${W}px;height:${H}px;font-family:'Montserrat','Open Sans',Arial,sans-serif;display:flex;align-items:center;justify-content:center;text-align:center}${css}`,
+    html: `<div class="w"><div class="bar"></div><h2>${esc(text)}</h2>${extra}</div>`,
+    css: `*{box-sizing:border-box;margin:0;padding:0}body{width:${W}px;height:${H}px;font-family:'Montserrat','Open Sans',Arial,sans-serif;display:flex;align-items:flex-end;justify-content:center}.w{width:100%;padding:0 50px 170px;text-align:left}.bar{width:84px;height:8px;border-radius:4px;margin-bottom:22px}h2{color:#fff;font-weight:800;font-size:54px;line-height:1.14;text-shadow:0 3px 18px rgba(0,0,0,.55)}${css}`,
     width: W,
     height: H,
   };
@@ -67,100 +187,100 @@ export function buildTimeline(input: ExplainerInput) {
   const primary = cleanColor(c.primary, "#4f46e5");
   const secondary = cleanColor(c.secondary, "#0f172a");
   const accent = cleanColor(c.accent, "#f59e0b");
-  const plan = explainerPlan(input);
-  const HOOK = 4;
-  const PER = 4;
-  const CTA = 5;
-  const pts = plan.points;
-  const total = HOOK + pts.length * PER + CTA;
+  const scenes = input.scenes && input.scenes.length >= 3 ? input.scenes : fallbackScenes(input);
+  const voice = process.env["SHOTSTACK_VOICE"]?.trim();
+  const synced = Boolean(voice); // with a voice, every scene lasts exactly as long as its voice line
+  const FIXED = 4.5;
   const fade = { in: "fade", out: "fade" };
 
-  const bg = {
-    asset: sceneHtml("<div></div>", `body{background:linear-gradient(160deg,${secondary},${primary})}`),
+  const timing = (i: number) =>
+    synced
+      ? { start: `alias://v${i}`, length: `alias://v${i}` }
+      : { start: i * FIXED, length: FIXED };
+
+  const textClips = scenes.map((sc, i) => {
+    const last = i === scenes.length - 1;
+    const first = i === 0;
+    const kicker = first ? `<div class="k">${esc(input.brandName)}</div>` : "";
+    const button = last
+      ? `<div class="b">${esc(explainerPlan(input).cta)} &rarr;</div>${input.website ? `<div class="u">${esc(input.website.replace(/^https?:\/\//, ""))}</div>` : ""}`
+      : "";
+    return {
+      asset: cardHtml(
+        sc.text,
+        `.bar{background:${accent}}.k{color:${accent};font-weight:700;letter-spacing:4px;text-transform:uppercase;font-size:22px;margin-bottom:14px}.b{display:inline-block;margin-top:34px;background:${accent};color:${secondary};font-weight:800;font-size:34px;padding:18px 40px;border-radius:60px}.u{margin-top:16px;color:#fff;font-size:24px;font-weight:600;opacity:.9}`,
+        kicker + button,
+      ),
+      ...timing(i),
+      transition: fade,
+    };
+  });
+
+  const imageClips = scenes
+    .map((sc, i) =>
+      sc.imageUrl
+        ? { asset: { type: "image", src: sc.imageUrl }, ...timing(i), fit: "cover", effect: "zoomIn", transition: fade }
+        : null,
+    )
+    .filter(Boolean);
+
+  // dark gradient over photos so the text stays readable
+  const shade = {
+    asset: {
+      type: "html",
+      html: "<div></div>",
+      css: `*{margin:0;padding:0}body{width:${W}px;height:${H}px;background:linear-gradient(to top,rgba(0,0,0,.72) 0%,rgba(0,0,0,.25) 45%,rgba(0,0,0,0) 70%)}`,
+      width: W,
+      height: H,
+    },
     start: 0,
-    length: total,
+    length: "end",
+  };
+  const bg = {
+    asset: {
+      type: "html",
+      html: "<div></div>",
+      css: `*{margin:0;padding:0}body{width:${W}px;height:${H}px;background:linear-gradient(160deg,${secondary},${primary})}`,
+      width: W,
+      height: H,
+    },
+    start: 0,
+    length: "end",
   };
 
-  const scenes: unknown[] = [];
-  scenes.push({
-    asset: sceneHtml(
-      `<div class="w"><div class="k">${esc(input.brandName)}</div><h1>${esc(plan.headline)}</h1></div>`,
-      `.w{padding:0 56px}.k{color:${accent};font-weight:700;letter-spacing:4px;text-transform:uppercase;font-size:22px;margin-bottom:22px}h1{color:#fff;font-weight:800;font-size:64px;line-height:1.12}`,
-    ),
-    start: 0,
-    length: HOOK,
-    transition: fade,
-  });
-  pts.forEach((p, i) => {
-    scenes.push({
-      asset: sceneHtml(
-        `<div class="w"><div class="n">${i + 1}</div><h2>${esc(p)}</h2></div>`,
-        `.w{padding:0 56px}.n{width:84px;height:84px;border-radius:42px;background:${accent};color:${secondary};font-weight:800;font-size:44px;line-height:84px;margin:0 auto 30px}h2{color:#fff;font-weight:700;font-size:54px;line-height:1.18}`,
-      ),
-      start: HOOK + i * PER,
-      length: PER,
-      transition: fade,
-    });
-  });
-  scenes.push({
-    asset: sceneHtml(
-      `<div class="w"><h2>${esc(plan.headline)}</h2><div class="b">${esc(plan.cta)} &rarr;</div></div>`,
-      `.w{padding:0 56px}h2{color:#fff;font-weight:800;font-size:50px;line-height:1.15;margin-bottom:44px}.b{display:inline-block;background:${accent};color:${secondary};font-weight:800;font-size:38px;padding:22px 46px;border-radius:60px}`,
-    ),
-    start: HOOK + pts.length * PER,
-    length: CTA,
-    transition: fade,
-  });
-
   const tracks: unknown[] = [];
-  // top layer first: logo
+  if (synced) {
+    tracks.push({
+      clips: scenes.map((sc, i) => ({
+        asset: {
+          type: "audio",
+          prompt: sc.voice,
+          model: "elevenlabs-multilingual-v2",
+          options: { voice },
+        },
+        start: "auto",
+        length: "auto",
+        alias: `v${i}`,
+      })),
+    });
+  }
   if (input.logoUrl) {
     tracks.push({
-      clips: [
-        { asset: { type: "image", src: input.logoUrl }, start: 0, length: total, position: "top", offset: { y: -0.06 }, fit: "contain", width: 300, height: 96 },
-      ],
+      clips: [{ asset: { type: "image", src: input.logoUrl }, start: 0, length: "end", position: "top", offset: { y: -0.06 }, fit: "contain", width: 300, height: 96 }],
     });
   }
-  tracks.push({ clips: scenes });
-  if ((process.env["EXPLAINER_PHOTOS"] ?? "").toLowerCase() === "on" && input.photoPrompt) {
-    tracks.push({
-      clips: [
-        {
-          asset: { type: "image", prompt: input.photoPrompt.slice(0, 600), model: "nano-banana-2", options: { aspectRatio: "9:16" } },
-          start: 0,
-          length: total,
-          opacity: 0.28,
-          fit: "cover",
-        },
-      ],
-    });
-  }
+  tracks.push({ clips: textClips });
+  tracks.push({ clips: [shade] });
+  if (imageClips.length) tracks.push({ clips: imageClips });
   tracks.push({ clips: [bg] });
 
-  const voice = process.env["SHOTSTACK_VOICE"]?.trim();
-  const soundtrack: Record<string, unknown> = {};
-  const audioTracks: unknown[] = [];
-  if (voice) {
-    audioTracks.push({
-      clips: [
-        {
-          asset: {
-            type: "audio",
-            prompt: plan.narration,
-            model: "elevenlabs-multilingual-v2",
-            options: { voice },
-          },
-          start: 0.4,
-          length: "auto",
-        },
-      ],
-    });
-  }
   const music = process.env["EXPLAINER_MUSIC_URL"]?.trim();
-  if (music) soundtrack["soundtrack"] = { src: music, effect: "fadeOut", volume: 0.15 };
-
   return {
-    timeline: { background: secondary, ...soundtrack, tracks: [...audioTracks, ...tracks] },
+    timeline: {
+      background: secondary,
+      ...(music ? { soundtrack: { src: music, effect: "fadeOut", volume: 0.12 } } : {}),
+      tracks,
+    },
     output: { format: "mp4", size: { width: W, height: H } },
   };
 }

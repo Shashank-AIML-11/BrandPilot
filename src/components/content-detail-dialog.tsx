@@ -354,11 +354,9 @@ export function ContentDetailDialog({
           </div>
         )}
 
-        <div className="flex flex-wrap justify-between gap-2 pt-2">
-          <Button variant="ghost" onClick={() => remove.mutate()} disabled={remove.isPending}>
-            <Trash2 className="mr-2 h-4 w-4" /> Delete
-          </Button>
-          {onFinishReview && item.status !== "posted" && !item.reviewed_at ? (
+        {/* Delete and Post now are intentionally not shown on opened content cards. */}
+        {onFinishReview && item.status !== "posted" && !item.reviewed_at ? (
+          <div className="flex flex-wrap justify-end gap-2 pt-2">
             <Button onClick={() => onFinishReview(item)} disabled={finishing}>
               {finishing ? (
                 <Loader2 className="mr-2 h-4 w-4 animate-spin" />
@@ -367,16 +365,8 @@ export function ContentDetailDialog({
               )}
               Finish Review
             </Button>
-          ) : (
-            <Button
-              onClick={() => post.mutate()}
-              disabled={post.isPending || !item.enabled || item.status === "posted"}
-            >
-              <Send className="mr-2 h-4 w-4" />
-              {item.status === "posted" ? "Already posted" : "Post now"}
-            </Button>
-          )}
-        </div>
+          </div>
+        ) : null}
       </DialogContent>
     </Dialog>
   );

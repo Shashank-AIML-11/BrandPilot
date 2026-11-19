@@ -5,6 +5,7 @@ import { z } from "zod";
 const weekInput = z.object({
   brandId: z.string().uuid().optional(),
   month: z.string().regex(/^\d{4}-\d{2}$/),
+  weekStart: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
   dates: z
     .array(z.string().regex(/^\d{4}-\d{2}-\d{2}$/))
     .min(1)
@@ -14,6 +15,8 @@ const weekInput = z.object({
 const monthInput = z.object({
   brandId: z.string().uuid().optional(),
   month: z.string().regex(/^\d{4}-\d{2}$/),
+  // Monday of the week to generate (Generate Content works one Monday-Sunday week at a time).
+  weekStart: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
   dates: z
     .array(z.string().regex(/^\d{4}-\d{2}-\d{2}$/))
     .min(1)
@@ -1123,7 +1126,32 @@ export const queueMonthGeneration = createServerFn({ method: "POST" })
     const today = new Date().toISOString().slice(0, 10);
     const currentMonth = today.slice(0, 7);
 
-    if (data.month !== currentMonth) {
+    const dayMs = 86_400_000;
+    const isoOf = (ms: number) => new Date(ms).toISOString().slice(0, 10);
+
+    // Week-based generation: one Monday-Sunday week per click (never the same week twice).
+    let weekDates: string[] | null = null;
+    let jobMonth = data.month;
+    if (data.weekStart) {
+      const startMs = Date.parse(`${data.weekStart}T00:00:00Z`);
+      if (new Date(startMs).getUTCDay() !== 1) throw new Error("A week must start on a Monday.");
+      const endMs = startMs + 6 * dayMs;
+      if (isoOf(endMs) < today) throw new Error("That week is already over.");
+      const first = Math.max(startMs, Date.parse(`${today}T00:00:00Z`));
+      weekDates = [];
+      for (let ms = first; ms <= endMs; ms += dayMs) weekDates.push(isoOf(ms));
+      jobMonth = data.weekStart.slice(0, 7);
+
+      const { count: existing } = await context.supabase
+        .from("content_items")
+        .select("id", { count: "exact", head: true })
+        .eq("user_id", context.userId)
+        .eq("brand_id", brand.id)
+        .eq("calendar_hidden", false)
+        .gte("scheduled_date", data.weekStart)
+        .lte("scheduled_date", isoOf(endMs));
+      if (existing) throw new Error("Content for this week is already generated.");
+    } else if (data.month !== currentMonth) {
       throw new Error("Content can only be generated from today through the end of the current month.");
     }
 
@@ -1147,9 +1175,11 @@ export const queueMonthGeneration = createServerFn({ method: "POST" })
     const TESTING_MODE = true;
 
     // One generation = 7 consecutive days starting today (11 types spread across them).
-    const futureDates = Array.from({ length: 7 }, (_, i) =>
-      new Date(Date.parse(`${today}T00:00:00Z`) + i * 86_400_000).toISOString().slice(0, 10),
-    );
+    const futureDates =
+      weekDates ??
+      Array.from({ length: 7 }, (_, i) =>
+        new Date(Date.parse(`${today}T00:00:00Z`) + i * 86_400_000).toISOString().slice(0, 10),
+      );
     void TESTING_MODE;
 
     /*
@@ -1211,7 +1241,7 @@ export const queueMonthGeneration = createServerFn({ method: "POST" })
       .delete()
       .eq("user_id", context.userId)
       .eq("brand_id", brand.id)
-      .eq("month", data.month);
+      .eq("month", jobMonth);
 
     /*
      * CREATE JOB ONLY.
@@ -1236,6 +1266,7 @@ export const queueMonthGeneration = createServerFn({ method: "POST" })
       .eq("user_id", context.userId)
       .eq("brand_id", brand.id)
       .in("scheduled_date", scheduledDates)
+      .eq("calendar_hidden", false)
       .neq("status", "posted");
 
     if (deleteContentError) {
@@ -1252,7 +1283,7 @@ export const queueMonthGeneration = createServerFn({ method: "POST" })
       .insert({
         user_id: context.userId,
         brand_id: brand.id,
-        month: data.month,
+        month: jobMonth,
         pending_dates: scheduledDates,
         days_total: scheduledDates.length,
         days_done: 0,

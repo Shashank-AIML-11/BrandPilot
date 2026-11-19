@@ -20,6 +20,7 @@ import {
 import { supabase } from "@/integrations/supabase/client";
 import { planById } from "@/lib/plans";
 import { AUTOPOST_CONSENT_TEXT, isAutopostOn } from "@/lib/autopost";
+import { recordAutopostConsent } from "@/lib/autopost-consent.functions";
 import { AgencySidebar } from "@/components/agency-sidebar";
 import {
   agencyPlanFor,
@@ -135,6 +136,13 @@ export function AppShell({ children }: { children: ReactNode }) {
           .from("profiles")
           .upsert({ id: me.user.id, email: me.user.email ?? "", autopost_enabled: next } as never);
         if (insertError) throw new Error(insertError.message);
+      }
+      // Audit trail: the server stores who, when, IP address and plan. A failure here never
+      // undoes the switch, but is logged so it can be investigated.
+      try {
+        await recordAutopostConsent({ data: { action: next ? "accepted" : "turned_off" } });
+      } catch (consentError) {
+        console.error("[autopost] could not record consent", consentError);
       }
       return next;
     },

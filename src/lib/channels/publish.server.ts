@@ -25,6 +25,13 @@ export async function publishItemToChannels(
     (PublishItem & { published_channels: string[] | null; brand_id: string | null }) | null;
   if (!item) throw new Error("Content not found");
 
+  // Last-line safety gate: never post anything the safety check flags, however it got here.
+  const { checkContentSafety } = await import("@/lib/content-safety.server");
+  const verdict = await checkContentSafety(item);
+  if (!verdict.ok) {
+    throw new Error(`Blocked by safety check (${verdict.reason}). This content cannot be posted.`);
+  }
+
   const already = new Set(item.published_channels ?? []);
   const targets = channels.filter((c) => !already.has(c));
   const results: PublishResult[] = [];

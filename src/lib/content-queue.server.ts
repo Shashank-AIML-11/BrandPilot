@@ -224,12 +224,33 @@ export async function processGenerationQueue(admin: AdminClient, userId?: string
     const generatedRows = rows as Array<Record<string, unknown>>;
     const updatedIds = new Set<string>();
 
+    const { checkContentSafety } = await import("@/lib/content-safety.server");
     for (const row of generatedRows) {
       const date = String(row.scheduled_date);
       const type = String(row.type);
       const key = `${date}:${type}`;
       const candidates = placeholderMap.get(key) ?? [];
       const placeholder = candidates.shift();
+
+      // Safety gate: check what the AI actually wrote. Unsafe content is never saved or
+      // published; the slot is marked failed (no image/video is ever generated for it).
+      const verdict = await checkContentSafety(row);
+      if (!verdict.ok) {
+        console.error(`[safety] blocked ${type} on ${date}: ${verdict.reason} (${verdict.layer})`);
+        if (placeholder) {
+          await admin
+            .from("content_items")
+            .update({
+              status: "failed",
+              title: "Blocked by safety check",
+              summary: `This content was blocked (${verdict.reason}). Use Generate Content again for a clean version.`,
+            } as never)
+            .eq("id", placeholder.id)
+            .eq("user_id", job.user_id);
+          updatedIds.add(placeholder.id);
+        }
+        continue;
+      }
 
       if (!placeholder) {
         // Safety fallback: if the AI returned more content than the

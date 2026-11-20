@@ -276,7 +276,7 @@ async function generateImageBytesFal(prompt: string, aspect: ImageAspect): Promi
       Authorization: `Key ${apiKey}`,
       "content-type": "application/json",
     },
-    body: JSON.stringify(falImageBody(model, guard(prompt), aspect)),
+    body: JSON.stringify({ ...falImageBody(model, guard(prompt), aspect), enable_safety_checker: true }),
   });
 
   if (!res.ok) {
@@ -393,7 +393,10 @@ export async function createVideoJob(
     method: "POST",
     headers: falHeaders(),
     body: JSON.stringify(
-      falVideoBody(model, guard(prompt), options.aspectRatio ?? "9:16", options.durationSeconds ?? 6),
+      {
+        ...falVideoBody(model, guard(prompt), options.aspectRatio ?? "9:16", options.durationSeconds ?? 6),
+        enable_safety_checker: true,
+      },
     ),
   });
 

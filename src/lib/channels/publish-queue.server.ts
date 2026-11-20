@@ -33,6 +33,13 @@ export async function processPublishQueue(admin: Admin, opts: PublishQueueOption
   const batchSize = opts.batch ?? BATCH;
   const { today, time } = istNow(new Date());
 
+  // Admin Portal switch (Automation tab): when OFF, nothing is posted automatically.
+  // Manual "Post now" is not affected. Read live, so it applies on the next run.
+  const { getAutomationSetting } = await import("@/lib/app-settings.server");
+  if (!(await getAutomationSetting(admin, "autopost_enabled"))) {
+    return { publishChecked: 0, publishPosted: 0, publishFailed: 0, skipped: "autopost is switched off in the Admin Portal" };
+  }
+
   let query = admin
     .from("content_items")
     .select(

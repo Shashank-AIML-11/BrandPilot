@@ -69,6 +69,11 @@ async function subscriptionStart(admin: Admin, userId: string): Promise<Date | n
 
 export async function runAutoGeneration(admin: Admin, now = new Date()) {
   if (!isProduction()) return { skipped: "not production" };
+  // Admin Portal switch (Automation tab). Read live, so changes apply on the next run.
+  const { getAutomationSetting } = await import("@/lib/app-settings.server");
+  if (!(await getAutomationSetting(admin as never, "auto_generate_enabled"))) {
+    return { skipped: "auto-generate is switched off in the Admin Portal" };
+  }
 
   const today = istParts(now).date;
   const month = today.slice(0, 7);

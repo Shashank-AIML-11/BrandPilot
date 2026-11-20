@@ -205,6 +205,49 @@ export const editSubscriber = createServerFn({ method: "POST" })
     return { ok: true };
   });
 
+export const getAutomationSettings = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .handler(async ({ context }) => {
+    const access = await assertAdmin(context);
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    const { getAutomationSetting } = await import("@/lib/app-settings.server");
+    return {
+      canEdit: access.isRoot,
+      autoGenerate: await getAutomationSetting(supabaseAdmin as never, "auto_generate_enabled"),
+      autopost: await getAutomationSetting(supabaseAdmin as never, "autopost_enabled"),
+    };
+  });
+
+export const setAutomationSetting = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((input: unknown) =>
+    z
+      .object({
+        key: z.enum(["auto_generate_enabled", "autopost_enabled"]),
+        value: z.boolean(),
+      })
+      .parse(input),
+  )
+  .handler(async ({ data, context }) => {
+    const access = await assertAdmin(context);
+    if (!access.isRoot) throw new Error("Only root can change automation switches");
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    const { data: authUser } = await context.supabase.auth.getUser();
+    const { error } = await (supabaseAdmin as unknown as SupabaseClient)
+      .from("app_settings")
+      .upsert(
+        {
+          key: data.key,
+          value: data.value,
+          updated_at: new Date().toISOString(),
+          updated_by: authUser.user?.email ?? context.userId,
+        },
+        { onConflict: "key" },
+      );
+    if (error) throw new Error(error.message);
+    return { ok: true };
+  });
+
 export const grantRole = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((input: unknown) => grantInput.parse(input))

@@ -26,6 +26,7 @@ import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { AdminReferrals } from "@/components/admin-referrals";
+import { AdminAutomation } from "@/components/admin-automation";
 import {
   Table,
   TableHeader,
@@ -187,6 +188,7 @@ function AdminPage() {
           <TabsTrigger value="subscribers">Subscribers</TabsTrigger>
           <TabsTrigger value="access">User Access</TabsTrigger>
           {data.isRoot && <TabsTrigger value="referrals">Referrals</TabsTrigger>}
+          <TabsTrigger value="automation">Automation</TabsTrigger>
         </TabsList>
 
         {/* ===================== DASHBOARD ===================== */}
@@ -455,6 +457,10 @@ function AdminPage() {
             <AdminReferrals />
           </TabsContent>
         )}
+
+        <TabsContent value="automation" className="pt-4">
+          <AdminAutomation />
+        </TabsContent>
       </Tabs>
 
       {/* Edit subscriber dialog */}

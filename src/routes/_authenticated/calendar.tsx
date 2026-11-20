@@ -970,6 +970,7 @@ function CalendarPage() {
       )}
 
       {view === "week" && (
+        <>
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div className="flex flex-wrap gap-1.5">
             {(autopostOn
@@ -988,13 +989,6 @@ function CalendarPage() {
               </Button>
             ))}
           </div>
-          <p className="w-full text-xs text-muted-foreground">
-            {autopostOn
-              ? "Daily content will be posted automatically at 7 AM daily."
-              : reviewTab === "reviewed"
-                ? "Reviewed cards dated today or earlier are posted automatically at 7 AM. Today's cards can also be posted now; later days' cards wait for their own day."
-                : "Review each card and press Finish Review to move it to Reviewed - Ready to Post."}
-          </p>
           {reviewTab === "reviewed" && !autopostOn && (
             <div className="flex items-center gap-2">
             <Button
@@ -1026,6 +1020,14 @@ function CalendarPage() {
             </div>
           )}
         </div>
+        <p className="-mt-2 text-xs text-muted-foreground">
+            {autopostOn
+              ? "Daily content will be posted automatically at 7 AM daily."
+              : reviewTab === "reviewed"
+                ? "Reviewed cards dated today or earlier are posted automatically at 7 AM. Today's cards can also be posted now; later days' cards wait for their own day."
+                : "Review each card and press Finish Review to move it to Reviewed - Ready to Post."}
+        </p>
+        </>
       )}
 
       {/* ====================================================== */}

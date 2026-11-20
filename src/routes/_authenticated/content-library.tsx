@@ -353,18 +353,7 @@ function ContentLibraryPage() {
             Every piece LOVIZA has generated, in one place — browse by format.
           </p>
         </div>
-        <Button onClick={onPostNowClick} disabled={selectedItems.length === 0 || posting}>
-          {posting ? (
-            <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-          ) : (
-            <Send className="mr-2 h-4 w-4" />
-          )}
-          {posting
-            ? `Posting ${progress.done}/${progress.total}…`
-            : selectedItems.length > 0
-              ? `Post now (${selectedItems.length})`
-              : "Post now"}
-        </Button>
+        {/* Posting happens from the Content Calendar (reviewed cards, on their day). */}
       </div>
 
       <Tabs value={active} onValueChange={(v) => setActive(v as BucketId)}>
@@ -439,21 +428,10 @@ function ContentLibraryPage() {
                           <span className="text-xs text-muted-foreground">
                             {format(new Date(item.scheduled_date), "d MMM yyyy")}
                           </span>
-                          <Badge className={`text-[10px] capitalize ${statusStyles(item.status)}`}>
-                            {item.status}
-                          </Badge>
                         </div>
                       </div>
                     </button>
 
-                    <div className="absolute right-2 top-2 z-10 rounded-md bg-background/80 p-1 shadow-sm backdrop-blur-sm">
-                      <Checkbox
-                        className="h-5 w-5"
-                        checked={isSelected}
-                        onCheckedChange={() => toggleSelected(item.id)}
-                        aria-label={`Select “${item.title}” to post`}
-                      />
-                    </div>
                   </div>
                 );
               })}

@@ -1,4 +1,6 @@
 import { useBrandScope } from "@/lib/brand-scope";
+import { useMe } from "@/components/app-shell";
+import { isAutopostOn } from "@/lib/autopost";
 import { useEffect, useMemo, useState, useRef, } from "react";
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
@@ -117,6 +119,24 @@ function CalendarPage() {
   const [view, setView] = useState<"month" | "week">("month");
   const [weekStart, setWeekStart] = useState(() => startOfWeek(new Date(), { weekStartsOn: 1 }));
   const [reviewTab, setReviewTab] = useState<ReviewTab>("generated");
+
+  // Autopost ON: one tab ("Generated - Ready to Autopost"), no review, no ticking, no Post now.
+  // Autopost OFF: review each card, then post from "Reviewed - Ready to Post".
+  const { data: me } = useMe();
+  const autopostOn = isAutopostOn(me);
+  const [todayKey, setTodayKey] = useState(() => format(new Date(), "yyyy-MM-dd"));
+  useEffect(() => {
+    // Re-check every minute so the tick boxes appear at 12 AM without a page reload.
+    const t = setInterval(() => setTodayKey(format(new Date(), "yyyy-MM-dd")), 60_000);
+    return () => clearInterval(t);
+  }, []);
+  useEffect(() => {
+    if (autopostOn) setReviewTab("generated");
+  }, [autopostOn]);
+  const tabOf = (item: ContentItem): ReviewTab => (autopostOn ? "generated" : reviewTabOf(item));
+  /** Manual posting is only for reviewed cards dated today (or earlier, if one was missed). */
+  const canPostNow = (item: ContentItem) =>
+    !autopostOn && reviewTabOf(item) === "reviewed" && item.scheduled_date <= todayKey;
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [finishing, setFinishing] = useState(false);
   const [postProgress, setPostProgress] = useState<{ done: number; total: number } | null>(null);
@@ -510,12 +530,12 @@ function CalendarPage() {
     }, [items, weekStart, weekEnd]);
     const reviewCounts = useMemo(() => {
       const c: Record<ReviewTab, number> = { generated: 0, reviewed: 0, posted: 0 };
-      for (const i of weekItems) c[reviewTabOf(i)] += 1;
+      for (const i of weekItems) c[tabOf(i)] += 1;
       return c;
-    }, [weekItems]);
+    }, [weekItems, autopostOn]);
     const selectedItems = useMemo(
-      () => items.filter((i) => selectedIds.has(i.id) && reviewTabOf(i) === "reviewed"),
-      [items, selectedIds],
+      () => items.filter((i) => selectedIds.has(i.id) && canPostNow(i)),
+      [items, selectedIds, autopostOn, todayKey],
     );
 
     async function finishReview(item: ContentItem) {
@@ -713,7 +733,7 @@ function CalendarPage() {
     setWeekStart(thisWeek);
     setCursor(startOfMonth(thisWeek));
     setView("week");
-    setReviewTab("reviewed");
+    setReviewTab(autopostOn ? "generated" : "reviewed");
   }
 
   /*
@@ -952,7 +972,10 @@ function CalendarPage() {
       {view === "week" && (
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div className="flex flex-wrap gap-1.5">
-            {REVIEW_TABS.map((t) => (
+            {(autopostOn
+              ? [{ id: "generated" as ReviewTab, label: "Generated - Ready to Autopost" }]
+              : REVIEW_TABS
+            ).map((t) => (
               <Button
                 key={t.id}
                 type="button"
@@ -965,14 +988,21 @@ function CalendarPage() {
               </Button>
             ))}
           </div>
-          {reviewTab === "reviewed" && (
+          <p className="w-full text-xs text-muted-foreground">
+            {autopostOn
+              ? "Daily content will be posted automatically at 7 AM daily."
+              : reviewTab === "reviewed"
+                ? "Reviewed cards dated today or earlier are posted automatically at 7 AM. Today's cards can also be posted now; later days' cards wait for their own day."
+                : "Review each card and press Finish Review to move it to Reviewed - Ready to Post."}
+          </p>
+          {reviewTab === "reviewed" && !autopostOn && (
             <div className="flex items-center gap-2">
             <Button
               size="sm"
               variant="outline"
-              disabled={reviewCounts.reviewed === 0 || postProgress !== null}
+              disabled={!weekItems.some(canPostNow) || postProgress !== null}
               onClick={() => {
-                const ids = weekItems.filter((i) => reviewTabOf(i) === "reviewed").map((i) => i.id);
+                const ids = weekItems.filter(canPostNow).map((i) => i.id);
                 const allSelected = ids.length > 0 && ids.every((id) => selectedIds.has(id));
                 setSelectedIds((prev) => {
                   const next = new Set(prev);
@@ -984,8 +1014,8 @@ function CalendarPage() {
                 });
               }}
             >
-              {weekItems.filter((i) => reviewTabOf(i) === "reviewed").every((i) => selectedIds.has(i.id)) &&
-              reviewCounts.reviewed > 0
+              {weekItems.filter(canPostNow).every((i) => selectedIds.has(i.id)) &&
+              weekItems.some(canPostNow)
                 ? "Clear selection"
                 : "Select all"}
             </Button>
@@ -1028,13 +1058,13 @@ function CalendarPage() {
           <div className="grid grid-cols-7">
             {weekDays.map((day) => {
               const key = format(day, "yyyy-MM-dd");
-              const list = (byDate.get(key) ?? []).filter((i) => reviewTabOf(i) === reviewTab);
+              const list = (byDate.get(key) ?? []).filter((i) => tabOf(i) === reviewTab);
               return (
                 <div key={key} className="min-h-[34rem] min-w-0 border-b border-r border-border p-2">
                   <div className="space-y-2">
                     {list.length === 0 && (
                       <p className="pt-6 text-center text-[11px] text-muted-foreground">
-                        {reviewTab === "generated" ? "Nothing to review" : reviewTab === "reviewed" ? "None reviewed" : "Nothing posted"}
+                        {reviewTab === "generated" ? (autopostOn ? "Nothing scheduled" : "Nothing to review") : reviewTab === "reviewed" ? "None reviewed" : "Nothing posted"}
                       </p>
                     )}
                     {list.map((item) => {
@@ -1070,14 +1100,18 @@ function CalendarPage() {
 
                           {/* Bottom-right action */}
                           <div className="flex justify-end px-2 pb-2">
-                            {reviewTab === "generated" && (
+                            {reviewTab === "generated" && autopostOn && item.status === "posted" && (
+                              <Badge className="bg-success text-[10px] text-success-foreground">Posted</Badge>
+                            )}
+                            {reviewTab === "generated" && !autopostOn && (
                               <Button size="sm" className="h-7 px-2.5 text-xs" disabled={rendering} onClick={() => setDetail(item)}>
                                 {rendering ? "Generating…" : "Review"}
                               </Button>
                             )}
                             {reviewTab === "reviewed" && (
                               <Button size="sm" variant="secondary" className="h-7 gap-1 px-2 text-[11px] text-success" onClick={() => setDetail(item)}>
-                                <CheckCircle2 className="h-3 w-3" /> Reviewed - Ready to Post
+                                <CheckCircle2 className="h-3 w-3" />
+                                {canPostNow(item) ? "Ready to Post" : "Posts on its day"}
                               </Button>
                             )}
                             {reviewTab === "posted" && (
@@ -1085,7 +1119,7 @@ function CalendarPage() {
                             )}
                           </div>
 
-                          {reviewTab === "reviewed" && (
+                          {reviewTab === "reviewed" && canPostNow(item) && (
                             <div className="absolute right-1.5 top-1.5 z-10 rounded-md bg-background/80 p-1 shadow-sm backdrop-blur-sm">
                               <Checkbox
                                 className="h-5 w-5"
@@ -1391,7 +1425,7 @@ function CalendarPage() {
 
       <ContentDetailDialog
         item={detail}
-        {...(view === "week" ? { onFinishReview: (i: ContentItem) => void finishReview(i), finishing } : {})}
+        {...(view === "week" && !autopostOn ? { onFinishReview: (i: ContentItem) => void finishReview(i), finishing } : {})}
         onOpenChange={(open) =>
           !open &&
           setDetail(null)

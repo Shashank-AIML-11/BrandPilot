@@ -204,6 +204,29 @@ export const publishContentItem = createServerFn({ method: "POST" })
     return { itemId: input.itemId, channels };
   })
   .handler(async ({ data, context }) => {
+    // Manual "Post now" rules: Autopost must be OFF, the card must be reviewed, and it must be
+    // dated today (IST) or earlier. Later days' cards go out on their own day.
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    const { istNow } = await import("@/lib/channels/publish-queue.server");
+    const [{ data: row }, { data: prof }] = await Promise.all([
+      supabaseAdmin
+        .from("content_items")
+        .select("scheduled_date, reviewed_at")
+        .eq("id", data.itemId)
+        .eq("user_id", context.userId)
+        .maybeSingle(),
+      supabaseAdmin.from("profiles").select("autopost_enabled").eq("id", context.userId).maybeSingle(),
+    ]);
+    const item = row as { scheduled_date: string; reviewed_at: string | null } | null;
+    if (!item) throw new Error("Content not found");
+    if ((prof as { autopost_enabled?: boolean } | null)?.autopost_enabled === true) {
+      throw new Error("Autopost is ON: content is posted automatically at 7 AM.");
+    }
+    if (!item.reviewed_at) throw new Error("Finish the review before posting this card.");
+    if (item.scheduled_date > istNow(new Date()).today) {
+      throw new Error("This card is scheduled for a later day. It will be posted automatically on its day.");
+    }
+
     const { publishItemToChannels } = await import("@/lib/channels/publish.server");
     return publishItemToChannels(context.userId, data.itemId, data.channels);
   });

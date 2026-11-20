@@ -36,7 +36,7 @@ export async function processPublishQueue(admin: Admin, opts: PublishQueueOption
   let query = admin
     .from("content_items")
     .select(
-      "id, user_id, type, platforms, scheduled_date, scheduled_time, image_url, video_url, carousel_slides, carousel_image_urls",
+      "id, user_id, type, platforms, scheduled_date, scheduled_time, reviewed_at, image_url, video_url, carousel_slides, carousel_image_urls",
     )
     .eq("status", "scheduled")
     .eq("enabled", true)
@@ -62,6 +62,7 @@ export async function processPublishQueue(admin: Admin, opts: PublishQueueOption
     platforms: string[] | null;
     scheduled_date: string;
     scheduled_time: string | null;
+    reviewed_at: string | null;
     image_url: string | null;
     video_url: string | null;
     carousel_slides: unknown[] | null;
@@ -80,10 +81,12 @@ export async function processPublishQueue(admin: Admin, opts: PublishQueueOption
   }
 
   // Account-wide Autopost switch (header toggle), OFF unless the user turned it ON.
-  // Accounts that are OFF (or have no setting yet) are skipped: their posts stay
-  // scheduled and go out only through the manual Post now button.
+  //  - Autopost ON : every due card is posted (no review step).
+  //  - Autopost OFF: only cards the user has reviewed ("Reviewed - Ready to Post") are posted.
+  // Either way only cards dated today or earlier are picked up, never tomorrow's.
   const userIds = [...new Set(rows.map((r) => r.user_id))];
-  const allowedUsers = new Set<string>();
+  const autopostUsers = new Set<string>();
+  const allowedUsers = new Set<string>(userIds);
   if (userIds.length > 0) {
     const { data: enabled } = await (
       admin as unknown as {
@@ -103,7 +106,7 @@ export async function processPublishQueue(admin: Admin, opts: PublishQueueOption
       .select("id")
       .in("id", userIds)
       .eq("autopost_enabled", true);
-    for (const row of enabled ?? []) allowedUsers.add(row.id);
+    for (const row of enabled ?? []) autopostUsers.add(row.id);
 
     // Plans are prepaid 30-day periods. Once a plan has lapsed, its scheduled
     // posts are left untouched (not marked as failed) and go out only after
@@ -115,6 +118,7 @@ export async function processPublishQueue(admin: Admin, opts: PublishQueueOption
 
   const due = rows
     .filter((row) => allowedUsers.has(row.user_id))
+    .filter((row) => autopostUsers.has(row.user_id) || Boolean(row.reviewed_at))
     .filter((row) => !opts.skipIds?.has(row.id))
     .filter(
       (row) =>

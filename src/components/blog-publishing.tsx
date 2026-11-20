@@ -90,7 +90,7 @@ export function BlogPublishing({ brandId }: { brandId?: string | null }) {
       <div>
         <h2 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">Blog publishing</h2>
         <p className="mt-1 text-sm text-muted-foreground">
-          LOVIZA blogs go to your website's blog section, plus LinkedIn, Medium and Quora.
+          LOVIZA blogs go to your website's blog section, plus LinkedIn. Medium and Quora posts are prepared in LOVIZA for you to post by hand.
         </p>
       </div>
 
@@ -174,38 +174,8 @@ export function BlogPublishing({ brandId }: { brandId?: string | null }) {
         )}
       </div>
 
-      <div className="space-y-3 rounded-lg border border-border p-4">
-        <div className="flex items-center gap-2">
-          <span className="font-medium">Medium</span>
-          {medium && (
-            <Badge variant="outline" className="gap-1 border-primary/40 text-primary">
-              <CheckCircle2 className="h-3 w-3" /> {medium.accountName}
-            </Badge>
-          )}
-        </div>
-        {medium ? (
-          <Button size="sm" variant="ghost" onClick={() => remove.mutate("Medium")}>
-            <Unlink className="mr-1.5 h-4 w-4" /> Disconnect
-          </Button>
-        ) : (
-          <>
-            <p className="text-xs text-muted-foreground">
-              Optional. Paste a Medium integration token (Medium → Settings → Security and apps) to post automatically.
-              Medium no longer issues new tokens to everyone — without one, blogs are prepared for you to post by hand.
-            </p>
-            <div className="flex gap-2">
-              <Input type="password" value={mediumToken} onChange={(e) => setMediumToken(e.target.value)} placeholder="Integration token" autoComplete="off" />
-              <Button size="sm" variant="secondary" onClick={() => saveTok.mutate()} disabled={saveTok.isPending || !mediumToken}>
-                {saveTok.isPending && <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />}
-                Connect
-              </Button>
-            </div>
-          </>
-        )}
-      </div>
-
       <p className="text-xs text-muted-foreground">
-        Quora has no posting API, so Quora answers are prepared in LOVIZA for you to post. LinkedIn is connected above.
+        Medium and Quora have no posting API for new accounts, so those posts are prepared in LOVIZA for you to post. LinkedIn is connected above.
       </p>
     </section>
   );

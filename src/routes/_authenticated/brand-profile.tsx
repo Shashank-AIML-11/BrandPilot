@@ -657,20 +657,7 @@ function BrandProfilePage() {
             </div>
           ))}
         </div>
-        <div className="space-y-2">
-          <Label htmlFor="drive">Google Drive folder link (optional)</Label>
-          <Input
-            id="drive"
-            maxLength={400}
-            placeholder="https://drive.google.com/drive/folders/..."
-            value={form.google_drive_folder}
-            onChange={(e) => set("google_drive_folder", e.target.value)}
-          />
-          <p className="text-xs text-muted-foreground">
-            Generated assets are stored in LOVIZA; paste a Drive folder here to keep your source
-            brand assets alongside them.
-          </p>
-        </div>
+        {/* Google Drive folder link is switched off for now (kept out of the page during Google review). */}
       </section>
 
       <ChannelConnections

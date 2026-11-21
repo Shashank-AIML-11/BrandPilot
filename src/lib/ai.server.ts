@@ -417,8 +417,20 @@ function parseFalVideoStatus(raw?: string): VideoJob["status"] {
 
 export async function createVideoJob(
   prompt: string,
-  options: { aspectRatio?: "9:16" | "16:9"; durationSeconds?: number } = {},
+  options: {
+    aspectRatio?: "9:16" | "16:9";
+    durationSeconds?: number;
+    explainer?: import("@/lib/explainer.server").ExplainerInput;
+  } = {},
 ): Promise<VideoJob> {
+  // Shotstack mode: the video is assembled by Shotstack. fal video is NEVER used in this mode.
+  if (options.explainer) {
+    const { submitExplainerRender } = await import("@/lib/explainer.server");
+    return { id: `ss_${await submitExplainerRender(options.explainer)}`, status: "queued" };
+  }
+  if ((process.env["VIDEO_PROVIDER"] ?? "").trim().toLowerCase() === "shotstack") {
+    throw new Error("Video provider is Shotstack; fal video is disabled.");
+  }
   const model = falVideoModel();
   const res = await fetch(`https://queue.fal.run/${model}`, {
     method: "POST",
@@ -444,6 +456,11 @@ export async function createVideoJob(
 }
 
 export async function getVideoJob(id: string): Promise<VideoJob> {
+  if (id.startsWith("ss_")) {
+    const { explainerStatus } = await import("@/lib/explainer.server");
+    const st = await explainerStatus(id.slice(3));
+    return { id, status: st.status, error: st.status === "failed" ? { message: st.error || "Shotstack render failed." } : null };
+  }
   const model = falVideoModel();
   const res = await fetch(`https://queue.fal.run/${falAppId(model)}/requests/${id}/status`, {
     headers: falHeaders(),
@@ -466,6 +483,10 @@ export async function getVideoJob(id: string): Promise<VideoJob> {
 }
 
 export async function downloadVideoBytes(id: string): Promise<Uint8Array> {
+  if (id.startsWith("ss_")) {
+    const { explainerBytes } = await import("@/lib/explainer.server");
+    return explainerBytes(id.slice(3));
+  }
   const model = falVideoModel();
   const res = await fetch(`https://queue.fal.run/${falAppId(model)}/requests/${id}`, {
     headers: falHeaders(),

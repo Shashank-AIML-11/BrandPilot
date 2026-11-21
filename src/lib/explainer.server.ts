@@ -442,6 +442,8 @@ export async function submitExplainerRender(input: ExplainerInput): Promise<stri
   if (/^rendering\b/i.test(String(input.item.title ?? ""))) {
     throw new Error("The content text is not written yet; the video will start once it is.");
   }
+  const { spendGuard, recordSpend } = await import("@/lib/spend-guard.server");
+  await spendGuard("shotstack_render"); // refuses (at no cost) once today's limit is reached
   const res = await fetch(`${base()}/render`, {
     method: "POST",
     headers: { "x-api-key": key(), "content-type": "application/json" },
@@ -452,6 +454,7 @@ export async function submitExplainerRender(input: ExplainerInput): Promise<stri
   const json = JSON.parse(text) as { response?: { id?: string } };
   const id = json.response?.id;
   if (!id) throw new Error("Shotstack did not return a render id.");
+  await recordSpend("shotstack_render");
   return id;
 }
 

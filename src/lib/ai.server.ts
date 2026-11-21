@@ -6,6 +6,12 @@ function guard(prompt: string): string {
   return `${prompt}${SAFETY_GUARD}`;
 }
 
+function openrouterKey() {
+  const k = process.env["OPENROUTER_API_KEY"];
+  if (!k) throw new Error("AI is not configured (missing OPENROUTER_API_KEY).");
+  return k;
+}
+
 function groqKey() {
   const k = process.env["GROQ_API_KEY"];
   if (!k) throw new Error("AI is not configured (missing GROQ_API_KEY).");
@@ -93,20 +99,28 @@ export async function chatJSON<T>(
         type: "json_object",
       };
 
-  const sendRequest = () => fetch("https://api.groq.com/openai/v1/chat/completions", {
+  // TEXT_PROVIDER=openrouter uses OpenRouter (prepaid credits) instead of Groq. Same request shape.
+  const openrouter = (process.env["TEXT_PROVIDER"] ?? "").trim().toLowerCase() === "openrouter";
+  const endpoint = openrouter ? "https://openrouter.ai/api/v1/chat/completions" : "https://api.groq.com/openai/v1/chat/completions";
+  const apiKey = openrouter ? openrouterKey() : groqKey();
+  const modelName = openrouter ? (process.env["OPENROUTER_MODEL"]?.trim() || "openai/gpt-oss-20b") : (options.model ?? "openai/gpt-oss-20b");
+  const sendRequest = () => fetch(endpoint, {
     method: "POST",
     headers: {
-      Authorization: `Bearer ${groqKey()}`,
+      Authorization: `Bearer ${apiKey}`,
       "Content-Type": "application/json",
+      ...(openrouter ? { "HTTP-Referer": "https://loviza.click", "X-Title": "LOVIZA" } : {}),
     },
     body: JSON.stringify({
-      model: options.model ?? "openai/gpt-oss-20b",
+      model: modelName,
       messages: [
         { role: "system", content: system },
         { role: "user", content: prompt },
       ],
       response_format: responseFormat,
-      reasoning_effort: options.reasoningEffort ?? "low",
+      ...(openrouter
+        ? { reasoning: { effort: options.reasoningEffort ?? "low" } }
+        : { reasoning_effort: options.reasoningEffort ?? "low" }),
       // Without an explicit cap, Groq reserves a large default output
       // budget from the model's context window and counts that reserved
       // amount against the per-minute token limit — regardless of how
@@ -139,7 +153,9 @@ export async function chatJSON<T>(
       // pins down the real input size precisely — trim weekPrompt()
       // further (or drop back toward 3200-3400) rather than raising this
       // again, since we're now close to the 8,000 ceiling either way.
-      max_completion_tokens: options.maxTokens ?? 3600,
+      ...(openrouter
+        ? { max_tokens: options.maxTokens ?? 3600 }
+        : { max_completion_tokens: options.maxTokens ?? 3600 }),
     }),
   });
   const res = await sendWithRetry(sendRequest);
@@ -300,6 +316,8 @@ async function generateImageBytesFal(prompt: string, aspect: ImageAspect): Promi
     throw new Error("Image generation is not configured (missing FAL_KEY).");
   }
   const model = falImageModel();
+  const { spendGuard, recordSpend } = await import("@/lib/spend-guard.server");
+  await spendGuard("fal_image"); // refuses (at no cost) once today's limit is reached
 
   const res = await fetch(`https://fal.run/${model}`, {
     method: "POST",
@@ -315,6 +333,7 @@ async function generateImageBytesFal(prompt: string, aspect: ImageAspect): Promi
     throw new Error(`fal.ai image generation failed [${res.status}]: ${text}`);
   }
 
+  await recordSpend("fal_image"); // fal has charged for this image now
   const json = (await res.json()) as { images?: Array<{ url?: string }> };
   const imageUrl = json.images?.[0]?.url;
   if (!imageUrl) {

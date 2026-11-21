@@ -1,27 +1,39 @@
 /**
- * "Explainer Light" branded explainer videos: light dotted background, brand logo on top, a large
- * on-screen line per scene synced to the voice, a rounded card with a flat illustration of one object,
- * and a gradient end card with a call-to-action pill. AI voiceover and optional music.
- * Everything is assembled by ONE provider, Shotstack, from a single timeline.
+ * "Explainer Pro": branded explainer videos built from a library of designed scene layouts
+ * (see explainer-layouts.server.ts). The AI script writer (Groq) picks a layout per scene and fills
+ * in the text; fal paints at most a couple of pictures; Shotstack adds the AI voice, the animated
+ * transitions and assembles everything into one MP4 from a single timeline.
  *
  * Switch on with VIDEO_PROVIDER=shotstack. Env:
- *   SHOTSTACK_API_KEY   (required)  — key of the matching environment
+ *   SHOTSTACK_API_KEY   (required)  key of the matching environment
  *   SHOTSTACK_ENV       stage (free sandbox, watermarked) | v1 (production)   default: stage
- *   SHOTSTACK_VOICE     (required for voiceover) a voice id from GET /edit/<env>/models?expand=options
- *   EXPLAINER_ASPECT    9:16 (720x1280, default) | 4:5 (720x900, like the sample)
- *   EXPLAINER_IMAGES    on (default) | off — illustrations per scene (reused from the media library when possible)
+ *   SHOTSTACK_VOICE     voice name, e.g. Rachel (see Shotstack "AI speech generation" docs)
+ *   EXPLAINER_ASPECT    9:16 (720x1280, default) | 4:5 (720x900)
+ *   EXPLAINER_SCENES    number of scenes, 5-10 (default 7; each scene is one voice line)
+ *   EXPLAINER_IMAGES    on (default) | off   — pictures for photo/illustration layouts
+ *   EXPLAINER_MAX_IMAGES  max pictures per video (default 2)
  *   EXPLAINER_MUSIC_URL optional public mp3 link for background music
  *
- * Written from Shotstack's documentation and NOT live-tested (no key was available): if
- * Shotstack rejects a field, its exact message is shown on the video card.
+ * Not live-tested against Shotstack: if it rejects a field, its exact message is shown on the video card.
  */
 import { posterCopyFor, cleanColor } from "@/lib/poster.server";
+import {
+  LAYOUTS,
+  LAYOUT_BY_ID,
+  ICON_LIST,
+  W,
+  layoutCatalogue,
+  renderScene,
+  dottedBackground,
+  readableOn,
+  TRANSITIONS,
+  type SceneFields,
+  type Theme,
+} from "@/lib/explainer-layouts.server";
 
-export interface ExplainerScene {
-  voice: string; // what the voice says in this scene
-  text: string; // short on-screen message that matches the voice line
-  imageUrl?: string | null; // background photo for the scene
-}
+export type ExplainerScene = SceneFields & {
+  imageUrl?: string | null; // picture for photo / illustration layouts
+};
 
 export interface ExplainerInput {
   userId?: string;
@@ -35,7 +47,6 @@ export interface ExplainerInput {
   photoPrompt?: string | null;
 }
 
-const W = 720;
 const H = (process.env["EXPLAINER_ASPECT"] ?? "9:16").trim() === "4:5" ? 900 : 1280;
 
 function base(): string {
@@ -47,7 +58,6 @@ function key(): string {
   if (!k) throw new Error("Video assembly is not configured (missing SHOTSTACK_API_KEY).");
   return k;
 }
-const esc = (s: string) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 
 export function explainerEnabled(): boolean {
   return (process.env["VIDEO_PROVIDER"] ?? "").trim().toLowerCase() === "shotstack";
@@ -60,15 +70,18 @@ export function explainerPlan(input: ExplainerInput) {
   return { headline: copy.headline, points: points.slice(0, 3), cta: copy.cta };
 }
 
+const blank = (): SceneFields => ({ layout: "hook", voice: "", title: "", sub: "", items: [], stats: [], a: [], b: [], img: "" });
+
 function fallbackScenes(input: ExplainerInput): ExplainerScene[] {
   const plan = explainerPlan(input);
   return [
-    { voice: plan.headline, text: plan.headline },
-    ...plan.points.map((p) => ({ voice: p, text: p })),
-    { voice: `${plan.cta} with ${input.brandName}`, text: plan.cta },
+    { ...blank(), layout: "hook", voice: plan.headline, title: plan.headline },
+    ...plan.points.map((p) => ({ ...blank(), layout: "statement", voice: p, title: p })),
+    { ...blank(), layout: "cta_end", voice: `${plan.cta} with ${input.brandName}`, title: plan.cta },
   ];
 }
 
+const str = { type: "string" };
 const SCENE_SCHEMA = {
   type: "object",
   properties: {
@@ -76,8 +89,24 @@ const SCENE_SCHEMA = {
       type: "array",
       items: {
         type: "object",
-        properties: { voice: { type: "string" }, text: { type: "string" }, object: { type: "string" } },
-        required: ["voice", "text", "object"],
+        properties: {
+          layout: str,
+          voice: str,
+          title: str,
+          sub: str,
+          items: {
+            type: "array",
+            items: { type: "object", properties: { t: str, d: str, i: str }, required: ["t", "d", "i"], additionalProperties: false },
+          },
+          stats: {
+            type: "array",
+            items: { type: "object", properties: { v: str, l: str }, required: ["v", "l"], additionalProperties: false },
+          },
+          a: { type: "array", items: str },
+          b: { type: "array", items: str },
+          img: str,
+        },
+        required: ["layout", "voice", "title", "sub", "items", "stats", "a", "b", "img"],
         additionalProperties: false,
       },
     },
@@ -86,14 +115,61 @@ const SCENE_SCHEMA = {
   additionalProperties: false,
 } as const;
 
+const PHOTO_STYLE =
+  "Candid documentary photograph, natural window light, real people and real places, authentic imperfect composition, shallow depth of field, shot on a 35mm lens, no studio gloss, no illustration, no 3D render.";
+
 function artPrompt(object: string, c: { primary: string; accent: string }) {
   return `Clean flat vector illustration of ${object}. One single centred object, simple friendly shapes, soft subtle shadow, colour palette ${c.primary} and ${c.accent} with white and light grey, plain pure white background, generous empty margin around the object. No text, no letters, no numbers, no logos, no people's faces.`;
 }
 
+const strList = (x: unknown): string[] => (Array.isArray(x) ? x.map((v) => String(v ?? "").trim()).filter(Boolean) : []);
+
+/** Cleans one scene returned by the AI so every layout always gets safe, complete fields. */
+function normaliseScene(raw: Record<string, unknown>): ExplainerScene | null {
+  const voice = String(raw["voice"] ?? "").trim();
+  if (!voice) return null;
+  const layoutId = LAYOUT_BY_ID.has(String(raw["layout"])) ? String(raw["layout"]) : "hook";
+  const arr = (v: unknown) => (Array.isArray(v) ? (v as Record<string, unknown>[]) : []);
+  return {
+    layout: layoutId,
+    voice,
+    title: String(raw["title"] ?? "").trim(),
+    sub: String(raw["sub"] ?? "").trim(),
+    items: arr(raw["items"])
+      .map((x) => ({ t: String(x["t"] ?? "").trim(), d: String(x["d"] ?? "").trim(), i: String(x["i"] ?? "spark").trim().toLowerCase() }))
+      .filter((x) => x.t),
+    stats: arr(raw["stats"])
+      .map((x) => ({ v: String(x["v"] ?? "").trim(), l: String(x["l"] ?? "").trim() }))
+      .filter((x) => x.v),
+    a: strList(raw["a"]),
+    b: strList(raw["b"]),
+    img: String(raw["img"] ?? "").trim(),
+  };
+}
+
+/** Enforces: valid layout, no repeats back to back, a cap on pictures, and a closing call to action. */
+function arrange(list: ExplainerScene[], maxImages: number): ExplainerScene[] {
+  let images = 0;
+  const out: ExplainerScene[] = [];
+  list.forEach((sc, i) => {
+    const isLast = i === list.length - 1;
+    let layout = LAYOUT_BY_ID.get(sc.layout) ?? LAYOUT_BY_ID.get("hook")!;
+    if (isLast) layout = LAYOUT_BY_ID.get("cta_end")!;
+    else if (layout.id === "cta_end" || !layout.ok(sc)) layout = LAYOUT_BY_ID.get("hook")!;
+    if (layout.image) {
+      if (images >= maxImages || !sc.img) layout = LAYOUT_BY_ID.get("hook")!;
+      else images += 1;
+    }
+    if (out.length && out[out.length - 1]!.layout === layout.id && !isLast) layout = LAYOUT_BY_ID.get("statement")!;
+    out.push({ ...sc, layout: layout.id });
+  });
+  return out;
+}
+
 /**
- * Writes the scene-by-scene script (voice line + matching on-screen text + a photo idea per scene),
- * then paints one photo per scene and stores it so Shotstack can fetch it.
- * Never throws: falls back to a plain script without photos.
+ * Writes the scene-by-scene script (voice line + chosen layout + that layout's fields), then paints
+ * the few pictures the chosen layouts need (reusing the media library first) and stores them so
+ * Shotstack can fetch them. Never throws: falls back to a plain script without pictures.
  */
 export async function prepareScenes(
   admin: import("@supabase/supabase-js").SupabaseClient<import("@/integrations/supabase/types").Database>,
@@ -103,16 +179,15 @@ export async function prepareScenes(
 ): Promise<ExplainerScene[]> {
   const fallback = fallbackScenes(input);
   let scenes: ExplainerScene[] = fallback;
-  let visuals: string[] = [];
+  const maxImages = Math.max(0, Number.parseInt(process.env["EXPLAINER_MAX_IMAGES"] ?? "2", 10) || 0);
+  const count = Math.min(10, Math.max(5, Number.parseInt(process.env["EXPLAINER_SCENES"] ?? "7", 10) || 7));
   const colors = { primary: cleanColor(input.colors?.primary, "#4f46e5"), accent: cleanColor(input.colors?.accent, "#f59e0b") };
+
   try {
-    const [{ chatJSON }, { brandContext }] = await Promise.all([
-      import("@/lib/ai.server"),
-      import("@/lib/content.server"),
-    ]);
+    const [{ chatJSON }, { brandContext }] = await Promise.all([import("@/lib/ai.server"), import("@/lib/content.server")]);
     const plan = explainerPlan(input);
-    const out = await chatJSON<{ scenes?: { voice?: string; text?: string; object?: string }[] }>(
-      "You write short vertical marketing videos (about 25 seconds) that sell one specific brand. Plain, human, specific. Never invent prices, awards, statistics or customers that are not in the brand information.",
+    const out = await chatJSON<{ scenes?: Record<string, unknown>[] }>(
+      "You direct short vertical explainer videos that sell one specific brand, in the style of polished social-media motion graphics. Plain, human, specific. Never invent prices, numbers, awards, statistics, customers, testimonials or ratings that are not in the brand information. Write in the language and tone the brand itself uses (English by default; Hinglish if the brand writes that way).",
       `${brandContext(brand as never)}
 
 Topic of this video: ${input.item.title ?? ""}
@@ -120,25 +195,30 @@ Summary: ${input.item.summary ?? ""}
 Draft script: ${videoScript}
 Selling points to use: ${plan.points.join(" | ")}
 Call to action: ${plan.cta}
+Brand website: ${input.website}
 
-Write exactly 5 scenes:
-1. Hook: a bold, specific line that stops the scroll (a problem the audience feels).
-2-4. One concrete benefit of THIS brand per scene, using the brand's own products, services and words.
-5. Call to action that names the brand: ${input.brandName}.
+Write exactly ${count} scenes. Scene 1 is a hook that stops the scroll (a problem the audience feels). The middle scenes each teach ONE concrete thing about THIS brand using its own products, services and words. The last scene is the call to action naming ${input.brandName} (layout "cta_end").
 
-For each scene return:
-- "voice": what the presenter says, one spoken sentence, max 18 words, conversational.
-- "text": the on-screen message for that same scene, max 7 words, a punchy version of the voice line (same meaning, same key words).
-- "object": ONE simple physical object or icon that illustrates the scene (for example "a rupee coin stack", "a shopping bag", "a phone showing a chat"), 2-6 words, no words or logos. For scene 5 give "".
+Each scene is one screen. Choose the layout that best SHOWS the idea, vary them (never the same layout twice in a row, mix text, list, phone and comparison screens). Layouts:
+${layoutCatalogue()}
+- cta_end: last scene only (title = the action line, sub = short reassurance).
 
-Return JSON: {"scenes":[{"voice":"...","text":"...","object":"..."}, ...]}`,
+For every scene return ALL of these fields (use "" or [] when a field is not used by the chosen layout):
+- "layout": one of the layout ids above
+- "voice": what the voice says, ONE spoken sentence, max 20 words, conversational
+- "title": the on-screen headline, max 8 words, same key words as the voice line (wrap ONE key word in **double stars**)
+- "sub": the extra line the layout needs (see layout), max 14 words
+- "items": [{"t":"short title","d":"one short line","i":"icon"}] icons: ${ICON_LIST}
+- "stats": [{"v":"number","l":"label"}] ONLY if the number appears in the brand information
+- "a" / "b": short points for compare layouts
+- "img": a concrete picture idea ONLY for photo_hero, split_photo or illustration; otherwise ""
+
+Use at most ${maxImages} picture layouts in total. Do not add contact details that are not in the brand information.
+Return JSON: {"scenes":[...]}`,
       SCENE_SCHEMA as unknown as Record<string, unknown>,
     );
-    const good = (out.scenes ?? []).filter((x) => x.voice?.trim() && x.text?.trim()).slice(0, 6);
-    if (good.length >= 3) {
-      scenes = good.map((x) => ({ voice: x.voice!.trim(), text: x.text!.trim() }));
-      visuals = good.map((x) => (x.object ?? "").trim());
-    }
+    const good = (out.scenes ?? []).map(normaliseScene).filter((x): x is ExplainerScene => Boolean(x)).slice(0, 10);
+    if (good.length >= 4) scenes = arrange(good, maxImages);
   } catch (error) {
     console.error("[explainer] scene writer failed, using plain script:", error);
   }
@@ -150,16 +230,20 @@ Return JSON: {"scenes":[{"voice":"...","text":"...","object":"..."}, ...]}`,
     const { reuseOrGenerate } = await import("@/lib/media-library.server");
     const withTimeout = <T,>(p: Promise<T>, ms: number) =>
       Promise.race([p, new Promise<T>((_, rej) => setTimeout(() => rej(new Error("image timeout")), ms))]);
-    const last = scenes.length - 1;
     const made = await Promise.allSettled(
-      scenes.map(async (_, i) => {
-        if (i === last) return null; // the end card has no illustration
-        const object = visuals[i] || input.item.title || input.brandName;
-        const make = () => withTimeout(generateImageBytes(artPrompt(object, colors), "1:1"), 40_000);
+      scenes.map(async (sc) => {
+        const kind = LAYOUT_BY_ID.get(sc.layout)?.image;
+        if (!kind || !sc.img) return null;
+        const aspect = kind === "photo" ? "9:16" : "1:1";
+        const prompt =
+          kind === "photo"
+            ? `${PHOTO_STYLE} ${sc.img}. Vertical 9:16 composition with calm empty space in the lower third. No text, no letters, no logos.`
+            : artPrompt(sc.img, colors);
+        const make = () => withTimeout(generateImageBytes(prompt, aspect), 40_000);
         if (!input.userId) return { bytes: await make() };
         return reuseOrGenerate(
           admin as never,
-          { userId: input.userId, brandId: input.brandId ?? null, kind: "art", aspect: "1:1", text: `${object} ${input.brandName}` },
+          { userId: input.userId, brandId: input.brandId ?? null, kind: kind === "photo" ? "photo" : "art", aspect, text: `${sc.img} ${input.brandName}` },
           make,
         );
       }),
@@ -183,101 +267,78 @@ Return JSON: {"scenes":[{"voice":"...","text":"...","object":"..."}, ...]}`,
   return scenes;
 }
 
-const FONT = "'Montserrat','Open Sans',Arial,sans-serif";
-
-const htmlAsset = (html: string, css: string, w = W, h = H) => ({
-  type: "html",
-  html,
-  css: `*{box-sizing:border-box;margin:0;padding:0}body{width:${w}px;height:${h}px;font-family:${FONT}}${css}`,
-  width: w,
-  height: h,
-});
-
 export function buildTimeline(input: ExplainerInput) {
   const c = input.colors ?? {};
   const primary = cleanColor(c.primary, "#4f46e5");
   const secondary = cleanColor(c.secondary, "#0f172a");
   const accent = cleanColor(c.accent, "#f59e0b");
+  const plan = explainerPlan(input);
+  const T: Theme = {
+    primary,
+    secondary,
+    accent,
+    onAccent: readableOn(accent),
+    onPrimary: readableOn(primary),
+    brand: input.brandName,
+    website: input.website,
+    cta: plan.cta,
+    hasLogo: Boolean(input.logoUrl),
+    H,
+  };
   const scenes = input.scenes && input.scenes.length >= 3 ? input.scenes : fallbackScenes(input);
   const last = scenes.length - 1;
   const voice = process.env["SHOTSTACK_VOICE"]?.trim();
   const synced = Boolean(voice); // with a voice, every scene lasts exactly as long as its voice line
-  const FIXED = 4.5;
-  const fade = { in: "fade", out: "fade" };
-  const timing = (i: number) =>
-    synced ? { start: `alias://v${i}`, length: `alias://v${i}` } : { start: i * FIXED, length: FIXED };
+  const FIXED = 5;
+  const timing = (i: number) => (synced ? { start: `alias://v${i}`, length: `alias://v${i}` } : { start: i * FIXED, length: FIXED });
 
-  // Big dark headline, top-left (white on the end card)
-  const textClips = scenes.map((sc, i) => {
-    const isLast = i === last;
-    const extra = isLast
-      ? `<div class="b">${esc(explainerPlan(input).cta)} &rarr;</div>${input.website ? `<div class="u">${esc(input.website.replace(/^https?:\/\//, ""))}</div>` : ""}`
-      : "";
-    return {
-      asset: htmlAsset(
-        `<div class="w">${isLast ? `<div class="k">${esc(input.brandName)}</div>` : ""}<h2>${esc(sc.text)}</h2>${extra}</div>`,
-        isLast
-          ? `.w{width:100%;height:100%;padding:0 60px;display:flex;flex-direction:column;justify-content:center}.k{color:#fff;opacity:.85;font-weight:700;letter-spacing:5px;text-transform:uppercase;font-size:24px;margin-bottom:18px}h2{color:#fff;font-weight:800;font-size:64px;line-height:1.12}.b{align-self:flex-start;margin-top:44px;background:${secondary};color:#fff;font-weight:800;font-size:32px;padding:20px 46px;border-radius:60px}.u{margin-top:20px;color:#fff;font-size:24px;font-weight:600;opacity:.9}`
-          : `.w{width:100%;height:100%;padding:${Math.round(H * 0.16)}px 56px 0}h2{color:#0f172a;font-weight:800;font-size:${H < 1000 ? 52 : 58}px;line-height:1.14}`,
-      ),
-      ...timing(i),
-      transition: fade,
-    };
-  });
-
-  // Rounded white card + illustration (non-final scenes)
-  const side = Math.round(Math.min(W * 0.72, H * 0.4));
-  const cardY = H < 1000 ? 0.12 : 0.1; // offset (fraction of height) below the middle
-  const cardClips = scenes
-    .map((_, i) =>
-      i === last
-        ? null
-        : {
-            asset: htmlAsset(
-              "<div class='c'></div>",
-              `body{background:transparent}.c{width:${side}px;height:${side}px;border-radius:44px;background:#fff;box-shadow:0 18px 50px rgba(15,23,42,.14)}`,
-              side,
-              side,
-            ),
-            ...timing(i),
-            position: "center",
-            offset: { y: -cardY },
-            transition: { in: "fade", out: "fade" },
+  const sceneClips: unknown[] = [];
+  const imageClips: unknown[] = [];
+  const cardClips: unknown[] = [];
+  scenes.forEach((sc, i) => {
+    const rendered = renderScene(sc, T, i, scenes.length, i === last);
+    const transition = { in: TRANSITIONS[i % TRANSITIONS.length], out: "fade" };
+    sceneClips.push({ asset: rendered.asset, ...timing(i), transition });
+    if (rendered.layout.image && sc.imageUrl) {
+      if (rendered.layout.id === "illustration") {
+        const side = Math.round(Math.min(W * 0.72, H * 0.4));
+        cardClips.push({
+          asset: {
+            type: "html",
+            html: "<div class='c'></div>",
+            css: `*{margin:0;padding:0}body{width:${side}px;height:${side}px;background:transparent}.c{width:${side}px;height:${side}px;border-radius:44px;background:#fff;box-shadow:0 18px 50px rgba(15,23,42,.14)}`,
+            width: side,
+            height: side,
           },
-    )
-    .filter(Boolean);
-  const artClips = scenes
-    .map((sc, i) =>
-      i !== last && sc.imageUrl
-        ? {
-            asset: { type: "image", src: sc.imageUrl },
-            ...timing(i),
-            fit: "contain",
-            width: Math.round(side * 0.82),
-            height: Math.round(side * 0.82),
-            position: "center",
-            offset: { y: -cardY },
-            transition: { in: "zoom", out: "fade" },
-          }
-        : null,
-    )
-    .filter(Boolean);
-
-  // Gradient end card, only during the final scene
-  const endCard = {
-    asset: htmlAsset("<div></div>", `body{background:linear-gradient(155deg,${primary},${secondary})}`),
-    ...timing(last),
-    transition: { in: "fade" },
-  };
-  // Light dotted background for everything else
-  const bg = {
-    asset: htmlAsset(
-      "<div></div>",
-      `body{background-color:#f5f6fa;background-image:radial-gradient(rgba(15,23,42,.16) 2px,transparent 2.6px);background-size:30px 30px}`,
-    ),
-    start: 0,
-    length: "end",
-  };
+          ...timing(i),
+          position: "center",
+          offset: { y: -0.02 },
+        });
+        imageClips.push({
+          asset: { type: "image", src: sc.imageUrl },
+          ...timing(i),
+          fit: "contain",
+          width: Math.round(side * 0.82),
+          height: Math.round(side * 0.82),
+          position: "center",
+          offset: { y: -0.02 },
+          transition: { in: "zoom", out: "fade" },
+        });
+      } else if (rendered.layout.id === "split_photo") {
+        imageClips.push({
+          asset: { type: "image", src: sc.imageUrl },
+          ...timing(i),
+          fit: "cover",
+          width: W,
+          height: Math.round(H * 0.56),
+          position: "top",
+          effect: "zoomIn",
+        });
+      } else {
+        imageClips.push({ asset: { type: "image", src: sc.imageUrl }, ...timing(i), fit: "cover", effect: "zoomIn", transition: { in: "fade", out: "fade" } });
+      }
+    }
+  });
 
   const tracks: unknown[] = [];
   if (synced) {
@@ -292,14 +353,13 @@ export function buildTimeline(input: ExplainerInput) {
   }
   if (input.logoUrl) {
     tracks.push({
-      clips: [{ asset: { type: "image", src: input.logoUrl }, start: 0, length: "end", position: "top", offset: { y: -0.04 }, fit: "contain", width: 240, height: 80 }],
+      clips: [{ asset: { type: "image", src: input.logoUrl }, start: 0, length: "end", position: "topLeft", offset: { x: 0.05, y: -0.028 }, fit: "contain", width: 72, height: 72 }],
     });
   }
-  tracks.push({ clips: textClips });
-  if (artClips.length) tracks.push({ clips: artClips });
-  tracks.push({ clips: cardClips });
-  tracks.push({ clips: [endCard] });
-  tracks.push({ clips: [bg] });
+  tracks.push({ clips: sceneClips });
+  if (cardClips.length) tracks.push({ clips: cardClips });
+  if (imageClips.length) tracks.push({ clips: imageClips });
+  tracks.push({ clips: [{ asset: dottedBackground(T), start: 0, length: "end" }] });
 
   const music = process.env["EXPLAINER_MUSIC_URL"]?.trim();
   return {

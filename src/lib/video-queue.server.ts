@@ -266,6 +266,26 @@ export async function processVideoQueue(admin: AdminClient, userId?: string) {
         if (updateError) throw new Error(updateError.message);
         stored += 1;
 
+        // Library: keep the finished video (raw file already in storage) for the brand's history.
+        try {
+          const { extractTags } = await import("@/lib/media-library.server");
+          const { data: meta } = await admin.from("content_items").select("title, summary").eq("id", item.id).maybeSingle();
+          await (admin as unknown as SupabaseClient).from("brand_media").upsert(
+            {
+              user_id: item.user_id,
+              brand_id: item.brand_id ?? null,
+              kind: "video",
+              aspect: "9:16",
+              storage_path: path,
+              prompt: String(meta?.title ?? "").slice(0, 500),
+              tags: extractTags(`${meta?.title ?? ""} ${meta?.summary ?? ""}`),
+            },
+            { onConflict: "storage_path" },
+          );
+        } catch (libraryError) {
+          console.error("[media] could not save video to the library", libraryError);
+        }
+
         // Propagate to every sibling in the group that was waiting on
         // this generation — no separate job, no separate cost for them.
         if (isShared) {

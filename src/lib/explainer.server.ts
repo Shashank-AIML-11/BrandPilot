@@ -9,7 +9,9 @@
  *   SHOTSTACK_ENV       stage (free sandbox, watermarked) | v1 (production)   default: stage
  *   SHOTSTACK_VOICE     voice name, e.g. Rachel (see Shotstack "AI speech generation" docs)
  *   EXPLAINER_ASPECT    9:16 (720x1280, default) | 4:5 (720x900)
- *   EXPLAINER_SCENES    number of scenes, 5-10 (default 7; each scene is one voice line)
+ *   EXPLAINER_MAX_SECONDS  hard length target, default 30. The script is fitted to this many seconds of
+ *                       speech (about 2.2 words per second) so no voice line is ever cut off
+ *   EXPLAINER_SCENES    number of scenes, 4-6 (default 5; each scene is one voice line)
  *   EXPLAINER_IMAGES    on (default) | off   — pictures for photo/illustration layouts
  *   EXPLAINER_MAX_IMAGES  max pictures per video (default 2)
  *   EXPLAINER_MUSIC_URL optional public mp3 link for background music
@@ -122,6 +124,26 @@ function artPrompt(object: string, c: { primary: string; accent: string }) {
   return `Clean flat vector illustration of ${object}. One single centred object, simple friendly shapes, soft subtle shadow, colour palette ${c.primary} and ${c.accent} with white and light grey, plain pure white background, generous empty margin around the object. No text, no letters, no numbers, no logos, no people's faces.`;
 }
 
+/** Whole-sentence budget: the voice is never trimmed, so the SCRIPT is fitted to the time limit. */
+export function maxSeconds(): number {
+  const n = Number.parseInt(process.env["EXPLAINER_MAX_SECONDS"] ?? "30", 10);
+  return Number.isFinite(n) && n >= 10 ? Math.min(n, 60) : 30;
+}
+const wordBudget = () => Math.floor(maxSeconds() * 2.2);
+const wordCount = (t: string) => t.trim().split(/\s+/).filter(Boolean).length;
+
+/** Drops the longest middle scenes until the spoken words fit the time limit. Keeps first and last. */
+function fitToBudget(list: ExplainerScene[]): ExplainerScene[] {
+  const out = [...list];
+  const total = () => out.reduce((n, sc) => n + wordCount(sc.voice), 0);
+  while (total() > wordBudget() && out.length > 3) {
+    let worst = 1;
+    for (let i = 1; i < out.length - 1; i++) if (wordCount(out[i]!.voice) > wordCount(out[worst]!.voice)) worst = i;
+    out.splice(worst, 1);
+  }
+  return out;
+}
+
 const strList = (x: unknown): string[] => (Array.isArray(x) ? x.map((v) => String(v ?? "").trim()).filter(Boolean) : []);
 
 /** Cleans one scene returned by the AI so every layout always gets safe, complete fields. */
@@ -166,6 +188,46 @@ function arrange(list: ExplainerScene[], maxImages: number): ExplainerScene[] {
   return out;
 }
 
+type Admin = import("@supabase/supabase-js").SupabaseClient<import("@/integrations/supabase/types").Database>;
+
+/** Library: the opening lines of this brand's recent videos, so the next one does not repeat them. */
+async function recentHooks(admin: Admin, input: ExplainerInput): Promise<string> {
+  if (!input.userId) return "";
+  try {
+    let q = (admin as unknown as import("@supabase/supabase-js").SupabaseClient)
+      .from("brand_scripts")
+      .select("hook")
+      .eq("user_id", input.userId)
+      .order("created_at", { ascending: false })
+      .limit(6);
+    q = input.brandId ? q.eq("brand_id", input.brandId) : q.is("brand_id", null);
+    const { data } = await q;
+    return (data ?? []).map((r: { hook: string | null }) => `"${(r.hook ?? "").slice(0, 60)}"`).filter((x: string) => x.length > 2).join("; ");
+  } catch {
+    return "";
+  }
+}
+
+/** Library: keeps every script (layouts, lines, length) so the library grows with each video. Never throws. */
+async function saveScript(admin: Admin, input: ExplainerInput, scenes: ExplainerScene[]) {
+  if (!input.userId) return;
+  try {
+    const words = scenes.reduce((n, sc) => n + wordCount(sc.voice), 0);
+    await (admin as unknown as import("@supabase/supabase-js").SupabaseClient).from("brand_scripts").insert({
+      user_id: input.userId,
+      brand_id: input.brandId ?? null,
+      content_item_id: input.item.id,
+      hook: scenes[0]?.voice ?? null,
+      layouts: scenes.map((sc) => sc.layout),
+      scenes: scenes.map((sc) => ({ layout: sc.layout, voice: sc.voice, title: sc.title, sub: sc.sub, items: sc.items, stats: sc.stats, a: sc.a, b: sc.b, img: sc.img })),
+      total_words: words,
+      est_seconds: Math.round(words / 2.2),
+    });
+  } catch (error) {
+    console.error("[explainer] could not save script to the library", error);
+  }
+}
+
 /**
  * Writes the scene-by-scene script (voice line + chosen layout + that layout's fields), then paints
  * the few pictures the chosen layouts need (reusing the media library first) and stores them so
@@ -180,7 +242,9 @@ export async function prepareScenes(
   const fallback = fallbackScenes(input);
   let scenes: ExplainerScene[] = fallback;
   const maxImages = Math.max(0, Number.parseInt(process.env["EXPLAINER_MAX_IMAGES"] ?? "2", 10) || 0);
-  const count = Math.min(10, Math.max(5, Number.parseInt(process.env["EXPLAINER_SCENES"] ?? "7", 10) || 7));
+  const count = Math.min(6, Math.max(4, Number.parseInt(process.env["EXPLAINER_SCENES"] ?? "5", 10) || 5));
+  const budget = wordBudget();
+  const recent = await recentHooks(admin, input);
   const colors = { primary: cleanColor(input.colors?.primary, "#4f46e5"), accent: cleanColor(input.colors?.accent, "#f59e0b") };
 
   try {
@@ -197,7 +261,8 @@ Selling points to use: ${plan.points.join(" | ")}
 Call to action: ${plan.cta}
 Brand website: ${input.website}
 
-Write exactly ${count} scenes. Scene 1 is a hook that stops the scroll (a problem the audience feels). The middle scenes each teach ONE concrete thing about THIS brand using its own products, services and words. The last scene is the call to action naming ${input.brandName} (layout "cta_end").
+The whole video must be ${maxSeconds()} seconds or less when spoken aloud. That means the TOTAL of all "voice" lines is at most ${budget} words and every voice line is a COMPLETE sentence of at most 13 words (never a fragment that depends on the next line).
+${recent ? `Recent videos for this brand already used these hooks, so open differently: ${recent}\n` : ""}Write exactly ${count} scenes. Scene 1 is a hook that stops the scroll (a problem the audience feels). The middle scenes each teach ONE concrete thing about THIS brand using its own products, services and words. The last scene is the call to action naming ${input.brandName} (layout "cta_end").
 
 Each scene is one screen. Choose the layout that best SHOWS the idea, vary them (never the same layout twice in a row, mix text, list, phone and comparison screens). Layouts:
 ${layoutCatalogue()}
@@ -205,7 +270,7 @@ ${layoutCatalogue()}
 
 For every scene return ALL of these fields (use "" or [] when a field is not used by the chosen layout):
 - "layout": one of the layout ids above
-- "voice": what the voice says, ONE spoken sentence, max 20 words, conversational
+- "voice": what the voice says, ONE complete spoken sentence, max 13 words, conversational
 - "title": the on-screen headline, max 8 words, same key words as the voice line (wrap ONE key word in **double stars**)
 - "sub": the extra line the layout needs (see layout), max 14 words
 - "items": [{"t":"short title","d":"one short line","i":"icon"}] icons: ${ICON_LIST}
@@ -217,12 +282,13 @@ Use at most ${maxImages} picture layouts in total. Do not add contact details th
 Return JSON: {"scenes":[...]}`,
       SCENE_SCHEMA as unknown as Record<string, unknown>,
     );
-    const good = (out.scenes ?? []).map(normaliseScene).filter((x): x is ExplainerScene => Boolean(x)).slice(0, 10);
-    if (good.length >= 4) scenes = arrange(good, maxImages);
+    const good = (out.scenes ?? []).map(normaliseScene).filter((x): x is ExplainerScene => Boolean(x)).slice(0, 7);
+    if (good.length >= 4) scenes = fitToBudget(arrange(good, maxImages));
   } catch (error) {
     console.error("[explainer] scene writer failed, using plain script:", error);
   }
 
+  await saveScript(admin, input, scenes);
   if ((process.env["EXPLAINER_IMAGES"] ?? "on").toLowerCase() === "off") return scenes;
 
   try {
@@ -289,7 +355,7 @@ export function buildTimeline(input: ExplainerInput) {
   const last = scenes.length - 1;
   const voice = process.env["SHOTSTACK_VOICE"]?.trim();
   const synced = Boolean(voice); // with a voice, every scene lasts exactly as long as its voice line
-  const FIXED = 5;
+  const FIXED = Math.min(5, Math.floor((maxSeconds() / scenes.length) * 10) / 10); // silent mode: still within the limit
   const timing = (i: number) => (synced ? { start: `alias://v${i}`, length: `alias://v${i}` } : { start: i * FIXED, length: FIXED });
 
   const sceneClips: unknown[] = [];

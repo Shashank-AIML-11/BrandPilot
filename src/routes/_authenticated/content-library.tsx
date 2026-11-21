@@ -5,7 +5,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { format } from "date-fns";
 import { toast } from "sonner";
-import { Loader2, ImageOff, Send } from "lucide-react";
+import { Loader2, ImageOff, Send, Download } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { publishContentItem } from "@/lib/channels.functions";
 import { cachedMediaUrl } from "@/lib/media";
@@ -64,6 +64,54 @@ const BUCKETS = [
 ] as const;
 
 type BucketId = (typeof BUCKETS)[number]["id"] | "all";
+
+const slug = (t: string) => t.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 40) || "content";
+
+async function saveFile(url: string, filename: string) {
+  try {
+    const res = await fetch(url);
+    if (!res.ok) throw new Error(String(res.status));
+    const blob = await res.blob();
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(a.href), 4000);
+  } catch {
+    window.open(url, "_blank", "noopener"); // browser fallback if the direct download is blocked
+  }
+}
+
+/** Downloads what this card holds: the video, the image, every carousel slide, or the text for a blog. */
+async function downloadItem(item: ContentItem) {
+  const base = `${item.type}-${item.scheduled_date}-${slug(item.title)}`;
+  const files: { url: string; name: string }[] = [];
+  if (VIDEO_TYPES.includes(item.type)) {
+    const u = cachedMediaUrl(item.video_url);
+    if (u) files.push({ url: u, name: `${base}.mp4` });
+  } else if (item.type === "carousel") {
+    (item.carousel_image_urls ?? []).filter(Boolean).forEach((p, i) => {
+      const u = cachedMediaUrl(p);
+      if (u) files.push({ url: u, name: `${base}-slide-${i + 1}.png` });
+    });
+  } else if (item.image_url) {
+    const u = cachedMediaUrl(item.image_url);
+    if (u) files.push({ url: u, name: `${base}.png` });
+  }
+  if (files.length) {
+    for (const f of files) await saveFile(f.url, f.name);
+    return;
+  }
+  const text = [item.title, "", item.body || item.caption || item.summary || "", item.hashtags ? `\n${item.hashtags}` : ""].join("\n").trim();
+  if (!text || item.title === text) {
+    toast.error("Nothing to download yet — the media is still being prepared.");
+    return;
+  }
+  const url = URL.createObjectURL(new Blob([text], { type: "text/plain;charset=utf-8" }));
+  await saveFile(url, `${base}.txt`);
+}
 
 function thumbnailFor(item: ContentItem): string | null {
   const raw = item.image_url ?? item.carousel_image_urls?.[0] ?? null;
@@ -431,7 +479,15 @@ function ContentLibraryPage() {
                         </div>
                       </div>
                     </button>
-
+                    <button
+                      type="button"
+                      title="Download"
+                      aria-label={`Download ${item.title}`}
+                      onClick={() => void downloadItem(item)}
+                      className="absolute right-2 top-2 flex h-8 w-8 items-center justify-center rounded-full border border-border bg-background/90 text-foreground shadow-sm transition-colors hover:bg-primary hover:text-primary-foreground"
+                    >
+                      <Download className="h-4 w-4" />
+                    </button>
                   </div>
                 );
               })}

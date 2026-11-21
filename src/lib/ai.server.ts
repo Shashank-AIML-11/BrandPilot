@@ -44,6 +44,36 @@ export function strategyChatOptions(): ChatOptions {
   };
 }
 
+const sleepMs = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
+/**
+ * Groq's free tier refuses a request when the per-minute token budget is used up and says how
+ * long to wait. Instead of failing the slot, wait that long (within a time budget) and retry.
+ *   GROQ_RETRY_MAX_WAIT_SECONDS  total waiting allowed per call, default 20 (0 = never wait)
+ */
+async function sendWithRetry(send: () => Promise<Response>): Promise<Response> {
+  const budget = Number(process.env["GROQ_RETRY_MAX_WAIT_SECONDS"] ?? 20) * 1000;
+  let waited = 0;
+  for (let attempt = 0; ; attempt += 1) {
+    const res = await send();
+    if (res.status !== 429 || attempt >= 3 || budget <= 0) return res;
+
+    let ms = 0;
+    const header = Number(res.headers.get("retry-after"));
+    if (Number.isFinite(header) && header > 0) ms = header * 1000;
+    if (!ms) {
+      const body = await res.clone().text().catch(() => "");
+      const m = /try again in (?:(\d+)m)?([\d.]+)(ms|s)\b/i.exec(body);
+      if (m) ms = (m[1] ? Number(m[1]) * 60_000 : 0) + (m[3]!.toLowerCase() === "ms" ? Number(m[2]) : Number(m[2]) * 1000);
+    }
+    ms = (ms || 8000) + 500;
+    if (waited + ms > budget) return res; // would take too long: let the queue retry later
+    console.warn(`[groq] rate limited, waiting ${Math.round(ms / 1000)}s (attempt ${attempt + 1})`);
+    await sleepMs(ms);
+    waited += ms;
+  }
+}
+
 export async function chatJSON<T>(
   system: string,
   prompt: string,
@@ -63,7 +93,7 @@ export async function chatJSON<T>(
         type: "json_object",
       };
 
-  const res = await fetch("https://api.groq.com/openai/v1/chat/completions", {
+  const sendRequest = () => fetch("https://api.groq.com/openai/v1/chat/completions", {
     method: "POST",
     headers: {
       Authorization: `Bearer ${groqKey()}`,
@@ -112,6 +142,7 @@ export async function chatJSON<T>(
       max_completion_tokens: options.maxTokens ?? 3600,
     }),
   });
+  const res = await sendWithRetry(sendRequest);
 
   if (!res.ok) {
     const text = await res.text();

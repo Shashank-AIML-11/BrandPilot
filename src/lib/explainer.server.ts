@@ -1,13 +1,15 @@
 /**
- * Branded explainer videos (like a designed ad): hook → 3 selling points → call-to-action,
- * with brand colours, logo, animated text, an AI voiceover and optional music.
+ * "Explainer Light" branded explainer videos: light dotted background, brand logo on top, a large
+ * on-screen line per scene synced to the voice, a rounded card with a flat illustration of one object,
+ * and a gradient end card with a call-to-action pill. AI voiceover and optional music.
  * Everything is assembled by ONE provider, Shotstack, from a single timeline.
  *
  * Switch on with VIDEO_PROVIDER=shotstack. Env:
  *   SHOTSTACK_API_KEY   (required)  — key of the matching environment
  *   SHOTSTACK_ENV       stage (free sandbox, watermarked) | v1 (production)   default: stage
  *   SHOTSTACK_VOICE     (required for voiceover) a voice id from GET /edit/<env>/models?expand=options
- *   EXPLAINER_PHOTOS    on = also generate one background photo with Shotstack credits (default off)
+ *   EXPLAINER_ASPECT    9:16 (720x1280, default) | 4:5 (720x900, like the sample)
+ *   EXPLAINER_IMAGES    on (default) | off — illustrations per scene (reused from the media library when possible)
  *   EXPLAINER_MUSIC_URL optional public mp3 link for background music
  *
  * Written from Shotstack's documentation and NOT live-tested (no key was available): if
@@ -22,6 +24,8 @@ export interface ExplainerScene {
 }
 
 export interface ExplainerInput {
+  userId?: string;
+  brandId?: string | null;
   item: { id: string; title?: string | null; summary?: string | null; image_prompt?: string | null };
   brandName: string;
   website: string;
@@ -32,7 +36,7 @@ export interface ExplainerInput {
 }
 
 const W = 720;
-const H = 1280;
+const H = (process.env["EXPLAINER_ASPECT"] ?? "9:16").trim() === "4:5" ? 900 : 1280;
 
 function base(): string {
   const env = (process.env["SHOTSTACK_ENV"] ?? "stage").trim() || "stage";
@@ -72,8 +76,8 @@ const SCENE_SCHEMA = {
       type: "array",
       items: {
         type: "object",
-        properties: { voice: { type: "string" }, text: { type: "string" }, visual: { type: "string" } },
-        required: ["voice", "text", "visual"],
+        properties: { voice: { type: "string" }, text: { type: "string" }, object: { type: "string" } },
+        required: ["voice", "text", "object"],
         additionalProperties: false,
       },
     },
@@ -82,8 +86,9 @@ const SCENE_SCHEMA = {
   additionalProperties: false,
 } as const;
 
-const PHOTO_STYLE =
-  "Candid documentary photograph, natural window light, real people and real places, authentic imperfect composition, shallow depth of field, shot on a 35mm lens, no studio gloss, no illustration, no 3D render.";
+function artPrompt(object: string, c: { primary: string; accent: string }) {
+  return `Clean flat vector illustration of ${object}. One single centred object, simple friendly shapes, soft subtle shadow, colour palette ${c.primary} and ${c.accent} with white and light grey, plain pure white background, generous empty margin around the object. No text, no letters, no numbers, no logos, no people's faces.`;
+}
 
 /**
  * Writes the scene-by-scene script (voice line + matching on-screen text + a photo idea per scene),
@@ -99,13 +104,14 @@ export async function prepareScenes(
   const fallback = fallbackScenes(input);
   let scenes: ExplainerScene[] = fallback;
   let visuals: string[] = [];
+  const colors = { primary: cleanColor(input.colors?.primary, "#4f46e5"), accent: cleanColor(input.colors?.accent, "#f59e0b") };
   try {
     const [{ chatJSON }, { brandContext }] = await Promise.all([
       import("@/lib/ai.server"),
       import("@/lib/content.server"),
     ]);
     const plan = explainerPlan(input);
-    const out = await chatJSON<{ scenes?: { voice?: string; text?: string; visual?: string }[] }>(
+    const out = await chatJSON<{ scenes?: { voice?: string; text?: string; object?: string }[] }>(
       "You write short vertical marketing videos (about 25 seconds) that sell one specific brand. Plain, human, specific. Never invent prices, awards, statistics or customers that are not in the brand information.",
       `${brandContext(brand as never)}
 
@@ -123,15 +129,15 @@ Write exactly 5 scenes:
 For each scene return:
 - "voice": what the presenter says, one spoken sentence, max 18 words, conversational.
 - "text": the on-screen message for that same scene, max 7 words, a punchy version of the voice line (same meaning, same key words).
-- "visual": a concrete real-world photo idea for the background (people, place, action). Never include words, logos or text in the photo.
+- "object": ONE simple physical object or icon that illustrates the scene (for example "a rupee coin stack", "a shopping bag", "a phone showing a chat"), 2-6 words, no words or logos. For scene 5 give "".
 
-Return JSON: {"scenes":[{"voice":"...","text":"...","visual":"..."}, ...]}`,
+Return JSON: {"scenes":[{"voice":"...","text":"...","object":"..."}, ...]}`,
       SCENE_SCHEMA as unknown as Record<string, unknown>,
     );
     const good = (out.scenes ?? []).filter((x) => x.voice?.trim() && x.text?.trim()).slice(0, 6);
     if (good.length >= 3) {
       scenes = good.map((x) => ({ voice: x.voice!.trim(), text: x.text!.trim() }));
-      visuals = good.map((x) => (x.visual ?? "").trim());
+      visuals = good.map((x) => (x.object ?? "").trim());
     }
   } catch (error) {
     console.error("[explainer] scene writer failed, using plain script:", error);
@@ -141,18 +147,22 @@ Return JSON: {"scenes":[{"voice":"...","text":"...","visual":"..."}, ...]}`,
 
   try {
     const { generateImageBytes } = await import("@/lib/ai.server");
+    const { reuseOrGenerate } = await import("@/lib/media-library.server");
     const withTimeout = <T,>(p: Promise<T>, ms: number) =>
       Promise.race([p, new Promise<T>((_, rej) => setTimeout(() => rej(new Error("image timeout")), ms))]);
+    const last = scenes.length - 1;
     const made = await Promise.allSettled(
-      scenes.map((_, i) =>
-        withTimeout(
-          generateImageBytes(
-            `${PHOTO_STYLE} ${visuals[i] || input.photoPrompt || input.item.title || input.brandName}. Vertical 9:16 composition with empty space in the lower third. No text, no letters, no logos.`,
-            "9:16",
-          ),
-          40_000,
-        ),
-      ),
+      scenes.map(async (_, i) => {
+        if (i === last) return null; // the end card has no illustration
+        const object = visuals[i] || input.item.title || input.brandName;
+        const make = () => withTimeout(generateImageBytes(artPrompt(object, colors), "1:1"), 40_000);
+        if (!input.userId) return { bytes: await make() };
+        return reuseOrGenerate(
+          admin as never,
+          { userId: input.userId, brandId: input.brandId ?? null, kind: "art", aspect: "1:1", text: `${object} ${input.brandName}` },
+          make,
+        );
+      }),
     );
     for (let i = 0; i < scenes.length; i++) {
       const r = made[i];
@@ -160,8 +170,9 @@ Return JSON: {"scenes":[{"voice":"...","text":"...","visual":"..."}, ...]}`,
         console.error("[explainer] scene image failed:", (r as PromiseRejectedResult).reason);
         continue;
       }
+      if (!r.value) continue;
       const path = `explainer/${input.item.id}/scene-${i + 1}.png`;
-      const up = await admin.storage.from("content-media").upload(path, r.value, { contentType: "image/png", upsert: true });
+      const up = await admin.storage.from("content-media").upload(path, r.value.bytes, { contentType: "image/png", upsert: true });
       if (up.error) continue;
       const { data } = await admin.storage.from("content-media").createSignedUrl(path, 60 * 60 * 6);
       scenes[i]!.imageUrl = data?.signedUrl ?? null;
@@ -172,15 +183,15 @@ Return JSON: {"scenes":[{"voice":"...","text":"...","visual":"..."}, ...]}`,
   return scenes;
 }
 
-function cardHtml(text: string, css: string, extra = "") {
-  return {
-    type: "html",
-    html: `<div class="w"><div class="bar"></div><h2>${esc(text)}</h2>${extra}</div>`,
-    css: `*{box-sizing:border-box;margin:0;padding:0}body{width:${W}px;height:${H}px;font-family:'Montserrat','Open Sans',Arial,sans-serif;display:flex;align-items:flex-end;justify-content:center}.w{width:100%;padding:0 50px 170px;text-align:left}.bar{width:84px;height:8px;border-radius:4px;margin-bottom:22px}h2{color:#fff;font-weight:800;font-size:54px;line-height:1.14;text-shadow:0 3px 18px rgba(0,0,0,.55)}${css}`,
-    width: W,
-    height: H,
-  };
-}
+const FONT = "'Montserrat','Open Sans',Arial,sans-serif";
+
+const htmlAsset = (html: string, css: string, w = W, h = H) => ({
+  type: "html",
+  html,
+  css: `*{box-sizing:border-box;margin:0;padding:0}body{width:${w}px;height:${h}px;font-family:${FONT}}${css}`,
+  width: w,
+  height: h,
+});
 
 export function buildTimeline(input: ExplainerInput) {
   const c = input.colors ?? {};
@@ -188,62 +199,82 @@ export function buildTimeline(input: ExplainerInput) {
   const secondary = cleanColor(c.secondary, "#0f172a");
   const accent = cleanColor(c.accent, "#f59e0b");
   const scenes = input.scenes && input.scenes.length >= 3 ? input.scenes : fallbackScenes(input);
+  const last = scenes.length - 1;
   const voice = process.env["SHOTSTACK_VOICE"]?.trim();
   const synced = Boolean(voice); // with a voice, every scene lasts exactly as long as its voice line
   const FIXED = 4.5;
   const fade = { in: "fade", out: "fade" };
-
   const timing = (i: number) =>
-    synced
-      ? { start: `alias://v${i}`, length: `alias://v${i}` }
-      : { start: i * FIXED, length: FIXED };
+    synced ? { start: `alias://v${i}`, length: `alias://v${i}` } : { start: i * FIXED, length: FIXED };
 
+  // Big dark headline, top-left (white on the end card)
   const textClips = scenes.map((sc, i) => {
-    const last = i === scenes.length - 1;
-    const first = i === 0;
-    const kicker = first ? `<div class="k">${esc(input.brandName)}</div>` : "";
-    const button = last
+    const isLast = i === last;
+    const extra = isLast
       ? `<div class="b">${esc(explainerPlan(input).cta)} &rarr;</div>${input.website ? `<div class="u">${esc(input.website.replace(/^https?:\/\//, ""))}</div>` : ""}`
       : "";
     return {
-      asset: cardHtml(
-        sc.text,
-        `.bar{background:${accent}}.k{color:${accent};font-weight:700;letter-spacing:4px;text-transform:uppercase;font-size:22px;margin-bottom:14px}.b{display:inline-block;margin-top:34px;background:${accent};color:${secondary};font-weight:800;font-size:34px;padding:18px 40px;border-radius:60px}.u{margin-top:16px;color:#fff;font-size:24px;font-weight:600;opacity:.9}`,
-        kicker + button,
+      asset: htmlAsset(
+        `<div class="w">${isLast ? `<div class="k">${esc(input.brandName)}</div>` : ""}<h2>${esc(sc.text)}</h2>${extra}</div>`,
+        isLast
+          ? `.w{width:100%;height:100%;padding:0 60px;display:flex;flex-direction:column;justify-content:center}.k{color:#fff;opacity:.85;font-weight:700;letter-spacing:5px;text-transform:uppercase;font-size:24px;margin-bottom:18px}h2{color:#fff;font-weight:800;font-size:64px;line-height:1.12}.b{align-self:flex-start;margin-top:44px;background:${secondary};color:#fff;font-weight:800;font-size:32px;padding:20px 46px;border-radius:60px}.u{margin-top:20px;color:#fff;font-size:24px;font-weight:600;opacity:.9}`
+          : `.w{width:100%;height:100%;padding:${Math.round(H * 0.16)}px 56px 0}h2{color:#0f172a;font-weight:800;font-size:${H < 1000 ? 52 : 58}px;line-height:1.14}`,
       ),
       ...timing(i),
       transition: fade,
     };
   });
 
-  const imageClips = scenes
+  // Rounded white card + illustration (non-final scenes)
+  const side = Math.round(Math.min(W * 0.72, H * 0.4));
+  const cardY = H < 1000 ? 0.12 : 0.1; // offset (fraction of height) below the middle
+  const cardClips = scenes
+    .map((_, i) =>
+      i === last
+        ? null
+        : {
+            asset: htmlAsset(
+              "<div class='c'></div>",
+              `body{background:transparent}.c{width:${side}px;height:${side}px;border-radius:44px;background:#fff;box-shadow:0 18px 50px rgba(15,23,42,.14)}`,
+              side,
+              side,
+            ),
+            ...timing(i),
+            position: "center",
+            offset: { y: -cardY },
+            transition: { in: "fade", out: "fade" },
+          },
+    )
+    .filter(Boolean);
+  const artClips = scenes
     .map((sc, i) =>
-      sc.imageUrl
-        ? { asset: { type: "image", src: sc.imageUrl }, ...timing(i), fit: "cover", effect: "zoomIn", transition: fade }
+      i !== last && sc.imageUrl
+        ? {
+            asset: { type: "image", src: sc.imageUrl },
+            ...timing(i),
+            fit: "contain",
+            width: Math.round(side * 0.82),
+            height: Math.round(side * 0.82),
+            position: "center",
+            offset: { y: -cardY },
+            transition: { in: "zoom", out: "fade" },
+          }
         : null,
     )
     .filter(Boolean);
 
-  // dark gradient over photos so the text stays readable
-  const shade = {
-    asset: {
-      type: "html",
-      html: "<div></div>",
-      css: `*{margin:0;padding:0}body{width:${W}px;height:${H}px;background:linear-gradient(to top,rgba(0,0,0,.72) 0%,rgba(0,0,0,.25) 45%,rgba(0,0,0,0) 70%)}`,
-      width: W,
-      height: H,
-    },
-    start: 0,
-    length: "end",
+  // Gradient end card, only during the final scene
+  const endCard = {
+    asset: htmlAsset("<div></div>", `body{background:linear-gradient(155deg,${primary},${secondary})}`),
+    ...timing(last),
+    transition: { in: "fade" },
   };
+  // Light dotted background for everything else
   const bg = {
-    asset: {
-      type: "html",
-      html: "<div></div>",
-      css: `*{margin:0;padding:0}body{width:${W}px;height:${H}px;background:linear-gradient(160deg,${secondary},${primary})}`,
-      width: W,
-      height: H,
-    },
+    asset: htmlAsset(
+      "<div></div>",
+      `body{background-color:#f5f6fa;background-image:radial-gradient(rgba(15,23,42,.16) 2px,transparent 2.6px);background-size:30px 30px}`,
+    ),
     start: 0,
     length: "end",
   };
@@ -252,12 +283,7 @@ export function buildTimeline(input: ExplainerInput) {
   if (synced) {
     tracks.push({
       clips: scenes.map((sc, i) => ({
-        asset: {
-          type: "audio",
-          prompt: sc.voice,
-          model: "elevenlabs-multilingual-v2",
-          options: { voice },
-        },
+        asset: { type: "audio", prompt: sc.voice, model: "elevenlabs-multilingual-v2", options: { voice } },
         start: "auto",
         length: "auto",
         alias: `v${i}`,
@@ -266,18 +292,19 @@ export function buildTimeline(input: ExplainerInput) {
   }
   if (input.logoUrl) {
     tracks.push({
-      clips: [{ asset: { type: "image", src: input.logoUrl }, start: 0, length: "end", position: "top", offset: { y: -0.06 }, fit: "contain", width: 300, height: 96 }],
+      clips: [{ asset: { type: "image", src: input.logoUrl }, start: 0, length: "end", position: "top", offset: { y: -0.04 }, fit: "contain", width: 240, height: 80 }],
     });
   }
   tracks.push({ clips: textClips });
-  tracks.push({ clips: [shade] });
-  if (imageClips.length) tracks.push({ clips: imageClips });
+  if (artClips.length) tracks.push({ clips: artClips });
+  tracks.push({ clips: cardClips });
+  tracks.push({ clips: [endCard] });
   tracks.push({ clips: [bg] });
 
   const music = process.env["EXPLAINER_MUSIC_URL"]?.trim();
   return {
     timeline: {
-      background: secondary,
+      background: "#f5f6fa",
       ...(music ? { soundtrack: { src: music, effect: "fadeOut", volume: 0.12 } } : {}),
       tracks,
     },

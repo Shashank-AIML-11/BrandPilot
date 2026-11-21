@@ -26,6 +26,7 @@ async function explainerInputFor(
   admin: AdminClient,
   item: { id: string; type: string; title: string; summary: string | null; image_prompt: string | null; video_script?: string | null },
   brand: Record<string, unknown> | null,
+  owner: { userId: string; brandId: string | null } = { userId: "", brandId: null },
 ) {
   let logoUrl: string | null = null;
   const logoPath = String(brand?.["logo_url"] ?? "");
@@ -35,6 +36,8 @@ async function explainerInputFor(
   }
   const input = {
     item,
+    userId: owner.userId || undefined,
+    brandId: owner.brandId,
     brandName: String(brand?.["business_name"] ?? ""),
     website: String(brand?.["website"] ?? ""),
     colors: (brand?.["brand_colors"] as Record<string, string> | null) ?? null,
@@ -127,6 +130,31 @@ function sleep(ms: number) {
 // Pollinations only allows 1 in-flight image request per IP. Serialize every
 // call through here instead of firing them in parallel, and back off/retry
 // specifically on 429s instead of failing the item immediately.
+/**
+ * Looks in the brand media library first; only calls the image provider when no stored photo fits.
+ * The raw photo (before the poster layer) is what gets stored, so it can be reused with a new headline.
+ */
+async function photoFor(
+  admin: AdminClient,
+  item: { user_id: string; brand_id?: string | null; type: string; title?: string | null; summary?: string | null; image_prompt?: string | null },
+  prompt: string,
+  aspect: Parameters<typeof generateImageBytes>[1] = "1:1",
+): Promise<Uint8Array> {
+  const { reuseOrGenerate } = await import("@/lib/media-library.server");
+  const result = await reuseOrGenerate(
+    admin as never,
+    {
+      userId: item.user_id,
+      brandId: item.brand_id ?? null,
+      kind: "photo",
+      aspect,
+      text: `${item.title ?? ""} ${item.image_prompt ?? ""} ${item.summary ?? ""}`,
+    },
+    () => generateImageWithRetry(prompt, aspect),
+  );
+  return result.bytes;
+}
+
 async function generateImageWithRetry(
   prompt: Parameters<typeof generateImageBytes>[0],
   aspect: Parameters<typeof generateImageBytes>[1] = "1:1",
@@ -377,7 +405,7 @@ export async function processVideoQueue(admin: AdminClient, userId?: string) {
               // volume/cost is confirmed acceptable.
               durationSeconds: envInt("VIDEO_SECONDS", 6, 10),
               explainer: (await import("@/lib/explainer.server")).explainerEnabled()
-                ? await explainerInputFor(admin, item, brand as never)
+                ? await explainerInputFor(admin, item, brand as never, { userId: item.user_id, brandId: item.brand_id ?? null })
                 : undefined,
             },
           );
@@ -461,7 +489,9 @@ export async function processVideoQueue(admin: AdminClient, userId?: string) {
         // First of the group to render today — generate once, upload to
         // the SHARED path (not a per-item path) so siblings can find it.
         const brand = await loadBrand(admin, item.user_id, item.brand_id);
-        const photo = await generateImageWithRetry(
+        const photo = await photoFor(
+          admin,
+          item as never,
           imagePromptFor(item as never, brand as never),
           aspectForType(item.type),
         );
@@ -498,7 +528,9 @@ export async function processVideoQueue(admin: AdminClient, userId?: string) {
           .maybeSingle();
         if (!coverSibling) {
           const coverBrand = await loadBrand(admin, item.user_id, item.brand_id);
-          const coverPhoto = await generateImageWithRetry(
+          const coverPhoto = await photoFor(
+            admin,
+            item as never,
             imagePromptFor(item as never, coverBrand as never),
             aspectForType(item.type),
           );
@@ -523,7 +555,9 @@ export async function processVideoQueue(admin: AdminClient, userId?: string) {
       // Not in the shared group (pinterest, video thumbnails) — generate
       // its own unique image as before.
       const brand = await loadBrand(admin, item.user_id, item.brand_id);
-      const photo = await generateImageWithRetry(
+      const photo = await photoFor(
+        admin,
+        item as never,
         imagePromptFor(item as never, brand as never),
         aspectForType(item.type),
       );

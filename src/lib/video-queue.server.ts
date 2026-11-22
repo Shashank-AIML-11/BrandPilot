@@ -330,6 +330,8 @@ export async function processVideoQueue(admin: AdminClient, userId?: string) {
         // Never start a paid video from a "Rendering…" placeholder: wait until the real
         // script and on-screen text have been written (status leaves "draft").
         .neq("status", "draft")
+        // A slot whose text generation failed holds an error placeholder: never pay to render it.
+        .neq("status", "failed")
         .eq("calendar_hidden", false)
         .order("scheduled_date", { ascending: true })
         .order("scheduled_time", { ascending: true })
@@ -340,6 +342,16 @@ export async function processVideoQueue(admin: AdminClient, userId?: string) {
 
       for (const item of pending ?? []) {
         try {
+          const textOf = `${item.title ?? ""} ${item.summary ?? ""} ${item.video_script ?? ""}`;
+          if (/generation failed|did not return content/i.test(textOf)) {
+            await admin
+              .from("content_items")
+              .update({ video_status: "failed", video_error: "Skipped: the text for this slot failed to generate, so no paid render was started. Regenerate the slot's text first." })
+              .eq("id", item.id)
+              .eq("video_status", "none");
+            failed += 1;
+            continue;
+          }
           // Shared-video group (Reel/Short/TikTok/Product video): don't submit a paid
           // job if a sibling on the same day already has one done or in
           // progress.

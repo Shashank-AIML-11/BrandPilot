@@ -12,6 +12,8 @@
  * (light dotted, dark, or gradient).
  */
 
+import { FONT_CSS } from "@/lib/explainer-font.server";
+
 export const W = 720;
 
 export interface Item {
@@ -114,9 +116,17 @@ function baseCss(T: Theme, dark: boolean) {
   const soft = dark ? "rgba(255,255,255,.72)" : "#475569";
   const card = dark ? "rgba(255,255,255,.08)" : "#ffffff";
   const line = dark ? "rgba(255,255,255,.16)" : "rgba(15,23,42,.10)";
-  return `
+  return `${FONT_CSS}
 *{box-sizing:border-box;margin:0;padding:0}
-body{width:${W}px;height:${T.H}px;font-family:'Montserrat','Open Sans',Arial,sans-serif;color:${ink};overflow:hidden}
+html,body{width:${W}px;height:${T.H}px;margin:0;padding:0;overflow:hidden}
+body{font-family:'Montserrat',Arial,Helvetica,sans-serif;color:${ink}}
+@keyframes rise{from{opacity:0;transform:translateY(48px)}to{opacity:1;transform:none}}
+@keyframes pop{from{opacity:0;transform:scale(.86)}to{opacity:1;transform:none}}
+.body>*{animation:rise .6s cubic-bezier(.2,.8,.2,1) both}
+.col>*,.body>div>.card,.body>div>.chip{animation:rise .55s cubic-bezier(.2,.8,.2,1) both}
+.col>*:nth-child(2){animation-delay:.2s}.col>*:nth-child(3){animation-delay:.4s}.col>*:nth-child(4){animation-delay:.6s}.col>*:nth-child(5){animation-delay:.8s}
+.phone{animation:pop .6s cubic-bezier(.2,.8,.2,1) both}
+.cap{animation:rise .5s .15s both}
 .f{position:relative;width:${W}px;height:${T.H}px;display:flex;flex-direction:column}
 .top{height:${Math.round(T.H * 0.105)}px;padding:34px 40px 0 ${T.hasLogo ? 128 : 40}px;display:flex;align-items:center;gap:10px;font-weight:700;font-size:21px;color:${soft}}
 .prog{position:absolute;left:40px;right:40px;top:18px;display:flex;gap:6px}
@@ -262,7 +272,7 @@ export const LAYOUTS: Layout[] = [
     use: "A social post shown inside a phone. title=post headline (short), sub=caption line. Good for social, content and marketing topics.",
     ok: (s) => Boolean(s.title),
     html: (s, T) =>
-      `<div class="body">${phone(`<div class="row" style="gap:10px;margin-bottom:12px"><div class="ic" style="width:42px;height:42px;border-radius:50%">${icon("user", T.onAccent, 24)}</div><div style="font-weight:800;font-size:22px">${esc(clip(T.brand, 22).toLowerCase().replace(/\s+/g, ""))}</div></div><div style="border-radius:22px;padding:34px 22px;background:linear-gradient(150deg,${T.primary},${T.secondary});color:#fff;font-weight:800;font-size:34px;line-height:1.15;min-height:260px;display:flex;align-items:center">${emph(s.title).replace(/<em>/g, `<span style="color:${T.accent}">`).replace(/<\/em>/g, "</span>")}</div><div class="row" style="gap:16px;margin-top:14px">${icon("heart", "#0f172a", 28)}${icon("chat", "#0f172a", 28)}${icon("arrow", "#0f172a", 28)}</div><div style="font-weight:700;font-size:20px;margin-top:10px;line-height:1.3">${esc(clip(s.sub || s.title, 90))}</div>`)}</div>`,
+      `<div class="body">${phone(`<div class="row" style="gap:10px;margin-bottom:12px"><div class="ic" style="width:42px;height:42px;border-radius:50%">${icon("user", T.onAccent, 24)}</div><div style="font-weight:800;font-size:22px">${esc(clip(T.brand, 22).toLowerCase().replace(/\s+/g, ""))}</div></div><div style="border-radius:22px;padding:34px 22px;background:linear-gradient(150deg,${T.primary},${T.secondary});color:#fff;font-weight:800;font-size:30px;line-height:1.15;min-height:260px;overflow-wrap:anywhere;word-break:break-word">${emph(s.title).replace(/<em>/g, `<span style="color:${T.accent}">`).replace(/<\/em>/g, "</span>")}</div><div class="row" style="gap:16px;margin-top:14px">${icon("heart", "#0f172a", 28)}${icon("chat", "#0f172a", 28)}${icon("arrow", "#0f172a", 28)}</div><div style="font-weight:700;font-size:20px;margin-top:10px;line-height:1.3">${esc(clip(s.sub || s.title, 90))}</div>`)}</div>`,
   },
   {
     id: "phone_chat",
@@ -390,11 +400,9 @@ export function renderScene(s: SceneFields, T: Theme, index: number, total: numb
   return {
     layout,
     asset: {
-      type: "html",
+      type: "html5",
       html,
       css: baseCss(T, dark),
-      width: W,
-      height: T.H,
     },
   };
 }
@@ -402,11 +410,9 @@ export function renderScene(s: SceneFields, T: Theme, index: number, total: numb
 /** The persistent light dotted background that shows under every non-dark layout. */
 export function dottedBackground(T: Theme) {
   return {
-    type: "html",
+    type: "html5",
     html: "<div></div>",
-    css: `*{margin:0;padding:0}body{width:${W}px;height:${T.H}px;background-color:#f5f6fa;background-image:radial-gradient(rgba(15,23,42,.15) 2px,transparent 2.6px);background-size:30px 30px}`,
-    width: W,
-    height: T.H,
+    css: `html,body{margin:0;padding:0;width:${W}px;height:${T.H}px;overflow:hidden}body{background-color:#f5f6fa;background-image:radial-gradient(rgba(15,23,42,.15) 2px,transparent 2.6px);background-size:30px 30px}`,
   };
 }
 

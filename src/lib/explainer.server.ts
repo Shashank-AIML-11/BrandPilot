@@ -364,18 +364,18 @@ export function buildTimeline(input: ExplainerInput) {
   scenes.forEach((sc, i) => {
     const rendered = renderScene(sc, T, i, scenes.length, i === last);
     const transition = { in: TRANSITIONS[i % TRANSITIONS.length], out: "fade" };
-    sceneClips.push({ asset: rendered.asset, ...timing(i), transition });
+    sceneClips.push({ asset: rendered.asset, ...timing(i), width: W, height: H, transition });
     if (rendered.layout.image && sc.imageUrl) {
       if (rendered.layout.id === "illustration") {
         const side = Math.round(Math.min(W * 0.72, H * 0.4));
         cardClips.push({
           asset: {
-            type: "html",
+            type: "html5",
             html: "<div class='c'></div>",
-            css: `*{margin:0;padding:0}body{width:${side}px;height:${side}px;background:transparent}.c{width:${side}px;height:${side}px;border-radius:44px;background:#fff;box-shadow:0 18px 50px rgba(15,23,42,.14)}`,
-            width: side,
-            height: side,
+            css: `html,body{margin:0;padding:0;width:${side}px;height:${side}px;overflow:hidden}.c{width:${side}px;height:${side}px;border-radius:44px;background:#fff;box-shadow:0 18px 50px rgba(15,23,42,.14)}`,
           },
+          width: side,
+          height: side,
           ...timing(i),
           position: "center",
           offset: { y: -0.02 },
@@ -425,7 +425,7 @@ export function buildTimeline(input: ExplainerInput) {
   tracks.push({ clips: sceneClips });
   if (cardClips.length) tracks.push({ clips: cardClips });
   if (imageClips.length) tracks.push({ clips: imageClips });
-  tracks.push({ clips: [{ asset: dottedBackground(T), start: 0, length: "end" }] });
+  tracks.push({ clips: [{ asset: dottedBackground(T), start: 0, length: "end", width: W, height: H }] });
 
   const music = process.env["EXPLAINER_MUSIC_URL"]?.trim();
   return {

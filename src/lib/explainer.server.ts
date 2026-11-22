@@ -333,7 +333,7 @@ Return JSON: {"scenes":[...]}`,
   return scenes;
 }
 
-export function buildTimeline(input: ExplainerInput) {
+export function buildTimeline(input: ExplainerInput, embedFont = true) {
   const c = input.colors ?? {};
   const primary = cleanColor(c.primary, "#4f46e5");
   const secondary = cleanColor(c.secondary, "#0f172a");
@@ -350,6 +350,7 @@ export function buildTimeline(input: ExplainerInput) {
     cta: plan.cta,
     hasLogo: Boolean(input.logoUrl),
     H,
+    embedFont,
   };
   const scenes = input.scenes && input.scenes.length >= 3 ? input.scenes : fallbackScenes(input);
   const last = scenes.length - 1;
@@ -444,11 +445,18 @@ export async function submitExplainerRender(input: ExplainerInput): Promise<stri
   }
   const { spendGuard, recordSpend } = await import("@/lib/spend-guard.server");
   await spendGuard("shotstack_render"); // refuses (at no cost) once today's limit is reached
-  const res = await fetch(`${base()}/render`, {
-    method: "POST",
-    headers: { "x-api-key": key(), "content-type": "application/json" },
-    body: JSON.stringify(buildTimeline(input)),
-  });
+  const send = (embedFont: boolean) => {
+    const body = JSON.stringify(buildTimeline(input, embedFont));
+    console.log(`[explainer] render request ${Math.round(body.length / 1024)} KB (embedded font: ${embedFont})`);
+    return fetch(`${base()}/render`, {
+      method: "POST",
+      headers: { "x-api-key": key(), "content-type": "application/json" },
+      body,
+    });
+  };
+  let res = await send(process.env["EXPLAINER_FONT"]?.trim().toLowerCase() !== "system");
+  // 413 = request too large: retry once without the embedded font (uses the system font instead).
+  if (res.status === 413) res = await send(false);
   const text = await res.text();
   if (!res.ok) throw new Error(`Shotstack render request failed [${res.status}]: ${text.slice(0, 400)}`);
   const json = JSON.parse(text) as { response?: { id?: string } };

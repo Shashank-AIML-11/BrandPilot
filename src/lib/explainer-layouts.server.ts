@@ -48,6 +48,8 @@ export interface Theme {
   cta: string;
   hasLogo: boolean;
   H: number;
+  /** false = rely on the system font (Arial); keeps the render request small */
+  embedFont?: boolean;
 }
 
 export const esc = (s: unknown) =>
@@ -116,7 +118,7 @@ function baseCss(T: Theme, dark: boolean) {
   const soft = dark ? "rgba(255,255,255,.72)" : "#475569";
   const card = dark ? "rgba(255,255,255,.08)" : "#ffffff";
   const line = dark ? "rgba(255,255,255,.16)" : "rgba(15,23,42,.10)";
-  return `${FONT_CSS}
+  return `${T.embedFont === false ? "" : FONT_CSS}
 *{box-sizing:border-box;margin:0;padding:0}
 html,body{width:${W}px;height:${T.H}px;margin:0;padding:0;overflow:hidden}
 body{font-family:'Montserrat',Arial,Helvetica,sans-serif;color:${ink}}

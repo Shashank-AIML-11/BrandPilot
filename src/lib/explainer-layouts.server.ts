@@ -446,4 +446,5 @@ export function dottedBackground(T: Theme) {
   };
 }
 
-export const TRANSITIONS = ["fade", "slideUp", "slideLeft", "zoom", "fade", "slideRight"] as const;
+// no "zoom": it scales the whole scene (captions included) to several times its size for a moment
+export const TRANSITIONS = ["fade", "slideUp", "slideLeft", "slideUp", "fade", "slideRight"] as const;

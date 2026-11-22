@@ -157,7 +157,7 @@ const strList = (x: unknown): string[] => (Array.isArray(x) ? x.map((v) => Strin
 
 /** Cleans one scene returned by the AI so every layout always gets safe, complete fields. */
 function normaliseScene(raw: Record<string, unknown>): ExplainerScene | null {
-  const voice = clean(raw["voice"]);
+  const voice = clean(raw["voice"]).replace(/\*+/g, "").replace(/\s{2,}/g, " ").trim(); // plain words only: it is spoken and captioned
   if (!voice) return null;
   const layoutId = LAYOUT_BY_ID.has(String(raw["layout"])) ? String(raw["layout"]) : "hook";
   const arr = (v: unknown) => (Array.isArray(v) ? (v as Record<string, unknown>[]) : []);

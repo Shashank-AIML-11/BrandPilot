@@ -122,13 +122,31 @@ function baseCss(T: Theme, dark: boolean) {
 *{box-sizing:border-box;margin:0;padding:0}
 html,body{width:${W}px;height:${T.H}px;margin:0;padding:0;overflow:hidden}
 body{font-family:'Montserrat',Arial,Helvetica,sans-serif;color:${ink}}
-@keyframes rise{from{opacity:0;transform:translateY(48px)}to{opacity:1;transform:none}}
-@keyframes pop{from{opacity:0;transform:scale(.86)}to{opacity:1;transform:none}}
-.body>*{animation:rise .6s cubic-bezier(.2,.8,.2,1) both}
-.col>*,.body>div>.card,.body>div>.chip{animation:rise .55s cubic-bezier(.2,.8,.2,1) both}
-.col>*:nth-child(2){animation-delay:.2s}.col>*:nth-child(3){animation-delay:.4s}.col>*:nth-child(4){animation-delay:.6s}.col>*:nth-child(5){animation-delay:.8s}
-.phone{animation:pop .6s cubic-bezier(.2,.8,.2,1) both}
-.cap{animation:rise .5s .15s both}
+@keyframes rise{from{opacity:0;transform:translateY(60px) scale(.96)}to{opacity:1;transform:none}}
+@keyframes pop{0%{opacity:0;transform:scale(.6)}70%{opacity:1;transform:scale(1.06)}100%{opacity:1;transform:scale(1)}}
+@keyframes wordin{from{opacity:0;transform:translateY(18px) scale(.9)}to{opacity:1;transform:none}}
+@keyframes sweep{from{width:0}to{width:84px}}
+@keyframes float1{from{transform:translate(0,0) scale(1)}to{transform:translate(70px,90px) scale(1.25)}}
+@keyframes float2{from{transform:translate(0,0) scale(1.1)}to{transform:translate(-80px,-60px) scale(.9)}}
+@keyframes zoomslow{from{transform:scale(1)}to{transform:scale(1.045)}}
+@keyframes pulse{0%,100%{transform:scale(1)}50%{transform:scale(1.07)}}
+@keyframes wiggle{0%,100%{transform:rotate(0)}25%{transform:rotate(-8deg)}75%{transform:rotate(8deg)}}
+@keyframes fillbar{from{transform:scaleX(0)}to{transform:scaleX(1)}}
+.blob{position:absolute;border-radius:50%;filter:blur(60px);opacity:.28;z-index:0}
+.b1{width:420px;height:420px;left:-120px;top:14%;background:${T.accent};animation:float1 6s ease-in-out infinite alternate}
+.b2{width:460px;height:460px;right:-160px;bottom:12%;background:${dark ? T.primary : T.primary};opacity:${dark ? 0.5 : 0.2};animation:float2 7s ease-in-out infinite alternate}
+.top,.body,.cap{position:relative;z-index:1}
+.f{animation:zoomslow 6s ease-out both}
+.body>*{animation:rise .55s cubic-bezier(.2,.9,.25,1.1) both}
+.body>.bar{animation:sweep .5s .1s both}
+.col>*,.body>div>.card,.body>div>.chip{animation:pop .6s cubic-bezier(.2,.9,.25,1.1) both}
+.col>*:nth-child(2){animation-delay:.22s}.col>*:nth-child(3){animation-delay:.44s}.col>*:nth-child(4){animation-delay:.66s}.col>*:nth-child(5){animation-delay:.88s}
+.ic svg{animation:wiggle 1.2s .8s ease-in-out 2}
+.phone{animation:pop .7s cubic-bezier(.2,.9,.25,1.1) both}
+.btn{animation:pop .6s .5s both,pulse 1.1s 1.2s ease-in-out infinite}
+.cap .w{display:inline-block;opacity:0;animation:wordin .28s ease-out forwards}
+.cap b.w{animation:wordin .28s ease-out forwards,pulse .6s ease-in-out 1}
+.prog i.on:last-child{transform-origin:left;animation:fillbar 4s linear both}
 .f{position:relative;width:${W}px;height:${T.H}px;display:flex;flex-direction:column}
 .top{height:${Math.round(T.H * 0.105)}px;padding:34px 40px 0 ${T.hasLogo ? 128 : 40}px;display:flex;align-items:center;gap:10px;font-weight:700;font-size:21px;color:${soft}}
 .prog{position:absolute;left:40px;right:40px;top:18px;display:flex;gap:6px}
@@ -371,15 +389,18 @@ function captionHtml(voice: string, title: string) {
       .filter((w) => w.length > 3 && !STOP.has(w)),
   );
   let used = 0;
-  return voice
-    .split(/\s+/)
-    .map((w) => {
+  const words = voice.split(/\s+/).filter(Boolean);
+  // words appear one after another across the estimated speaking time (about 2.4 words a second)
+  const step = Math.min(0.42, Math.max(0.18, ((words.length / 2.4) * 0.9) / Math.max(1, words.length)));
+  return words
+    .map((w, i) => {
       const bare = w.toLowerCase().replace(/[^\p{L}\p{N}]/gu, "");
+      const delay = (0.25 + i * step).toFixed(2);
       if (used < 2 && bare.length > 3 && keys.has(bare)) {
         used += 1;
-        return `<b>${esc(w)}</b>`;
+        return `<b class="w" style="animation-delay:${delay}s">${esc(w)}</b>`;
       }
-      return esc(w);
+      return `<span class="w" style="animation-delay:${delay}s">${esc(w)}</span>`;
     })
     .join(" ");
 }
@@ -398,7 +419,7 @@ export function renderScene(s: SceneFields, T: Theme, index: number, total: numb
   // over a photo the strip and caption must be white
   const onPhoto = layout.id === "photo_hero";
   const topPhoto = layout.id === "photo_hero" || layout.id === "split_photo";
-  const html = `<div class="f" style="background:${bg}"><div class="prog">${prog}</div><div class="top"${topPhoto ? ' style="color:#fff;text-shadow:0 2px 8px rgba(0,0,0,.5)"' : ""}>${esc(T.brand)}</div>${layout.html(fields, T)}<div class="cap"${onPhoto ? ' style="color:#fff"' : ""}>${captionHtml(s.voice, `${fields.title} ${fields.sub}`)}</div></div>`;
+  const html = `<div class="f" style="background:${bg}"><div class="blob b1"></div><div class="blob b2"></div><div class="prog">${prog}</div><div class="top"${topPhoto ? ' style="color:#fff;text-shadow:0 2px 8px rgba(0,0,0,.5)"' : ""}>${T.hasLogo ? "" : esc(T.brand)}</div>${layout.html(fields, T)}<div class="cap"${onPhoto ? ' style="color:#fff"' : ""}>${captionHtml(s.voice, `${fields.title} ${fields.sub}`)}</div></div>`;
   return {
     layout,
     asset: {

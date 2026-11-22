@@ -171,6 +171,19 @@ function normaliseScene(raw: Record<string, unknown>): ExplainerScene | null {
   };
 }
 
+/** When stock footage is configured, every video gets at least one real-footage scene. */
+function ensureBroll(list: ExplainerScene[], maxBroll: number): ExplainerScene[] {
+  if (maxBroll < 1 || !process.env["PIXABAY_API_KEY"]?.trim() || (process.env["STOCK_MEDIA"] ?? "on").trim().toLowerCase() === "off") return list;
+  if (list.some((sc) => sc.layout === "broll")) return list;
+  const out = [...list];
+  // the first plain headline or statement scene after the opener
+  const at = out.findIndex((sc, i) => i > 0 && i < out.length - 1 && (sc.layout === "hook" || sc.layout === "statement") && sc.title);
+  if (at < 0) return out;
+  const idea = out[at]!.img || out[at]!.title.replace(/\*\*/g, "");
+  out[at] = { ...out[at]!, layout: "broll", img: idea };
+  return out;
+}
+
 /** Enforces: valid layout, no repeats back to back, a cap on pictures, and a closing call to action. */
 function arrange(list: ExplainerScene[], maxImages: number, maxBroll: number): ExplainerScene[] {
   let images = 0;
@@ -285,12 +298,12 @@ For every scene return ALL of these fields (use "" or [] when a field is not use
 - "a" / "b": short points for compare layouts
 - "img": a concrete picture or stock-clip idea ONLY for photo_hero, split_photo, illustration or broll; otherwise ""
 
-Use at most ${maxImages} picture layouts and at most ${maxBroll} "broll" (stock video) layouts in total. Choose "broll" for scenes where real life, people at work, shops, customers or results make the brand's positioning message feel real, and give "img" as a simple, common stock-footage search idea (never a person's name or a brand). Do not add contact details that are not in the brand information.
+Use at most ${maxImages} picture layouts. Use between ${maxBroll > 0 ? 1 : 0} and ${maxBroll} "broll" (stock video) layouts: at least one scene must be "broll" when the brand can be shown through real life. Choose "broll" for scenes where real life, people at work, shops, customers or results make the brand's positioning message feel real, and give "img" as a simple, common stock-footage search idea (never a person's name or a brand). Do not add contact details that are not in the brand information.
 Return JSON: {"scenes":[...]}`,
       SCENE_SCHEMA as unknown as Record<string, unknown>,
     );
     const good = (out.scenes ?? []).map(normaliseScene).filter((x): x is ExplainerScene => Boolean(x)).slice(0, 7);
-    if (good.length >= 4) scenes = fitToBudget(arrange(good, maxImages, maxBroll));
+    if (good.length >= 4) scenes = fitToBudget(ensureBroll(arrange(good, maxImages, maxBroll), maxBroll));
   } catch (error) {
     console.error("[explainer] scene writer failed, using plain script:", error);
   }

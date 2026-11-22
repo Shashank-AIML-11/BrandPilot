@@ -146,39 +146,53 @@ function fitToBudget(list: ExplainerScene[]): ExplainerScene[] {
   return out;
 }
 
+/** The embedded font is Latin only and the voice is English: drop any stray foreign-script characters a model may emit. */
+const clean = (t: unknown): string =>
+  String(t ?? "")
+    .replace(/[^\u0000-\u024F\u2010-\u2027\u20AC\u20B9]/g, "")
+    .replace(/\s{2,}/g, " ")
+    .trim();
+
 const strList = (x: unknown): string[] => (Array.isArray(x) ? x.map((v) => String(v ?? "").trim()).filter(Boolean) : []);
 
 /** Cleans one scene returned by the AI so every layout always gets safe, complete fields. */
 function normaliseScene(raw: Record<string, unknown>): ExplainerScene | null {
-  const voice = String(raw["voice"] ?? "").trim();
+  const voice = clean(raw["voice"]);
   if (!voice) return null;
   const layoutId = LAYOUT_BY_ID.has(String(raw["layout"])) ? String(raw["layout"]) : "hook";
   const arr = (v: unknown) => (Array.isArray(v) ? (v as Record<string, unknown>[]) : []);
   return {
     layout: layoutId,
     voice,
-    title: String(raw["title"] ?? "").trim(),
-    sub: String(raw["sub"] ?? "").trim(),
+    title: clean(raw["title"]),
+    sub: clean(raw["sub"]),
     items: arr(raw["items"])
-      .map((x) => ({ t: String(x["t"] ?? "").trim(), d: String(x["d"] ?? "").trim(), i: String(x["i"] ?? "spark").trim().toLowerCase() }))
+      .map((x) => ({ t: clean(x["t"]), d: clean(x["d"]), i: String(x["i"] ?? "spark").trim().toLowerCase() }))
       .filter((x) => x.t),
     stats: arr(raw["stats"])
       .map((x) => ({ v: String(x["v"] ?? "").trim(), l: String(x["l"] ?? "").trim() }))
       .filter((x) => x.v),
-    a: strList(raw["a"]),
-    b: strList(raw["b"]),
-    img: String(raw["img"] ?? "").trim(),
+    a: strList(raw["a"]).map(clean).filter(Boolean),
+    b: strList(raw["b"]).map(clean).filter(Boolean),
+    img: clean(raw["img"]),
   };
 }
 
 /** When stock footage is configured, every video gets at least one real-footage scene. */
-function ensureBroll(list: ExplainerScene[], maxBroll: number): ExplainerScene[] {
+function ensureBroll(list: ExplainerScene[], maxBroll: number, input?: ExplainerInput): ExplainerScene[] {
   if (maxBroll < 1 || !process.env["PIXABAY_API_KEY"]?.trim() || (process.env["STOCK_MEDIA"] ?? "on").trim().toLowerCase() === "off") return list;
   if (list.some((sc) => sc.layout === "broll")) return list;
   const out = [...list];
   // the first plain headline or statement scene after the opener
   const at = out.findIndex((sc, i) => i > 0 && i < out.length - 1 && (sc.layout === "hook" || sc.layout === "statement") && sc.title);
-  if (at < 0) return out;
+  if (at < 0) {
+    // nothing plain to convert: add a short real-life scene right after the opener
+    const line = clean(input?.item.summary ?? "").split(/(?<=[.!?])\s/)[0]?.split(/\s+/).slice(0, 11).join(" ").replace(/[.!?]+$/, "") ?? "";
+    const idea = clean(input?.item.title ?? "") || clean(input?.brandName ?? "");
+    if (!line || !idea || out.length < 2) return out;
+    out.splice(1, 0, { ...blank(), layout: "broll", voice: `${line}.`, title: line, img: idea });
+    return out;
+  }
   const idea = out[at]!.img || out[at]!.title.replace(/\*\*/g, "");
   out[at] = { ...out[at]!, layout: "broll", img: idea };
   return out;
@@ -303,7 +317,7 @@ Return JSON: {"scenes":[...]}`,
       SCENE_SCHEMA as unknown as Record<string, unknown>,
     );
     const good = (out.scenes ?? []).map(normaliseScene).filter((x): x is ExplainerScene => Boolean(x)).slice(0, 7);
-    if (good.length >= 4) scenes = fitToBudget(ensureBroll(arrange(good, maxImages, maxBroll), maxBroll));
+    if (good.length >= 4) scenes = fitToBudget(ensureBroll(arrange(good, maxImages, maxBroll), maxBroll, input));
   } catch (error) {
     console.error("[explainer] scene writer failed, using plain script:", error);
   }

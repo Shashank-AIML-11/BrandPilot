@@ -14,7 +14,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 
 type Admin = SupabaseClient<never, never, never>;
 
-export type MediaKind = "photo" | "art";
+export type MediaKind = "photo" | "art" | "broll";
 
 export interface MediaContext {
   userId: string;
@@ -51,7 +51,7 @@ const envNum = (name: string, fallback: number) => {
   return Number.isFinite(n) && n >= 0 ? n : fallback;
 };
 
-async function findMatch(admin: Admin, ctx: MediaContext, tags: string[]) {
+export async function findMatch(admin: Admin, ctx: MediaContext, tags: string[]) {
   if ((process.env["MEDIA_REUSE"] ?? "on").trim().toLowerCase() === "off" || tags.length === 0) return null;
   const a = admin as unknown as SupabaseClient;
   let q = a
@@ -66,7 +66,7 @@ async function findMatch(admin: Admin, ctx: MediaContext, tags: string[]) {
   const { data, error } = await q;
   if (error || !data) return null;
 
-  const minMatch = ctx.kind === "photo" ? envNum("MEDIA_REUSE_MIN_MATCH_PHOTO", 3) : envNum("MEDIA_REUSE_MIN_MATCH_ART", 2);
+  const minMatch = ctx.kind === "photo" ? envNum("MEDIA_REUSE_MIN_MATCH_PHOTO", 3) : ctx.kind === "broll" ? envNum("MEDIA_REUSE_MIN_MATCH_BROLL", 2) : envNum("MEDIA_REUSE_MIN_MATCH_ART", 2);
   const cooldownMs = envNum("MEDIA_REUSE_COOLDOWN_DAYS", 6) * 86_400_000;
   const now = Date.now();
   let best: { row: (typeof data)[number]; score: number } | null = null;

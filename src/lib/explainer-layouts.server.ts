@@ -180,7 +180,7 @@ export interface Layout {
   id: string;
   use: string; // shown to the AI
   dark?: boolean; // paints its own dark/gradient background
-  image?: "photo" | "art"; // needs a picture under the page
+  image?: "photo" | "art" | "video"; // needs a picture or stock clip under the page
   ok: (s: SceneFields) => boolean;
   html: (s: SceneFields, T: Theme) => string;
 }
@@ -339,6 +339,13 @@ export const LAYOUTS: Layout[] = [
     html: (s, T) => `<div style="position:absolute;inset:0;background:linear-gradient(to top,rgba(0,0,0,.82) 0%,rgba(0,0,0,.35) 50%,rgba(0,0,0,.1) 100%)"></div><div class="body" style="position:relative;justify-content:flex-end;padding-bottom:30px;color:#fff"><div class="bar"></div><h1 style="color:#fff;text-shadow:0 3px 16px rgba(0,0,0,.5)">${emph(s.title)}</h1>${s.sub ? `<div class="sub" style="color:rgba(255,255,255,.85)">${esc(clip(s.sub, 100))}</div>` : ""}</div>`,
   },
   {
+    id: "broll",
+    image: "video",
+    use: "A real stock VIDEO clip plays full-screen behind the headline. img = a concrete, common scene to search for in a stock library (for example 'shop owner at counter', 'typing on laptop', 'busy city street', 'team meeting'). Use when the message is about real people, work, shops, results or everyday life. Several allowed per video.",
+    ok: (s) => Boolean(s.title && s.img),
+    html: (s) => `<div style="position:absolute;inset:0;background:linear-gradient(to top,rgba(0,0,0,.85) 0%,rgba(0,0,0,.45) 55%,rgba(0,0,0,.3) 100%)"></div><div class="body" style="position:relative;justify-content:flex-end;padding-bottom:30px;color:#fff"><div class="bar"></div><h1 style="color:#fff;text-shadow:0 3px 16px rgba(0,0,0,.5)">${emph(s.title)}</h1>${s.sub ? `<div class="sub" style="color:rgba(255,255,255,.88)">${esc(clip(s.sub, 100))}</div>` : ""}</div>`,
+  },
+  {
     id: "split_photo",
     image: "photo",
     use: "Real photo in the top half, a white text card below. img=photo idea. Uses one image: max 2 per video.",
@@ -417,8 +424,8 @@ export function renderScene(s: SceneFields, T: Theme, index: number, total: numb
     : "transparent";
   const prog = Array.from({ length: total }, (_, k) => `<i class="${k <= index ? "on" : ""}"></i>`).join("");
   // over a photo the strip and caption must be white
-  const onPhoto = layout.id === "photo_hero";
-  const topPhoto = layout.id === "photo_hero" || layout.id === "split_photo";
+  const onPhoto = layout.id === "photo_hero" || layout.id === "broll";
+  const topPhoto = layout.id === "photo_hero" || layout.id === "split_photo" || layout.id === "broll";
   const html = `<div class="f" style="background:${bg}"><div class="blob b1"></div><div class="blob b2"></div><div class="prog">${prog}</div><div class="top"${topPhoto ? ' style="color:#fff;text-shadow:0 2px 8px rgba(0,0,0,.5)"' : ""}>${T.hasLogo ? "" : esc(T.brand)}</div>${layout.html(fields, T)}<div class="cap"${onPhoto ? ' style="color:#fff"' : ""}>${captionHtml(s.voice, `${fields.title} ${fields.sub}`)}</div></div>`;
   return {
     layout,

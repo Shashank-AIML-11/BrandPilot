@@ -13,7 +13,8 @@
  *                       speech (about 2.2 words per second) so no voice line is ever cut off
  *   EXPLAINER_SCENES    number of scenes, 4-6 (default 5; each scene is one voice line)
  *   EXPLAINER_IMAGES    on (default) | off   — pictures for photo/illustration layouts
- *   EXPLAINER_MAX_IMAGES  max pictures per video (default 2)
+ *   EXPLAINER_MAX_IMAGES  max fal/stock pictures per video (default 2)
+ *   EXPLAINER_MAX_BROLL   max stock video clips (Pixabay) per video (default 3; needs PIXABAY_API_KEY)
  *   EXPLAINER_MUSIC_URL optional public mp3 link for background music
  *
  * Not live-tested against Shotstack: if it rejects a field, its exact message is shown on the video card.
@@ -35,6 +36,7 @@ import {
 
 export type ExplainerScene = SceneFields & {
   imageUrl?: string | null; // picture for photo / illustration layouts
+  videoUrl?: string | null; // stock clip for the broll layout
 };
 
 export interface ExplainerInput {
@@ -170,15 +172,19 @@ function normaliseScene(raw: Record<string, unknown>): ExplainerScene | null {
 }
 
 /** Enforces: valid layout, no repeats back to back, a cap on pictures, and a closing call to action. */
-function arrange(list: ExplainerScene[], maxImages: number): ExplainerScene[] {
+function arrange(list: ExplainerScene[], maxImages: number, maxBroll: number): ExplainerScene[] {
   let images = 0;
+  let broll = 0;
   const out: ExplainerScene[] = [];
   list.forEach((sc, i) => {
     const isLast = i === list.length - 1;
     let layout = LAYOUT_BY_ID.get(sc.layout) ?? LAYOUT_BY_ID.get("hook")!;
     if (isLast) layout = LAYOUT_BY_ID.get("cta_end")!;
     else if (layout.id === "cta_end" || !layout.ok(sc)) layout = LAYOUT_BY_ID.get("hook")!;
-    if (layout.image) {
+    if (layout.image === "video") {
+      if (broll >= maxBroll || !sc.img) layout = LAYOUT_BY_ID.get("hook")!;
+      else broll += 1;
+    } else if (layout.image) {
       if (images >= maxImages || !sc.img) layout = LAYOUT_BY_ID.get("hook")!;
       else images += 1;
     }
@@ -243,6 +249,7 @@ export async function prepareScenes(
   let scenes: ExplainerScene[] = fallback;
   const maxImages = Math.max(0, Number.parseInt(process.env["EXPLAINER_MAX_IMAGES"] ?? "2", 10) || 0);
   const count = Math.min(6, Math.max(4, Number.parseInt(process.env["EXPLAINER_SCENES"] ?? "5", 10) || 5));
+  const maxBroll = Math.max(0, Number.parseInt(process.env["EXPLAINER_MAX_BROLL"] ?? "3", 10) || 0);
   const budget = wordBudget();
   const recent = await recentHooks(admin, input);
   const colors = { primary: cleanColor(input.colors?.primary, "#4f46e5"), accent: cleanColor(input.colors?.accent, "#f59e0b") };
@@ -276,36 +283,54 @@ For every scene return ALL of these fields (use "" or [] when a field is not use
 - "items": [{"t":"short title","d":"one short line","i":"icon"}] icons: ${ICON_LIST}
 - "stats": [{"v":"number","l":"label"}] ONLY if the number appears in the brand information
 - "a" / "b": short points for compare layouts
-- "img": a concrete picture idea ONLY for photo_hero, split_photo or illustration; otherwise ""
+- "img": a concrete picture or stock-clip idea ONLY for photo_hero, split_photo, illustration or broll; otherwise ""
 
-Use at most ${maxImages} picture layouts in total. Do not add contact details that are not in the brand information.
+Use at most ${maxImages} picture layouts and at most ${maxBroll} "broll" (stock video) layouts in total. Choose "broll" for scenes where real life, people at work, shops, customers or results make the brand's positioning message feel real, and give "img" as a simple, common stock-footage search idea (never a person's name or a brand). Do not add contact details that are not in the brand information.
 Return JSON: {"scenes":[...]}`,
       SCENE_SCHEMA as unknown as Record<string, unknown>,
     );
     const good = (out.scenes ?? []).map(normaliseScene).filter((x): x is ExplainerScene => Boolean(x)).slice(0, 7);
-    if (good.length >= 4) scenes = fitToBudget(arrange(good, maxImages));
+    if (good.length >= 4) scenes = fitToBudget(arrange(good, maxImages, maxBroll));
   } catch (error) {
     console.error("[explainer] scene writer failed, using plain script:", error);
   }
 
-  await saveScript(admin, input, scenes);
-  if ((process.env["EXPLAINER_IMAGES"] ?? "on").toLowerCase() === "off") return scenes;
-
+  const imagesOff = (process.env["EXPLAINER_IMAGES"] ?? "on").toLowerCase() === "off";
   try {
     const { generateImageBytes } = await import("@/lib/ai.server");
     const { reuseOrGenerate } = await import("@/lib/media-library.server");
+    const { stockVideo, stockPhotoBytes } = await import("@/lib/stock-media.server");
     const withTimeout = <T,>(p: Promise<T>, ms: number) =>
       Promise.race([p, new Promise<T>((_, rej) => setTimeout(() => rej(new Error("image timeout")), ms))]);
+
+    // 1) stock video clips (one after another so two scenes never pick the same clip)
+    if (input.userId) {
+      const used = new Set<string>();
+      for (const sc of scenes) {
+        if (LAYOUT_BY_ID.get(sc.layout)?.image !== "video" || !sc.img) continue;
+        const clip = await stockVideo(admin as never, { userId: input.userId, brandId: input.brandId ?? null, idea: sc.img, exclude: used });
+        sc.videoUrl = clip?.url ?? null;
+      }
+    }
+
+    // 2) photos (free Pixabay photo first, fal only if none fits) and illustrations (fal)
     const made = await Promise.allSettled(
       scenes.map(async (sc) => {
         const kind = LAYOUT_BY_ID.get(sc.layout)?.image;
-        if (!kind || !sc.img) return null;
+        if (!kind || kind === "video" || !sc.img) return null;
         const aspect = kind === "photo" ? "9:16" : "1:1";
         const prompt =
           kind === "photo"
             ? `${PHOTO_STYLE} ${sc.img}. Vertical 9:16 composition with calm empty space in the lower third. No text, no letters, no logos.`
             : artPrompt(sc.img, colors);
-        const make = () => withTimeout(generateImageBytes(prompt, aspect), 40_000);
+        const make = async () => {
+          if (kind === "photo") {
+            const free = await stockPhotoBytes(sc.img);
+            if (free) return free;
+          }
+          if (imagesOff) throw new Error("EXPLAINER_IMAGES is off");
+          return withTimeout(generateImageBytes(prompt, aspect), 40_000);
+        };
         if (!input.userId) return { bytes: await make() };
         return reuseOrGenerate(
           admin as never,
@@ -328,8 +353,16 @@ Return JSON: {"scenes":[...]}`,
       scenes[i]!.imageUrl = data?.signedUrl ?? null;
     }
   } catch (error) {
-    console.error("[explainer] scene images failed:", error);
+    console.error("[explainer] scene media failed:", error);
   }
+
+  // A picture layout whose picture or clip could not be found becomes a plain headline scene
+  // (white text over nothing would be unreadable).
+  for (const sc of scenes) {
+    const needs = LAYOUT_BY_ID.get(sc.layout)?.image;
+    if (needs && !sc.imageUrl && !sc.videoUrl) sc.layout = "hook";
+  }
+  await saveScript(admin, input, scenes);
   return scenes;
 }
 
@@ -366,7 +399,16 @@ export function buildTimeline(input: ExplainerInput, embedFont = true) {
     const rendered = renderScene(sc, T, i, scenes.length, i === last);
     const transition = { in: TRANSITIONS[i % TRANSITIONS.length], out: "fade" };
     sceneClips.push({ asset: rendered.asset, ...timing(i), width: W, height: H, transition });
-    if (rendered.layout.image && sc.imageUrl) {
+    if (rendered.layout.id === "broll" && sc.videoUrl) {
+      imageClips.push({
+        asset: { type: "video", src: sc.videoUrl, volume: 0 },
+        ...timing(i),
+        fit: "cover",
+        width: W,
+        height: H,
+        position: "center",
+      });
+    } else if (rendered.layout.image && sc.imageUrl) {
       if (rendered.layout.id === "illustration") {
         const side = Math.round(Math.min(W * 0.72, H * 0.4));
         cardClips.push({

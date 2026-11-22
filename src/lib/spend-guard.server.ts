@@ -6,15 +6,17 @@
  * Env (per environment):
  *   FAL_DAILY_IMAGE_CAP         default 24    paid fal images per day ("off" = no limit)
  *   SHOTSTACK_DAILY_RENDER_CAP  default 6     Shotstack video renders per day ("off" = no limit)
+ *   PIXABAY_DAILY_CALL_CAP      default 80    Pixabay API searches per day (free, but kept polite)
  *
  * If the database cannot be read, the call is allowed (and the problem logged) so a missing table
  * never stops content generation.
  */
-export type SpendKind = "fal_image" | "shotstack_render";
+export type SpendKind = "fal_image" | "shotstack_render" | "pixabay_call";
 
 const RULES: Record<SpendKind, { env: string; fallback: number; label: string }> = {
   fal_image: { env: "FAL_DAILY_IMAGE_CAP", fallback: 24, label: "image" },
   shotstack_render: { env: "SHOTSTACK_DAILY_RENDER_CAP", fallback: 6, label: "video render" },
+  pixabay_call: { env: "PIXABAY_DAILY_CALL_CAP", fallback: 80, label: "stock search" },
 };
 
 function istDayStartIso(): string {

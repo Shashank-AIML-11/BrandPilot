@@ -21,7 +21,7 @@ const key = () => process.env["PIXABAY_API_KEY"]?.trim() || "";
 export const stockEnabled = () => Boolean(key()) && (process.env["STOCK_MEDIA"] ?? "on").trim().toLowerCase() !== "off";
 const photosEnabled = () => stockEnabled() && (process.env["STOCK_PHOTOS"] ?? "on").trim().toLowerCase() !== "off";
 
-const STOP = new Set("the and for with that this from your you are our into over under about a an of in on at to is it as by or be shot scene video clip footage showing shows show real natural people person someone".split(" "));
+const STOP = new Set("the and for with that this from your you are our into over under about a an of in on at to is it as by or be shot scene video clip footage showing shows show real natural people person someone ways way new old vs versus better best why need needs today journey start step steps make made get".split(" "));
 const BAD_TAGS = ["logo", "brand", "trademark", "advertising", "nsfw"];
 
 /** Short, plain search phrase from a scene idea. */
@@ -123,9 +123,11 @@ export async function stockVideo(
       .map((h) => {
         const v = h["videos"] as Record<string, { url?: string; width?: number; height?: number; size?: number }> | undefined;
         const file = v?.["small"]?.url ? v["small"] : v?.["medium"]?.url ? v["medium"] : null;
-        return { h, file, score: overlap(h, q) * 2 + (file && (file.height ?? 0) > (file.width ?? 0) ? 3 : 0) };
+        const ov = overlap(h, q);
+        return { h, file, ov, score: ov * 2 + (file && (file.height ?? 0) > (file.width ?? 0) ? 3 : 0) };
       })
-      .filter((c) => c.file?.url && c.score > 0 && (c.file.size ?? 0) < 30_000_000)
+      // the clip must match the idea by its own tags; a vertical shape alone is never enough
+      .filter((c) => c.file?.url && c.ov >= 1 && (c.file.size ?? 0) < 30_000_000)
       .sort((x, y) => y.score - x.score);
     const best = candidates[0];
     if (!best?.file?.url) return null;

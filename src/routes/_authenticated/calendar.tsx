@@ -115,8 +115,8 @@ function CalendarPage() {
   const navigate = useNavigate();
 
   const [cursor, setCursor] = useState(() => startOfMonth(new Date()));
-  // Month grid (default) or a single week with the full cards listed under each day.
-  const [view, setView] = useState<"month" | "week">("month");
+  // Opens on the current week (full cards under each day); "Monthly" shows the month grid.
+  const [view, setView] = useState<"month" | "week">("week");
   const [weekStart, setWeekStart] = useState(() => startOfWeek(new Date(), { weekStartsOn: 1 }));
   const [reviewTab, setReviewTab] = useState<ReviewTab>("generated");
 

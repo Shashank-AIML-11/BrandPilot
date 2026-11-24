@@ -129,9 +129,44 @@ function CalendarPage() {
   const [todayKey, setTodayKey] = useState(() => format(new Date(), "yyyy-MM-dd"));
   useEffect(() => {
     // Re-check every minute so the tick boxes appear at 12 AM without a page reload.
-    const t = setInterval(() => setTodayKey(format(new Date(), "yyyy-MM-dd")), 60_000);
-    return () => clearInterval(t);
+    const refresh = () => setTodayKey(format(new Date(), "yyyy-MM-dd"));
+    const t = setInterval(refresh, 60_000);
+    // Browsers throttle timers in background tabs, so also re-check when the tab wakes up.
+    const onVisible = () => {
+      if (document.visibilityState === "visible") refresh();
+    };
+    document.addEventListener("visibilitychange", onVisible);
+    window.addEventListener("focus", refresh);
+    return () => {
+      clearInterval(t);
+      document.removeEventListener("visibilitychange", onVisible);
+      window.removeEventListener("focus", refresh);
+    };
   }, []);
+
+  // Keep "the current week" current. If the page is left open past Sunday midnight while it is
+  // showing the week that was current, move on to the new current week. A week the user
+  // deliberately browsed to (past or future) is left alone.
+  const currentWeekKey = format(startOfWeek(parseISO(todayKey), { weekStartsOn: 1 }), "yyyy-MM-dd");
+  const previousCurrentWeekKey = useRef(currentWeekKey);
+  useEffect(() => {
+    const previous = previousCurrentWeekKey.current;
+    if (previous === currentWeekKey) return;
+    previousCurrentWeekKey.current = currentWeekKey;
+    if (format(weekStart, "yyyy-MM-dd") === previous) {
+      const next = parseISO(currentWeekKey);
+      setWeekStart(next);
+      setCursor(startOfMonth(next));
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentWeekKey]);
+
+  /** Jump back to today: the current week in Weekly view, the current month in Monthly view. */
+  function goToToday() {
+    const thisWeek = startOfWeek(new Date(), { weekStartsOn: 1 });
+    setWeekStart(thisWeek);
+    setCursor(startOfMonth(thisWeek));
+  }
   useEffect(() => {
     if (autopostOn) setReviewTab("generated");
   }, [autopostOn]);
@@ -882,6 +917,11 @@ function CalendarPage() {
             }}
           >
             <ChevronRight className="h-4 w-4" />
+          </Button>
+
+          {/* Back to the current week / month */}
+          <Button type="button" variant="outline" size="sm" className="h-9" onClick={goToToday}>
+            Today
           </Button>
 
           {/* Generate */}

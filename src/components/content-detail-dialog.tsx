@@ -198,6 +198,8 @@ export function ContentDetailDialog({
 
   if (!item) return null;
 
+  const canPost = !isFailedItem(item) && (item.status === "posted" || Boolean(item.reviewed_at));
+
   return (
     <Dialog open={Boolean(item)} onOpenChange={onOpenChange}>
       <DialogContent className="flex max-h-[88vh] max-w-3xl flex-col gap-0 overflow-hidden p-0">
@@ -215,16 +217,19 @@ export function ContentDetailDialog({
                 {item.status}
               </Badge>
             </div>
-            <Button
-              size="sm"
-              className="shrink-0"
-              onClick={postNow}
-              disabled={post.isPending || isFailedItem(item)}
-              title={isFailedItem(item) ? "This card failed to generate" : item.status === "posted" ? "Post this card again" : "Post this card now"}
-            >
-              {post.isPending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Send className="mr-2 h-4 w-4" />}
-              Post Now
-            </Button>
+            {/* Posting starts after review: only reviewed or already-posted cards get Post Now. */}
+            {canPost && (
+              <Button
+                size="sm"
+                className="shrink-0"
+                onClick={postNow}
+                disabled={post.isPending || isFailedItem(item)}
+                title={isFailedItem(item) ? "This card failed to generate" : item.status === "posted" ? "Post this card again" : "Post this card now"}
+              >
+                {post.isPending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Send className="mr-2 h-4 w-4" />}
+                Post Now
+              </Button>
+            )}
           </div>
           <DialogTitle className="pt-2 text-xl">{item.title}</DialogTitle>
           {item.summary && <DialogDescription className="pt-1.5">{item.summary}</DialogDescription>}

@@ -119,6 +119,25 @@ export const Route = createFileRoute("/api/public/webhooks/razorpay")({
         }
         const razorpaySubscriptionId = subscriptionEntity?.id ?? paymentEntity?.subscription_id;
 
+        // Auto-renew subscriptions (UPI AutoPay / card standing instruction) are handled
+        // separately; each automatic charge is applied as a paid plan period.
+        if (razorpaySubscriptionId && body.event.startsWith("subscription.")) {
+          try {
+            const { handleAutorenewEvent } = await import("@/lib/payments/autorenew.server");
+            const handled = await handleAutorenewEvent({
+              event: body.event,
+              razorpaySubscriptionId,
+              paymentId: paymentEntity?.id,
+              paymentError: paymentEntity?.error_description,
+            });
+            if (handled) return new Response("ok", { status: 200 });
+          } catch (err) {
+            console.error("[webhook:razorpay] auto-renew handling failed", err);
+            // 500 makes Razorpay retry later.
+            return new Response("Auto-renew failed", { status: 500 });
+          }
+        }
+
         if (!razorpaySubscriptionId) {
           // Not every webhook event is subscription-related (e.g.
           // one-off payment events without a subscription). Nothing

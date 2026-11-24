@@ -115,8 +115,8 @@ function CalendarPage() {
   const navigate = useNavigate();
 
   const [cursor, setCursor] = useState(() => startOfMonth(new Date()));
-  // Month grid (default) or a single week with the full cards listed under each day.
-  const [view, setView] = useState<"month" | "week">("month");
+  // Opens on the current week (full cards under each day); "Monthly" shows the month grid.
+  const [view, setView] = useState<"month" | "week">("week");
   const [weekStart, setWeekStart] = useState(() => startOfWeek(new Date(), { weekStartsOn: 1 }));
   const [reviewTab, setReviewTab] = useState<ReviewTab>("generated");
 
@@ -1034,9 +1034,9 @@ function CalendarPage() {
       {/* CALENDAR */}
       {/* ====================================================== */}
 
-      <div className="surface overflow-hidden">
+      <div className="surface overflow-x-auto">
 
-        <div className="grid grid-cols-7 border-b border-border bg-card">
+        <div className="grid min-w-[720px] grid-cols-7 border-b border-border bg-card md:min-w-0">
 
           {DOW.map((day, i) => (
             <div
@@ -1057,7 +1057,7 @@ function CalendarPage() {
             <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
           </div>
         ) : view === "week" ? (
-          <div className="grid grid-cols-7">
+          <div className="grid min-w-[720px] grid-cols-7 md:min-w-0">
             {weekDays.map((day) => {
               const key = format(day, "yyyy-MM-dd");
               const list = (byDate.get(key) ?? []).filter((i) => tabOf(i) === reviewTab);
@@ -1147,7 +1147,7 @@ function CalendarPage() {
             })}
           </div>
         ) : (
-          <div className="grid grid-cols-7">
+          <div className="grid min-w-[720px] grid-cols-7 md:min-w-0">
 
             {days.map((day) => {
 

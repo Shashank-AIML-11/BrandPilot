@@ -22,6 +22,7 @@ import { planById } from "@/lib/plans";
 import { AUTOPOST_CONSENT_TEXT, isAutopostOn } from "@/lib/autopost";
 import { recordAutopostConsent } from "@/lib/autopost-consent.functions";
 import { AgencySidebar } from "@/components/agency-sidebar";
+import { SidebarOneTimeButton } from "@/components/one-time-generate";
 import {
   agencyPlanFor,
   resolveActiveBrand,
@@ -209,7 +210,11 @@ export function AppShell({ children }: { children: ReactNode }) {
     await supabase.auth.signOut();
     // Send signed-out users to the public marketing site (e.g. https://loviza.click)
     // when VITE_LANDING_URL is set. Left unset (local / staging), they stay on this app's "/".
-    const landingUrl = import.meta.env.VITE_LANDING_URL as string | undefined;
+    // The production app host always goes to the landing site, even if the env var was not
+    // set for that build (Vite reads it at build time, so a late change needs a redeploy).
+    const landingUrl =
+      (import.meta.env.VITE_LANDING_URL as string | undefined) ||
+      (window.location.hostname === "app.loviza.click" ? "https://loviza.click" : undefined);
     if (landingUrl) window.location.assign(landingUrl);
   }
 
@@ -384,7 +389,11 @@ export function AppShell({ children }: { children: ReactNode }) {
             <Button size="sm" variant="outline" className="mt-3 w-full" asChild>
               <Link to="/pricing">{activePlan ? "Upgrade" : "Choose a plan"}</Link>
             </Button>
+            {!activePlan && <SidebarOneTimeButton />}
           </div>
+          <Button size="sm" variant="outline" className="mt-3 w-full" asChild>
+            <Link to="/referrals">Refer &amp; SAVE 20%</Link>
+          </Button>
           </>
           )}
         </aside>

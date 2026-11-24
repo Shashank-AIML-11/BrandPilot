@@ -25,11 +25,13 @@ type SubRow = {
   status: string;
   current_period_end: string | null;
   razorpay_subscription_id: string | null;
+  auto_renew?: boolean | null;
 };
 
 /** A plan period counts only while it is paid for; old autopay rows get a short grace. */
 function rowIsCurrent(row: SubRow, now: Date): boolean {
-  const grace = row.razorpay_subscription_id ? LEGACY_AUTOPAY_GRACE_DAYS : 0;
+  // Old autopay rows and auto-renew customers get a few days for the charge to arrive.
+  const grace = row.razorpay_subscription_id || row.auto_renew ? LEGACY_AUTOPAY_GRACE_DAYS : 0;
   return isPeriodActive(row.current_period_end, now, grace);
 }
 
@@ -86,7 +88,7 @@ export async function getGenerationEntitlement(
   // the daily job), so features stop at the exact moment the plan ends.
   const { data: subscriptions, error: subscriptionError } = await supabase
     .from("subscriptions")
-    .select("plan, status, created_at, current_period_end, razorpay_subscription_id")
+    .select("plan, status, created_at, current_period_end, razorpay_subscription_id, auto_renew")
     .eq("user_id", userId)
     .in("status", ["pending", "active"])
     .order("created_at", { ascending: false })
@@ -131,7 +133,7 @@ export async function usersWithAccess(
   const [{ data: subs }, { data: profiles }] = await Promise.all([
     supabase
       .from("subscriptions")
-      .select("user_id, plan, status, current_period_end, razorpay_subscription_id")
+      .select("user_id, plan, status, current_period_end, razorpay_subscription_id, auto_renew")
       .in("user_id", userIds)
       .in("status", ["pending", "active"]),
     supabase.from("profiles").select("id, email").in("id", userIds),

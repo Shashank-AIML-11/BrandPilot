@@ -459,6 +459,7 @@ export type Database = {
           razorpay_customer_id: string | null
           razorpay_plan_id: string | null
           razorpay_subscription_id: string | null
+          auto_renew: boolean
           status: string
           updated_at: string
           user_id: string
@@ -478,6 +479,7 @@ export type Database = {
           razorpay_customer_id?: string | null
           razorpay_plan_id?: string | null
           razorpay_subscription_id?: string | null
+          auto_renew?: boolean
           status?: string
           updated_at?: string
           user_id: string
@@ -497,6 +499,7 @@ export type Database = {
           razorpay_customer_id?: string | null
           razorpay_plan_id?: string | null
           razorpay_subscription_id?: string | null
+          auto_renew?: boolean
           status?: string
           updated_at?: string
           user_id?: string

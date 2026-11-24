@@ -101,6 +101,11 @@ export function ChannelConnections({
         <div className="grid gap-3 sm:grid-cols-2">
           {CHANNELS.filter((c) => c.kind === "oauth").map((channel) => {
             const conn = byChannel[channel.key];
+            const needsReconnect = conn?.status === "needs_reconnect";
+            const daysLeft = conn?.expiresAt
+              ? Math.ceil((Date.parse(conn.expiresAt) - Date.now()) / 86_400_000)
+              : null;
+            const expiringSoon = Boolean(conn?.connected && daysLeft !== null && daysLeft <= 7);
             return (
               <div
                 key={channel.key}
@@ -115,6 +120,18 @@ export function ChannelConnections({
                       </Badge>
                     )}
                   </div>
+                  {needsReconnect && (
+                    <p className="mt-1 text-xs font-medium text-destructive">
+                      Login expired. Press Connect to sign in again, otherwise posts to {channel.label} will fail.
+                    </p>
+                  )}
+                  {expiringSoon && (
+                    <p className="mt-1 text-xs font-medium text-amber-500">
+                      {daysLeft! <= 0
+                        ? "Login has expired. Disconnect and connect again."
+                        : `Login expires in ${daysLeft} day${daysLeft === 1 ? "" : "s"}. Disconnect and connect again to renew it.`}
+                    </p>
+                  )}
                   <p className="mt-1 truncate text-xs text-muted-foreground">
                     {conn?.connected ? (
                       <>

@@ -4,7 +4,7 @@ import { z } from "zod";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Database } from "@/integrations/supabase/types";
 
-const PRIMARY_ROOT_EMAIL = "shashank.bawane@gmail.com";
+import { ROOT_EMAIL as PRIMARY_ROOT_EMAIL, isRootEmail } from "@/lib/root-email";
 
 type Ctx = { supabase: SupabaseClient<Database>; userId: string };
 
@@ -24,7 +24,7 @@ async function getAccess(context: Ctx) {
   if (roles.length === 0) {
     const { data: authUser } = await context.supabase.auth.getUser();
     const email = authUser.user?.email?.toLowerCase();
-    if (email === PRIMARY_ROOT_EMAIL) {
+    if (isRootEmail(email)) {
       const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
       await supabaseAdmin
         .from("user_roles")
@@ -292,7 +292,7 @@ export const revokeRole = createServerFn({ method: "POST" })
 
     if (row?.role === "root") {
       if (!access.isRoot) throw new Error("Only root can revoke root access");
-      if (row.email.toLowerCase() === PRIMARY_ROOT_EMAIL) {
+      if (isRootEmail(row.email)) {
         throw new Error("The primary root account cannot be demoted");
       }
     }
@@ -316,7 +316,7 @@ export const deleteUser = createServerFn({ method: "POST" })
       .eq("id", data.userId)
       .maybeSingle();
 
-    if (profile?.email.toLowerCase() === PRIMARY_ROOT_EMAIL) {
+    if (isRootEmail(profile?.email)) {
       throw new Error("The primary root account cannot be removed");
     }
 

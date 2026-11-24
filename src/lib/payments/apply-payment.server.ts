@@ -47,6 +47,25 @@ export async function applyPlanPayment(
     }
   }
 
+  // A one-time payment that SWITCHES plan ends the old plan's auto-renew, otherwise it would
+  // keep charging for the plan the customer just left. (Automatic charges are "auto_..." orders.)
+  if (r.applied && r.kind === "new" && !orderId.startsWith("auto_")) {
+    try {
+      const { data: owner } = await untyped(supabaseAdmin)
+        .from("plan_orders")
+        .select("user_id")
+        .eq("razorpay_order_id", orderId)
+        .maybeSingle();
+      const userId = (owner as { user_id?: string } | null)?.user_id;
+      if (userId) {
+        const { cancelAutorenewForUser } = await import("@/lib/payments/autorenew.server");
+        await cancelAutorenewForUser(userId);
+      }
+    } catch (err) {
+      console.error("[payments] could not stop auto-renew after a plan switch", err);
+    }
+  }
+
   return {
     applied: r.applied,
     plan: r.plan,

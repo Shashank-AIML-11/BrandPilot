@@ -280,14 +280,31 @@ export const generateMediaBatch =
           await Promise.allSettled(
             singleImageItems.map(
                 async (item) => {
-                  const bytes =
-                    await generateImageBytes(
-                      imagePromptFor(
-                        item as never,
-                        brandFor(item.brand_id) as never,
-                      ),
-                      aspectForType(item.type),
-                    );
+                  // Reuse a stored photo from the brand media library when one fits (no fal cost).
+                  // Only when the picture carries no baked-in text, so a reused one never shows an old headline.
+                  const { posterComposerEnabled, isVideoType } = await import("@/lib/content.server");
+                  const itemPrompt = imagePromptFor(item as never, brandFor(item.brand_id) as never);
+                  const itemAspect = aspectForType(item.type);
+                  let bytes: Uint8Array;
+                  if (posterComposerEnabled() || isVideoType(item.type)) {
+                    const { reuseOrGenerate } = await import("@/lib/media-library.server");
+                    const { supabaseAdmin: libAdmin } = await import("@/integrations/supabase/client.server");
+                    bytes = (
+                      await reuseOrGenerate(
+                        libAdmin as never,
+                        {
+                          userId: context.userId,
+                          brandId: item.brand_id ?? null,
+                          kind: "photo",
+                          aspect: itemAspect,
+                          text: `${item.title ?? ""} ${item.image_prompt ?? ""} ${item.summary ?? ""}`,
+                        },
+                        () => generateImageBytes(itemPrompt, itemAspect),
+                      )
+                    ).bytes;
+                  } else {
+                    bytes = await generateImageBytes(itemPrompt, itemAspect);
+                  }
 
                   const path = `${context.userId}/${item.id}.png`;
 

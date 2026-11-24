@@ -11,7 +11,11 @@
  */
 
 @theme inline {
-  --font-display: "Space Grotesk", ui-sans-serif, system-ui, sans-serif;
+     /* brand accent: yellow-* classes now render as the LOVIZA cyan (#00D4F5) */
+  --color-yellow-300: oklch(0.87 0.12 212);
+  --color-yellow-400: oklch(0.8 0.141 214);
+  --color-yellow-500: oklch(0.72 0.14 215);
+   --font-display: "Space Grotesk", ui-sans-serif, system-ui, sans-serif;
   --font-sans: "DM Sans", ui-sans-serif, system-ui, sans-serif;
 
   --radius-sm: calc(var(--radius) - 4px);
@@ -85,8 +89,8 @@
   --popover: oklch(0.213 0.014 260);
   --popover-foreground: oklch(0.96 0.005 250);
 
-  --primary: oklch(0.79 0.166 76);
-  --primary-foreground: oklch(0.2 0.03 70);
+  --primary: oklch(0.8 0.141 214);
+  --primary-foreground: oklch(0.2 0.03 230);
 
   --secondary: oklch(0.27 0.016 260);
   --secondary-foreground: oklch(0.94 0.005 250);
@@ -105,10 +109,10 @@
 
   --border: oklch(0.3 0.016 260);
   --input: oklch(0.3 0.016 260);
-  --ring: oklch(0.79 0.166 76);
+  -ring: oklch(0.8 0.141 214);
 
   --blog: oklch(0.72 0.13 232);
-  --infographic: oklch(0.79 0.166 76); /* legacy — old rows only, no new content uses this */
+  --infographic: oklch(0.8 0.141 214); /* legacy — old rows only, no new content uses this */
   --video: oklch(0.7 0.16 355); /* legacy — old rows only, no new content uses this */
 
   /* Approximate, adjustable — these are decorative category colors,

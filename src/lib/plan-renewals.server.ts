@@ -25,6 +25,7 @@ interface SubRow {
   status: string;
   current_period_end: string;
   razorpay_subscription_id: string | null;
+  auto_renew?: boolean | null;
 }
 
 export interface RenewalRunResult {
@@ -117,7 +118,7 @@ export async function runPlanRenewals(
   // ---- 1. Expire lapsed plans -------------------------------------------
   const { data: lapsedRows, error: lapsedError } = await db
     .from("subscriptions")
-    .select("id, user_id, plan, status, current_period_end, razorpay_subscription_id")
+    .select("id, user_id, plan, status, current_period_end, razorpay_subscription_id, auto_renew")
     .eq("status", "active")
     .not("current_period_end", "is", null)
     .lt("current_period_end", now.toISOString())
@@ -127,7 +128,7 @@ export async function runPlanRenewals(
   for (const row of (lapsedRows ?? []) as SubRow[]) {
     try {
       // Old autopay rows: give Razorpay's charge webhook a few days to extend them.
-      const grace = row.razorpay_subscription_id ? LEGACY_AUTOPAY_GRACE_DAYS * DAY_MS : 0;
+      const grace = row.razorpay_subscription_id || row.auto_renew ? LEGACY_AUTOPAY_GRACE_DAYS * DAY_MS : 0;
       if (new Date(row.current_period_end).getTime() + grace > now.getTime()) continue;
 
       const { data: updated } = await db
@@ -182,6 +183,7 @@ export async function runPlanRenewals(
     .select("id, user_id, plan, status, current_period_end, razorpay_subscription_id")
     .eq("status", "active")
     .is("razorpay_subscription_id", null) // autopay customers renew by themselves
+    .eq("auto_renew", false) // auto-renew customers are charged automatically, no reminder needed
     .gt("current_period_end", now.toISOString())
     .lte("current_period_end", windowEnd.toISOString())
     .limit(1000);

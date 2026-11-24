@@ -96,11 +96,13 @@ export function screenLocal(text: string): SafetyVerdict {
 /** Layer 2: moderation model. Returns ok=true when the model is off or unreachable. */
 export async function screenWithModel(text: string): Promise<SafetyVerdict> {
   if ((process.env["SAFETY_MODERATION"] ?? "on").trim().toLowerCase() === "off") return { ok: true };
-  const key = process.env["GROQ_API_KEY"];
+  // Same provider switch as the text generator: TEXT_PROVIDER=openrouter means Groq is never called.
+  const openrouter = (process.env["TEXT_PROVIDER"] ?? "").trim().toLowerCase() === "openrouter";
+  const key = openrouter ? process.env["OPENROUTER_API_KEY"] : process.env["GROQ_API_KEY"];
   if (!key || !text.trim()) return { ok: true };
   const model = (process.env["SAFETY_MODEL"] || "meta-llama/llama-guard-4-12b").trim();
   try {
-    const res = await fetch("https://api.groq.com/openai/v1/chat/completions", {
+    const res = await fetch(openrouter ? "https://openrouter.ai/api/v1/chat/completions" : "https://api.groq.com/openai/v1/chat/completions", {
       method: "POST",
       headers: { "Content-Type": "application/json", Authorization: `Bearer ${key}` },
       body: JSON.stringify({

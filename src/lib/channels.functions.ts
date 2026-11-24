@@ -197,11 +197,11 @@ export const saveMediumToken = createServerFn({ method: "POST" })
 
 export const publishContentItem = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((input: { itemId: string; channels: string[] }) => {
+  .inputValidator((input: { itemId: string; channels: string[]; repost?: boolean }) => {
     if (!input?.itemId) throw new Error("Content item is required");
     const channels = (input.channels ?? []).slice(0, 12);
     if (channels.length === 0) throw new Error("Select at least one channel");
-    return { itemId: input.itemId, channels };
+    return { itemId: input.itemId, channels, repost: input.repost === true };
   })
   .handler(async ({ data, context }) => {
     // Manual "Post now" rules: Autopost must be OFF, the card must be reviewed, and it must be
@@ -211,24 +211,32 @@ export const publishContentItem = createServerFn({ method: "POST" })
     const [{ data: row }, { data: prof }] = await Promise.all([
       supabaseAdmin
         .from("content_items")
-        .select("scheduled_date, reviewed_at")
+        .select("scheduled_date, reviewed_at, status")
         .eq("id", data.itemId)
         .eq("user_id", context.userId)
         .maybeSingle(),
       supabaseAdmin.from("profiles").select("autopost_enabled").eq("id", context.userId).maybeSingle(),
     ]);
-    const item = row as { scheduled_date: string; reviewed_at: string | null } | null;
+    const item = row as { scheduled_date: string; reviewed_at: string | null; status: string } | null;
     if (!item) throw new Error("Content not found");
     if ((prof as { autopost_enabled?: boolean } | null)?.autopost_enabled === true) {
       throw new Error("Autopost is ON: content is posted automatically at 7 AM.");
     }
-    if (!item.reviewed_at) throw new Error("Finish the review before posting this card.");
-    if (item.scheduled_date > istNow(new Date()).today) {
-      throw new Error("This card is scheduled for a later day. It will be posted automatically on its day.");
+    if (item.status === "failed") {
+      throw new Error("This card failed to generate, so there is nothing to post. Delete it and generate again.");
+    }
+    // A card that already went out can be reposted at any time; the review and date rules
+    // only gate its first posting.
+    const isRepost = item.status === "posted" && data.repost;
+    if (!isRepost) {
+      if (!item.reviewed_at) throw new Error("Finish the review before posting this card.");
+      if (item.scheduled_date > istNow(new Date()).today) {
+        throw new Error("This card is scheduled for a later day. It will be posted automatically on its day.");
+      }
     }
 
     const { publishItemToChannels } = await import("@/lib/channels/publish.server");
-    return publishItemToChannels(context.userId, data.itemId, data.channels);
+    return publishItemToChannels(context.userId, data.itemId, data.channels, { repost: isRepost });
   });
 
 export const publishAllContent = createServerFn({ method: "POST" })

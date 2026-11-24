@@ -6,6 +6,12 @@ function guard(prompt: string): string {
   return `${prompt}${SAFETY_GUARD}`;
 }
 
+function openrouterKey() {
+  const k = process.env["OPENROUTER_API_KEY"];
+  if (!k) throw new Error("AI is not configured (missing OPENROUTER_API_KEY).");
+  return k;
+}
+
 function groqKey() {
   const k = process.env["GROQ_API_KEY"];
   if (!k) throw new Error("AI is not configured (missing GROQ_API_KEY).");
@@ -44,6 +50,36 @@ export function strategyChatOptions(): ChatOptions {
   };
 }
 
+const sleepMs = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
+/**
+ * Groq's free tier refuses a request when the per-minute token budget is used up and says how
+ * long to wait. Instead of failing the slot, wait that long (within a time budget) and retry.
+ *   GROQ_RETRY_MAX_WAIT_SECONDS  total waiting allowed per call, default 20 (0 = never wait)
+ */
+async function sendWithRetry(send: () => Promise<Response>): Promise<Response> {
+  const budget = Number(process.env["GROQ_RETRY_MAX_WAIT_SECONDS"] ?? 20) * 1000;
+  let waited = 0;
+  for (let attempt = 0; ; attempt += 1) {
+    const res = await send();
+    if (res.status !== 429 || attempt >= 3 || budget <= 0) return res;
+
+    let ms = 0;
+    const header = Number(res.headers.get("retry-after"));
+    if (Number.isFinite(header) && header > 0) ms = header * 1000;
+    if (!ms) {
+      const body = await res.clone().text().catch(() => "");
+      const m = /try again in (?:(\d+)m)?([\d.]+)(ms|s)\b/i.exec(body);
+      if (m) ms = (m[1] ? Number(m[1]) * 60_000 : 0) + (m[3]!.toLowerCase() === "ms" ? Number(m[2]) : Number(m[2]) * 1000);
+    }
+    ms = (ms || 8000) + 500;
+    if (waited + ms > budget) return res; // would take too long: let the queue retry later
+    console.warn(`[groq] rate limited, waiting ${Math.round(ms / 1000)}s (attempt ${attempt + 1})`);
+    await sleepMs(ms);
+    waited += ms;
+  }
+}
+
 export async function chatJSON<T>(
   system: string,
   prompt: string,
@@ -63,20 +99,28 @@ export async function chatJSON<T>(
         type: "json_object",
       };
 
-  const res = await fetch("https://api.groq.com/openai/v1/chat/completions", {
+  // TEXT_PROVIDER=openrouter uses OpenRouter (prepaid credits) instead of Groq. Same request shape.
+  const openrouter = (process.env["TEXT_PROVIDER"] ?? "").trim().toLowerCase() === "openrouter";
+  const endpoint = openrouter ? "https://openrouter.ai/api/v1/chat/completions" : "https://api.groq.com/openai/v1/chat/completions";
+  const apiKey = openrouter ? openrouterKey() : groqKey();
+  const modelName = openrouter ? (process.env["OPENROUTER_MODEL"]?.trim() || "openai/gpt-oss-20b") : (options.model ?? "openai/gpt-oss-20b");
+  const sendRequest = () => fetch(endpoint, {
     method: "POST",
     headers: {
-      Authorization: `Bearer ${groqKey()}`,
+      Authorization: `Bearer ${apiKey}`,
       "Content-Type": "application/json",
+      ...(openrouter ? { "HTTP-Referer": "https://loviza.click", "X-Title": "LOVIZA" } : {}),
     },
     body: JSON.stringify({
-      model: options.model ?? "openai/gpt-oss-20b",
+      model: modelName,
       messages: [
         { role: "system", content: system },
         { role: "user", content: prompt },
       ],
       response_format: responseFormat,
-      reasoning_effort: options.reasoningEffort ?? "low",
+      ...(openrouter
+        ? { reasoning: { effort: options.reasoningEffort ?? "low" } }
+        : { reasoning_effort: options.reasoningEffort ?? "low" }),
       // Without an explicit cap, Groq reserves a large default output
       // budget from the model's context window and counts that reserved
       // amount against the per-minute token limit — regardless of how
@@ -109,9 +153,12 @@ export async function chatJSON<T>(
       // pins down the real input size precisely — trim weekPrompt()
       // further (or drop back toward 3200-3400) rather than raising this
       // again, since we're now close to the 8,000 ceiling either way.
-      max_completion_tokens: options.maxTokens ?? 3600,
+      ...(openrouter
+        ? { max_tokens: options.maxTokens ?? 3600 }
+        : { max_completion_tokens: options.maxTokens ?? 3600 }),
     }),
   });
+  const res = await sendWithRetry(sendRequest);
 
   if (!res.ok) {
     const text = await res.text();
@@ -269,6 +316,8 @@ async function generateImageBytesFal(prompt: string, aspect: ImageAspect): Promi
     throw new Error("Image generation is not configured (missing FAL_KEY).");
   }
   const model = falImageModel();
+  const { spendGuard, recordSpend } = await import("@/lib/spend-guard.server");
+  await spendGuard("fal_image"); // refuses (at no cost) once today's limit is reached
 
   const res = await fetch(`https://fal.run/${model}`, {
     method: "POST",
@@ -284,6 +333,7 @@ async function generateImageBytesFal(prompt: string, aspect: ImageAspect): Promi
     throw new Error(`fal.ai image generation failed [${res.status}]: ${text}`);
   }
 
+  await recordSpend("fal_image"); // fal has charged for this image now
   const json = (await res.json()) as { images?: Array<{ url?: string }> };
   const imageUrl = json.images?.[0]?.url;
   if (!imageUrl) {
@@ -386,8 +436,20 @@ function parseFalVideoStatus(raw?: string): VideoJob["status"] {
 
 export async function createVideoJob(
   prompt: string,
-  options: { aspectRatio?: "9:16" | "16:9"; durationSeconds?: number } = {},
+  options: {
+    aspectRatio?: "9:16" | "16:9";
+    durationSeconds?: number;
+    explainer?: import("@/lib/explainer.server").ExplainerInput;
+  } = {},
 ): Promise<VideoJob> {
+  // Shotstack mode: the video is assembled by Shotstack. fal video is NEVER used in this mode.
+  if (options.explainer) {
+    const { submitExplainerRender } = await import("@/lib/explainer.server");
+    return { id: `ss_${await submitExplainerRender(options.explainer)}`, status: "queued" };
+  }
+  if ((process.env["VIDEO_PROVIDER"] ?? "").trim().toLowerCase() === "shotstack") {
+    throw new Error("Video provider is Shotstack; fal video is disabled.");
+  }
   const model = falVideoModel();
   const res = await fetch(`https://queue.fal.run/${model}`, {
     method: "POST",
@@ -413,6 +475,11 @@ export async function createVideoJob(
 }
 
 export async function getVideoJob(id: string): Promise<VideoJob> {
+  if (id.startsWith("ss_")) {
+    const { explainerStatus } = await import("@/lib/explainer.server");
+    const st = await explainerStatus(id.slice(3));
+    return { id, status: st.status, error: st.status === "failed" ? { message: st.error || "Shotstack render failed." } : null };
+  }
   const model = falVideoModel();
   const res = await fetch(`https://queue.fal.run/${falAppId(model)}/requests/${id}/status`, {
     headers: falHeaders(),
@@ -435,6 +502,10 @@ export async function getVideoJob(id: string): Promise<VideoJob> {
 }
 
 export async function downloadVideoBytes(id: string): Promise<Uint8Array> {
+  if (id.startsWith("ss_")) {
+    const { explainerBytes } = await import("@/lib/explainer.server");
+    return explainerBytes(id.slice(3));
+  }
   const model = falVideoModel();
   const res = await fetch(`https://queue.fal.run/${falAppId(model)}/requests/${id}`, {
     headers: falHeaders(),

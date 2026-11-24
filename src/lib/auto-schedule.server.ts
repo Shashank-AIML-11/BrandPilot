@@ -82,7 +82,9 @@ export async function runAutoGeneration(admin: Admin, now = new Date()) {
   const { data: subs } = await admin.from("subscriptions").select("user_id").eq("status", "active");
   const userIds = new Set<string>((subs ?? []).map((r: { user_id: string }) => r.user_id));
   const { ROOT_EMAIL } = await import("@/lib/generation-entitlements");
-  const { data: root } = await admin.from("profiles").select("id, created_at").eq("email", ROOT_EMAIL).maybeSingle();
+  const { data: root } = ROOT_EMAIL
+    ? await admin.from("profiles").select("id, created_at").eq("email", ROOT_EMAIL).maybeSingle()
+    : { data: null };
   if (root?.id) userIds.add(root.id);
 
   const result = { checked: 0, queued: 0, learned: 0, skipped: 0, errors: 0 };

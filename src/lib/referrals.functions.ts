@@ -142,14 +142,14 @@ async function assertRoot(context: {
   >;
   userId: string;
 }) {
-  const { ROOT_EMAIL } = await import("@/lib/generation-entitlements");
+  const { isRootEmail } = await import("@/lib/root-email");
   const { data: roles } = await context.supabase
     .from("user_roles")
     .select("role")
     .eq("user_id", context.userId);
   if ((roles ?? []).some((r) => r.role === "root")) return;
   const { data } = await context.supabase.auth.getUser();
-  if (data.user?.email?.toLowerCase() === ROOT_EMAIL) return;
+  if (isRootEmail(data.user?.email)) return;
   throw new Error("Root access required");
 }
 

@@ -272,7 +272,7 @@ export const getPlanStatus = createServerFn({ method: "POST" })
 
     const { data: sub, error } = await supabaseAdmin
       .from("subscriptions")
-      .select("id, plan, status, current_period_end, razorpay_subscription_id")
+      .select("id, plan, status, current_period_end, razorpay_subscription_id, auto_renew")
       .eq("user_id", context.userId)
       .in("status", ["active", "expired"])
       .order("created_at", { ascending: false })
@@ -285,7 +285,10 @@ export const getPlanStatus = createServerFn({ method: "POST" })
     if (!plan) return { ...NO_PLAN, isRoot, oneTime };
 
     const now = new Date();
-    const grace = sub.razorpay_subscription_id ? LEGACY_AUTOPAY_GRACE_DAYS : 0;
+    const grace =
+      sub.razorpay_subscription_id || (sub as { auto_renew?: boolean | null }).auto_renew
+        ? LEGACY_AUTOPAY_GRACE_DAYS
+        : 0;
     const lapsed = sub.status === "expired" || !isPeriodActive(sub.current_period_end, now, grace);
 
     if (lapsed && sub.status === "active") {

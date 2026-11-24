@@ -26,6 +26,7 @@ async function explainerInputFor(
   admin: AdminClient,
   item: { id: string; type: string; title: string; summary: string | null; image_prompt: string | null; video_script?: string | null },
   brand: Record<string, unknown> | null,
+  owner: { userId: string; brandId: string | null } = { userId: "", brandId: null },
 ) {
   let logoUrl: string | null = null;
   const logoPath = String(brand?.["logo_url"] ?? "");
@@ -35,6 +36,8 @@ async function explainerInputFor(
   }
   const input = {
     item,
+    userId: owner.userId || undefined,
+    brandId: owner.brandId,
     brandName: String(brand?.["business_name"] ?? ""),
     website: String(brand?.["website"] ?? ""),
     colors: (brand?.["brand_colors"] as Record<string, string> | null) ?? null,
@@ -127,6 +130,31 @@ function sleep(ms: number) {
 // Pollinations only allows 1 in-flight image request per IP. Serialize every
 // call through here instead of firing them in parallel, and back off/retry
 // specifically on 429s instead of failing the item immediately.
+/**
+ * Looks in the brand media library first; only calls the image provider when no stored photo fits.
+ * The raw photo (before the poster layer) is what gets stored, so it can be reused with a new headline.
+ */
+async function photoFor(
+  admin: AdminClient,
+  item: { user_id: string; brand_id?: string | null; type: string; title?: string | null; summary?: string | null; image_prompt?: string | null },
+  prompt: string,
+  aspect: Parameters<typeof generateImageBytes>[1] = "1:1",
+): Promise<Uint8Array> {
+  const { reuseOrGenerate } = await import("@/lib/media-library.server");
+  const result = await reuseOrGenerate(
+    admin as never,
+    {
+      userId: item.user_id,
+      brandId: item.brand_id ?? null,
+      kind: "photo",
+      aspect,
+      text: `${item.title ?? ""} ${item.image_prompt ?? ""} ${item.summary ?? ""}`,
+    },
+    () => generateImageWithRetry(prompt, aspect),
+  );
+  return result.bytes;
+}
+
 async function generateImageWithRetry(
   prompt: Parameters<typeof generateImageBytes>[0],
   aspect: Parameters<typeof generateImageBytes>[1] = "1:1",
@@ -238,6 +266,26 @@ export async function processVideoQueue(admin: AdminClient, userId?: string) {
         if (updateError) throw new Error(updateError.message);
         stored += 1;
 
+        // Library: keep the finished video (raw file already in storage) for the brand's history.
+        try {
+          const { extractTags } = await import("@/lib/media-library.server");
+          const { data: meta } = await admin.from("content_items").select("title, summary").eq("id", item.id).maybeSingle();
+          await (admin as unknown as SupabaseClient).from("brand_media").upsert(
+            {
+              user_id: item.user_id,
+              brand_id: item.brand_id ?? null,
+              kind: "video",
+              aspect: "9:16",
+              storage_path: path,
+              prompt: String(meta?.title ?? "").slice(0, 500),
+              tags: extractTags(`${meta?.title ?? ""} ${meta?.summary ?? ""}`),
+            },
+            { onConflict: "storage_path" },
+          );
+        } catch (libraryError) {
+          console.error("[media] could not save video to the library", libraryError);
+        }
+
         // Propagate to every sibling in the group that was waiting on
         // this generation — no separate job, no separate cost for them.
         if (isShared) {
@@ -282,6 +330,8 @@ export async function processVideoQueue(admin: AdminClient, userId?: string) {
         // Never start a paid video from a "Rendering…" placeholder: wait until the real
         // script and on-screen text have been written (status leaves "draft").
         .neq("status", "draft")
+        // A slot whose text generation failed holds an error placeholder: never pay to render it.
+        .neq("status", "failed")
         .eq("calendar_hidden", false)
         .order("scheduled_date", { ascending: true })
         .order("scheduled_time", { ascending: true })
@@ -292,6 +342,16 @@ export async function processVideoQueue(admin: AdminClient, userId?: string) {
 
       for (const item of pending ?? []) {
         try {
+          const textOf = `${item.title ?? ""} ${item.summary ?? ""} ${item.video_script ?? ""}`;
+          if (/generation failed|did not return content/i.test(textOf)) {
+            await admin
+              .from("content_items")
+              .update({ video_status: "failed", video_error: "Skipped: the text for this slot failed to generate, so no paid render was started. Regenerate the slot's text first." })
+              .eq("id", item.id)
+              .eq("video_status", "none");
+            failed += 1;
+            continue;
+          }
           // Shared-video group (Reel/Short/TikTok/Product video): don't submit a paid
           // job if a sibling on the same day already has one done or in
           // progress.
@@ -377,7 +437,7 @@ export async function processVideoQueue(admin: AdminClient, userId?: string) {
               // volume/cost is confirmed acceptable.
               durationSeconds: envInt("VIDEO_SECONDS", 6, 10),
               explainer: (await import("@/lib/explainer.server")).explainerEnabled()
-                ? await explainerInputFor(admin, item, brand as never)
+                ? await explainerInputFor(admin, item, brand as never, { userId: item.user_id, brandId: item.brand_id ?? null })
                 : undefined,
             },
           );
@@ -461,7 +521,9 @@ export async function processVideoQueue(admin: AdminClient, userId?: string) {
         // First of the group to render today — generate once, upload to
         // the SHARED path (not a per-item path) so siblings can find it.
         const brand = await loadBrand(admin, item.user_id, item.brand_id);
-        const photo = await generateImageWithRetry(
+        const photo = await photoFor(
+          admin,
+          item as never,
           imagePromptFor(item as never, brand as never),
           aspectForType(item.type),
         );
@@ -498,7 +560,9 @@ export async function processVideoQueue(admin: AdminClient, userId?: string) {
           .maybeSingle();
         if (!coverSibling) {
           const coverBrand = await loadBrand(admin, item.user_id, item.brand_id);
-          const coverPhoto = await generateImageWithRetry(
+          const coverPhoto = await photoFor(
+            admin,
+            item as never,
             imagePromptFor(item as never, coverBrand as never),
             aspectForType(item.type),
           );
@@ -523,7 +587,9 @@ export async function processVideoQueue(admin: AdminClient, userId?: string) {
       // Not in the shared group (pinterest, video thumbnails) — generate
       // its own unique image as before.
       const brand = await loadBrand(admin, item.user_id, item.brand_id);
-      const photo = await generateImageWithRetry(
+      const photo = await photoFor(
+        admin,
+        item as never,
         imagePromptFor(item as never, brand as never),
         aspectForType(item.type),
       );

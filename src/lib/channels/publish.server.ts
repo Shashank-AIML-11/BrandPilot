@@ -1,10 +1,14 @@
 /** Publishes one content item to a set of channels and records the outcome. */
 import { publishToChannel, type PublishItem, type PublishResult } from "./publishers.server";
 
+/** Title the queue writes on a slot the AI failed to fill (see content-queue.server.ts). */
+export const FAILED_PLACEHOLDER_TITLE = "Content generation failed";
+
 export async function publishItemToChannels(
   userId: string,
   itemId: string,
   channels: string[],
+  opts: { repost?: boolean } = {},
 ): Promise<{ results: PublishResult[] }> {
   const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
 
@@ -15,15 +19,20 @@ export async function publishItemToChannels(
   const { data } = await supabaseAdmin
     .from("content_items")
     .select(
-      "id, brand_id, type, title, summary, body, caption, hashtags, image_url, video_url, carousel_slides, carousel_image_urls, published_channels",
+      "id, brand_id, status, type, title, summary, body, caption, hashtags, image_url, video_url, carousel_slides, carousel_image_urls, published_channels",
     )
     .eq("id", itemId)
     .eq("user_id", userId)
     .maybeSingle();
 
   const item = data as unknown as
-    (PublishItem & { published_channels: string[] | null; brand_id: string | null }) | null;
+    (PublishItem & { published_channels: string[] | null; brand_id: string | null; status: string }) | null;
   if (!item) throw new Error("Content not found");
+
+  // A slot the AI never filled is a placeholder, not a post. Never publish it.
+  if (item.status === "failed" || item.title === FAILED_PLACEHOLDER_TITLE) {
+    throw new Error("This card failed to generate, so there is nothing to post. Delete it and generate again.");
+  }
 
   // Last-line safety gate: never post anything the safety check flags, however it got here.
   const { checkContentSafety } = await import("@/lib/content-safety.server");
@@ -33,7 +42,8 @@ export async function publishItemToChannels(
   }
 
   const already = new Set(item.published_channels ?? []);
-  const targets = channels.filter((c) => !already.has(c));
+  // A repost deliberately sends the card again to channels it already went to.
+  const targets = opts.repost ? channels : channels.filter((c) => !already.has(c));
   const results: PublishResult[] = [];
 
   for (const channel of targets) {

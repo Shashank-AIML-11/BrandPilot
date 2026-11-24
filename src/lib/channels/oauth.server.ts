@@ -340,6 +340,8 @@ export interface LiveConnection {
   accountId: string;
   accountName: string;
   meta: Record<string, unknown>;
+  /** True when the login has expired and could not be renewed: the user must reconnect. */
+  expired?: boolean;
 }
 
 /** Reads a connection and refreshes the access token when it is close to expiring. */
@@ -368,6 +370,7 @@ export async function liveConnection(
   if (!row) return null;
 
   let accessToken = await decryptToken(row.access_token);
+  const originalAccessToken = accessToken;
   const refreshToken = await decryptToken(row.refresh_token);
   const expiresAt = row.token_expires_at ? Date.parse(row.token_expires_at) : 0;
   const provider = PROVIDERS[channel];
@@ -418,6 +421,8 @@ export async function liveConnection(
     accountId: row.account_id,
     accountName: row.account_name,
     meta: row.meta ?? {},
+    // Past its expiry date with no way to renew (no refresh token, or renewing failed).
+    expired: Boolean(expiresAt && expiresAt < Date.now() && accessToken === originalAccessToken),
   };
 }
 

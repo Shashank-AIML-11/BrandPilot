@@ -210,7 +210,11 @@ export function AppShell({ children }: { children: ReactNode }) {
     await supabase.auth.signOut();
     // Send signed-out users to the public marketing site (e.g. https://loviza.click)
     // when VITE_LANDING_URL is set. Left unset (local / staging), they stay on this app's "/".
-    const landingUrl = import.meta.env.VITE_LANDING_URL as string | undefined;
+    // The production app host always goes to the landing site, even if the env var was not
+    // set for that build (Vite reads it at build time, so a late change needs a redeploy).
+    const landingUrl =
+      (import.meta.env.VITE_LANDING_URL as string | undefined) ||
+      (window.location.hostname === "app.loviza.click" ? "https://loviza.click" : undefined);
     if (landingUrl) window.location.assign(landingUrl);
   }
 

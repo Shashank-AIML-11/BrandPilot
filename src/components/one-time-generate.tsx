@@ -12,7 +12,7 @@ import { formatINR } from "@/lib/plans";
 import { Button } from "@/components/ui/button";
 
 /**
- * "Generate One Time with INR 300": for people without a plan. Pays once, then
+ * "Generate One Time with INR 500": for people without a plan. Pays once, then
  * returns to the Content Calendar where the current week's content can be
  * generated one time (no autoposting).
  */
@@ -113,10 +113,56 @@ export function OneTimeGenerate() {
   );
 }
 
+/**
+ * Sidebar version: an "or" divider plus "Generate One Time with INR 500", shown under
+ * "Choose a plan" for people without a running plan. Same payment flow as everywhere else.
+ */
+export function SidebarOneTimeButton() {
+  const { pay, busy } = useOneTimePayment();
+  const { data: status } = useQuery({
+    queryKey: ["plan-status"],
+    queryFn: () => getPlanStatus(),
+  });
+
+  if (!status) return null;
+  const hasPlan = status.isRoot || status.state === "active" || status.state === "expiring";
+  if (hasPlan) return null;
+  const passReady = Boolean(status.oneTime && !status.oneTime.used);
+
+  return (
+    <>
+      <div className="my-2 flex items-center gap-2 text-[10px] font-medium uppercase tracking-wider text-muted-foreground">
+        <span className="h-px flex-1 bg-border" />
+        or
+        <span className="h-px flex-1 bg-border" />
+      </div>
+      {passReady ? (
+        <Button size="sm" className="h-auto w-full whitespace-normal py-2" asChild>
+          <Link to="/calendar">Go to Content Calendar</Link>
+        </Button>
+      ) : (
+        <Button
+          size="sm"
+          className="h-auto w-full whitespace-normal py-2"
+          onClick={pay}
+          disabled={busy}
+        >
+          {busy ? (
+            <Loader2 className="mr-2 h-4 w-4 shrink-0 animate-spin" />
+          ) : (
+            <Sparkles className="mr-2 h-4 w-4 shrink-0" />
+          )}
+          Generate One Time with {formatINR(ONE_TIME_PRICE_INR)}
+        </Button>
+      )}
+    </>
+  );
+}
+
 const ONE_TIME_FLAG = "loviza_onetime";
 
 /**
- * "Generate One Time with INR 300" for the public Pricing page, shown beside
+ * "Generate One Time with INR 500" for the public Pricing page, shown beside
  * "Pick your plan". Signed-out visitors are sent to sign in first and the
  * payment then starts by itself when they come back (no query string is put in
  * the sign-in redirect). A visit to /pricing?onetime=1 (from the landing page)

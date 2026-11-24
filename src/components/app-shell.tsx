@@ -22,6 +22,7 @@ import { planById } from "@/lib/plans";
 import { AUTOPOST_CONSENT_TEXT, isAutopostOn } from "@/lib/autopost";
 import { recordAutopostConsent } from "@/lib/autopost-consent.functions";
 import { AgencySidebar } from "@/components/agency-sidebar";
+import { SidebarOneTimeButton } from "@/components/one-time-generate";
 import {
   agencyPlanFor,
   resolveActiveBrand,
@@ -384,7 +385,11 @@ export function AppShell({ children }: { children: ReactNode }) {
             <Button size="sm" variant="outline" className="mt-3 w-full" asChild>
               <Link to="/pricing">{activePlan ? "Upgrade" : "Choose a plan"}</Link>
             </Button>
+            {!activePlan && <SidebarOneTimeButton />}
           </div>
+          <Button size="sm" variant="outline" className="mt-3 w-full" asChild>
+            <Link to="/referrals">Refer &amp; SAVE 20%</Link>
+          </Button>
           </>
           )}
         </aside>

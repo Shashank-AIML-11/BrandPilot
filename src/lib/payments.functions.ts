@@ -257,14 +257,14 @@ export const getPlanStatus = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .handler(async ({ context }): Promise<PlanStatus> => {
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
-    const { isRootEmail } = await import("@/lib/root-email");
+    const { ROOT_EMAIL } = await import("@/lib/generation-entitlements");
 
     const { data: profile } = await supabaseAdmin
       .from("profiles")
       .select("email")
       .eq("id", context.userId)
       .maybeSingle();
-    const isRoot = isRootEmail(profile?.email);
+    const isRoot = profile?.email?.trim().toLowerCase() === ROOT_EMAIL;
 
     const { activeOneTimePass } = await import("@/lib/generation-entitlements");
     const pass = await activeOneTimePass(supabaseAdmin, context.userId);
@@ -272,7 +272,7 @@ export const getPlanStatus = createServerFn({ method: "POST" })
 
     const { data: sub, error } = await supabaseAdmin
       .from("subscriptions")
-      .select("id, plan, status, current_period_end, razorpay_subscription_id")
+      .select("id, plan, status, current_period_end, razorpay_subscription_id, auto_renew")
       .eq("user_id", context.userId)
       .in("status", ["active", "expired"])
       .order("created_at", { ascending: false })
@@ -285,7 +285,10 @@ export const getPlanStatus = createServerFn({ method: "POST" })
     if (!plan) return { ...NO_PLAN, isRoot, oneTime };
 
     const now = new Date();
-    const grace = sub.razorpay_subscription_id ? LEGACY_AUTOPAY_GRACE_DAYS : 0;
+    const grace =
+      sub.razorpay_subscription_id || (sub as { auto_renew?: boolean | null }).auto_renew
+        ? LEGACY_AUTOPAY_GRACE_DAYS
+        : 0;
     const lapsed = sub.status === "expired" || !isPeriodActive(sub.current_period_end, now, grace);
 
     if (lapsed && sub.status === "active") {

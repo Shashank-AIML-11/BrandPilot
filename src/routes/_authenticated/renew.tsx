@@ -13,6 +13,7 @@ import {
   type BillingCycle,
 } from "@/lib/plans";
 import { BillingToggle } from "@/components/billing-toggle";
+import { AutoRenewToggle } from "@/components/autorenew-toggle";
 import { formatIstDate, formatIstDateTime, nextPeriodEnd } from "@/lib/plan-access";
 import { confirmPlanPayment, createPlanOrder, getPlanStatus } from "@/lib/payments.functions";
 import { loadRazorpayScript } from "@/lib/payments/load-razorpay-script";
@@ -202,6 +203,8 @@ function RenewPage() {
           Card, UPI, netbanking and wallets via Razorpay. Your card details never touch our servers.
         </p>
       </section>
+
+      <AutoRenewToggle planId={plan.id} cycle={cycle} periodEnd={status.periodEnd} />
 
       <p className="text-sm text-muted-foreground">
         Want a different plan?{" "}

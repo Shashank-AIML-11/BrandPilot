@@ -128,6 +128,80 @@ export async function createSubscription(params: {
   });
 }
 
+/**
+ * Razorpay plan id for an auto-renewing subscription. Monthly plans keep the
+ * original variable names; annual plans use a "_ANNUAL" suffix:
+ *   RAZORPAY_PLAN_STARTER / _GROWTH / _SCALE            (billed every month)
+ *   RAZORPAY_PLAN_STARTER_ANNUAL / _GROWTH_ANNUAL / _SCALE_ANNUAL  (billed every year)
+ * Create them once per Razorpay mode (Test and Live) with scripts/create-razorpay-plans.mjs.
+ */
+export function autorenewPlanId(planId: PlanId, cycle: "monthly" | "annual"): string {
+  const base = `RAZORPAY_PLAN_${planId.toUpperCase()}`;
+  const value = process.env[cycle === "annual" ? `${base}_ANNUAL` : base];
+  if (!value) {
+    throw new Error(
+      `Auto-renew is not set up for the ${planId} ${cycle} plan (missing ${cycle === "annual" ? `${base}_ANNUAL` : base}).`,
+    );
+  }
+  return value;
+}
+
+export interface AutorenewSubscription {
+  id: string;
+  status: string;
+  current_start?: number | null;
+  current_end?: number | null;
+  charge_at?: number | null;
+}
+
+/**
+ * Starts an auto-renewing Razorpay subscription. With startAt (unix seconds) the
+ * customer only authorises the mandate now and the first charge happens then;
+ * without it, the first charge happens immediately at checkout.
+ */
+export async function createAutorenewSubscription(params: {
+  planId: PlanId;
+  cycle: "monthly" | "annual";
+  userId: string;
+  startAt?: number;
+}): Promise<AutorenewSubscription> {
+  return razorpayFetch<AutorenewSubscription>("/subscriptions", {
+    method: "POST",
+    body: JSON.stringify({
+      plan_id: autorenewPlanId(params.planId, params.cycle),
+      // Razorpay needs a charge count; this is "until cancelled" in practice.
+      total_count: params.cycle === "annual" ? 10 : 120,
+      customer_notify: 1,
+      ...(params.startAt ? { start_at: params.startAt } : {}),
+      notes: { userId: params.userId, planId: params.planId, billingCycle: params.cycle },
+    }),
+  });
+}
+
+export async function fetchRazorpaySubscription(id: string): Promise<AutorenewSubscription> {
+  return razorpayFetch<AutorenewSubscription>(`/subscriptions/${id}`);
+}
+
+/**
+ * Stops future charges. An active subscription is cancelled at the end of the
+ * current Razorpay cycle; one that has not started charging yet is cancelled now.
+ */
+export async function cancelAutorenewSubscription(id: string, active: boolean): Promise<void> {
+  try {
+    await razorpayFetch(`/subscriptions/${id}/cancel`, {
+      method: "POST",
+      body: JSON.stringify({ cancel_at_cycle_end: active ? 1 : 0 }),
+    });
+  } catch (err) {
+    if (!active) throw err;
+    // Some states do not accept "at cycle end"; stop it right away instead.
+    await razorpayFetch(`/subscriptions/${id}/cancel`, {
+      method: "POST",
+      body: JSON.stringify({ cancel_at_cycle_end: 0 }),
+    });
+  }
+}
+
 interface RazorpayOrder {
   id: string;
   amount: number;

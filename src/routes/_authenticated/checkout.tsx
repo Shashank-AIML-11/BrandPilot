@@ -26,6 +26,9 @@ import {
   REF_STORAGE_KEY,
 } from "@/lib/referrals.shared";
 import { formatIstDate } from "@/lib/plan-access";
+import { Switch } from "@/components/ui/switch";
+import { runAutorenewCheckout } from "@/lib/payments/autorenew-checkout";
+import { AUTODEBIT_LIMIT_INR } from "@/components/autorenew-toggle";
 import { loadRazorpayScript } from "@/lib/payments/load-razorpay-script";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -59,6 +62,8 @@ function CheckoutPage() {
   const queryClient = useQueryClient();
 
   const [busy, setBusy] = useState(false);
+  // Auto-renew: approve UPI AutoPay / a card mandate once instead of paying one period at a time.
+  const [autoRenew, setAutoRenew] = useState(false);
   const [cycle, setCycle] = useState<BillingCycle>(cycleParam);
   useEffect(() => setCycle(cycleParam), [cycleParam]);
 
@@ -181,6 +186,23 @@ function CheckoutPage() {
     if (!plan) return;
     setBusy(true);
     try {
+      // A referral discount applies to a one-time payment only, so auto-renew is skipped when one is used.
+      if (autoRenew && !referralCheck?.ok) {
+        const out = await runAutorenewCheckout(plan.id, cycle);
+        if (out) {
+          dropReferral();
+          queryClient.invalidateQueries();
+          toast.success(
+            out.scheduled && out.firstChargeAt
+              ? `Auto-renew is ON. The first automatic charge is on ${formatIstDate(out.firstChargeAt)}.`
+              : `${out.planName} plan activated${out.periodEnd ? ` until ${formatIstDate(out.periodEnd)}` : ""}, renewing automatically.`,
+          );
+          navigate({ to: "/plan" });
+        }
+        setBusy(false);
+        return;
+      }
+
       await loadRazorpayScript();
 
       const order = await createPlanOrder({
@@ -447,6 +469,30 @@ function CheckoutPage() {
                   )}
                 </>
               )}
+            </div>
+          )}
+          {plan && (
+            <div className="mt-5 flex items-start justify-between gap-3 rounded-xl border border-border p-3">
+              <div className="space-y-1 text-sm">
+                <p className="font-medium">Auto-renew</p>
+                <p className="text-xs text-muted-foreground">
+                  {referralCheck?.ok
+                    ? "Not available together with a referral code."
+                    : `Approve once with UPI AutoPay or your card and ${plan.name} renews by itself every ${cycle === "annual" ? "year" : "month"}. Turn it off any time.`}
+                </p>
+                {autoRenew && !referralCheck?.ok && totalInr > AUTODEBIT_LIMIT_INR && (
+                  <p className="text-xs text-muted-foreground">
+                    Charges above {formatINR(AUTODEBIT_LIMIT_INR)} may need your approval in your UPI or
+                    bank app each time.
+                  </p>
+                )}
+              </div>
+              <Switch
+                checked={autoRenew && !referralCheck?.ok}
+                disabled={busy || Boolean(referralCheck?.ok)}
+                onCheckedChange={setAutoRenew}
+                aria-label="Auto-renew"
+              />
             </div>
           )}
           <Label htmlFor="submit" className="sr-only">

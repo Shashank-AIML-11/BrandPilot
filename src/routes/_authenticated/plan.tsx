@@ -13,6 +13,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { OneTimeGenerate } from "@/components/one-time-generate";
+import { AutoRenewToggle } from "@/components/autorenew-toggle";
 
 export const Route = createFileRoute("/_authenticated/plan")({
   head: () => ({
@@ -174,6 +175,14 @@ function PlanPage() {
           </Button>
           <OneTimeGenerate />
         </div>
+      )}
+
+      {current && activeSub && (
+        <AutoRenewToggle
+          planId={current.id}
+          cycle={isAnnual ? "annual" : "monthly"}
+          periodEnd={activeSub.current_period_end}
+        />
       )}
 
       <div className="surface p-6">

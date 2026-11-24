@@ -1,7 +1,7 @@
 import { useSyncExternalStore } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
-import { ROOT_EMAIL } from "@/lib/generation-entitlements";
+import { isRootEmail } from "@/lib/root-email";
 import { planById, type Plan } from "@/lib/plans";
 
 /** Agency view (Scale plan): brand list, active-brand store and plan check. */
@@ -20,7 +20,7 @@ type MeLike =
  * server applies in getGenerationEntitlement().
  */
 export function agencyPlanFor(me: MeLike): Plan | undefined {
-  if (me?.profile?.email?.trim().toLowerCase() === ROOT_EMAIL) return planById("scale");
+  if (isRootEmail(me?.profile?.email)) return planById("scale");
   const plan = planById(me?.activeSubscription?.plan);
   return plan?.id === "scale" ? plan : undefined;
 }

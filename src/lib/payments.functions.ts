@@ -257,14 +257,14 @@ export const getPlanStatus = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .handler(async ({ context }): Promise<PlanStatus> => {
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
-    const { ROOT_EMAIL } = await import("@/lib/generation-entitlements");
+    const { isRootEmail } = await import("@/lib/root-email");
 
     const { data: profile } = await supabaseAdmin
       .from("profiles")
       .select("email")
       .eq("id", context.userId)
       .maybeSingle();
-    const isRoot = profile?.email?.trim().toLowerCase() === ROOT_EMAIL;
+    const isRoot = isRootEmail(profile?.email);
 
     const { activeOneTimePass } = await import("@/lib/generation-entitlements");
     const pass = await activeOneTimePass(supabaseAdmin, context.userId);

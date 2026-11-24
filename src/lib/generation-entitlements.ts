@@ -3,7 +3,9 @@ import type { Database } from "@/integrations/supabase/types";
 import { planById, type Plan } from "@/lib/plans";
 import { isPeriodActive, LEGACY_AUTOPAY_GRACE_DAYS } from "@/lib/plan-access";
 
-export const ROOT_EMAIL = "shashank.bawane@gmail.com";
+import { ROOT_EMAIL, isRootEmail } from "@/lib/root-email";
+
+export { ROOT_EMAIL, isRootEmail };
 
 export interface GenerationEntitlement {
   plan: Plan;
@@ -70,7 +72,7 @@ export async function getGenerationEntitlement(
     .maybeSingle();
   if (profileError) throw new Error(profileError.message);
 
-  if (profile?.email.trim().toLowerCase() === ROOT_EMAIL) {
+  if (isRootEmail(profile?.email)) {
     const plan = planById("scale");
     if (!plan) throw new Error("Scale plan configuration is missing.");
     return { plan, isRoot: true };
@@ -155,7 +157,7 @@ export async function usersWithAccess(
     if (rowIsCurrent(row, now)) allowed.add(row.user_id);
   }
   for (const p of profiles ?? []) {
-    if (p.email?.trim().toLowerCase() === ROOT_EMAIL) allowed.add(p.id);
+    if (isRootEmail(p.email)) allowed.add(p.id);
   }
   return allowed;
 }

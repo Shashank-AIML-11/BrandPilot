@@ -39,4 +39,4 @@ export function initials(user: User | null, profile?: AppProfile | null) {
     .join("");
 }
 
-export const ROOT_EMAIL = "shashank.bawane@gmail.com";
+export { ROOT_EMAIL, isRootEmail } from "@/lib/root-email";

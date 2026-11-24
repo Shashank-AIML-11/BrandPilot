@@ -1,0 +1,389 @@
+diff --git a/.env.example b/.env.example
+index a26b4ef..7d5d568 100644
+--- a/.env.example
++++ b/.env.example
+@@ -1,27 +1,70 @@
+-# Server-only social publishing credentials. Do not commit real values.
+-# In production, add these in your hosting provider's encrypted environment
+-# settings, then redeploy.
++# Copy to .env for local development. Never commit real values.
++# In production/staging add these in your host's encrypted environment settings, then redeploy.
+ 
+-# Required to start and secure all OAuth connections.
+-OAUTH_STATE_SECRET=
+-
+-# Required for LinkedIn member publishing.
+-LINKEDIN_CLIENT_ID=
+-LINKEDIN_CLIENT_SECRET=
++# ── Owner account ─────────────────────────────────────────────
++# Email of the owner/root account (gets the Scale plan + Admin Portal bootstrap).
++# Set BOTH to the same value: ROOT_EMAIL for the server, VITE_ROOT_EMAIL for the browser build.
++# If left empty, no account is root by email (use the Admin Portal / user_roles instead).
++ROOT_EMAIL=
++VITE_ROOT_EMAIL=
+ 
+-# Optional: change only when LinkedIn announces a newer supported REST version.
+-LINKEDIN_VERSION=202606
++# ── Supabase ──────────────────────────────────────────────────
++SUPABASE_URL=
++SUPABASE_PUBLISHABLE_KEY=
++SUPABASE_SERVICE_ROLE_KEY=
++VITE_SUPABASE_URL=
++VITE_SUPABASE_PUBLISHABLE_KEY=
++VITE_SUPABASE_PROJECT_ID=
++# VITE_SUPABASE_ANON_KEY=   (legacy name, only if still used in your build)
+ 
++# ── App ───────────────────────────────────────────────────────
++PUBLIC_APP_URL=
++# VITE_APP_ENV=
++# VITE_LANDING_URL=
++# Secret that protects the cron endpoints (/api/public/hooks/*).
++CRON_SECRET=
++# Set automatically by Vercel. Auto-generation only runs when this is "production".
++# VERCEL_ENV=
+ 
++# ── AI text ───────────────────────────────────────────────────
++GROQ_API_KEY=
++# Optional: weekly strategy call
++# STRATEGY_MODEL=openai/gpt-oss-120b
++# STRATEGY_REASONING=medium
++# Legacy Gemini generator (src/lib/content/generateContent.ts)
++LOVIZA_GEMINI_API_KEY=
+ 
+-# GEMINI_API_KEY: Required for Gemini AI API calls.
+-# AI Studio automatically injects this at runtime from user secrets.
+-# Users configure this via the Secrets panel in the AI Studio UI.
+-GEMINI_API_KEY="MY_GEMINI_API_KEY"
++# ── AI images / video ─────────────────────────────────────────
++# "pollinations" (free, default) or "fal"
++IMAGE_PROVIDER=pollinations
++FAL_KEY=
++# FAL_MODEL=
++# FAL_VIDEO_MODEL=
++# VIDEO_PROVIDER=
++# VIDEO_GENERATION_ENABLED=false
++SHOTSTACK_API_KEY=
++# SHOTSTACK_ENV=
++# SHOTSTACK_VOICE=
++# POSTER_COMPOSER=on
++# CAROUSEL_ENABLED=false
+ 
+-# APP_URL: The URL where this applet is hosted.
+-# AI Studio automatically injects this at runtime with the Cloud Run service URL.
+-# Used for self-referential links, OAuth callbacks, and API endpoints.
+-APP_URL="MY_APP_URL"
++# ── Payments (Razorpay) ───────────────────────────────────────
++RAZORPAY_KEY_ID=
++RAZORPAY_KEY_SECRET=
++RAZORPAY_WEBHOOK_SECRET=
++RAZORPAY_PLAN_STARTER=
++RAZORPAY_PLAN_GROWTH=
++RAZORPAY_PLAN_SCALE=
+ 
++# ── Email ─────────────────────────────────────────────────────
++RESEND_API_KEY=
++EMAIL_FROM=
+ 
++# ── Social publishing (server-only) ───────────────────────────
++# Required to start and secure all OAuth connections.
++OAUTH_STATE_SECRET=
++# LinkedIn member publishing.
++LINKEDIN_CLIENT_ID=
++LINKEDIN_CLIENT_SECRET=
++# Change only when LinkedIn announces a newer supported REST version.
++LINKEDIN_VERSION=202606
+diff --git a/README.md b/README.md
+index b6a9e00..a908579 100644
+Binary files a/README.md and b/README.md differ
+diff --git a/package.json b/package.json
+index 46b12a9..194e7bc 100644
+--- a/package.json
++++ b/package.json
+@@ -9,6 +9,7 @@
+     "build:dev": "vite build --mode development",
+     "preview": "vite preview",
+     "lint": "eslint .",
++    "test": "vitest run",
+     "format": "prettier --write ."
+   },
+   "dependencies": {
+diff --git a/src/lib/admin.functions.ts b/src/lib/admin.functions.ts
+index 0e5f222..07b275c 100644
+--- a/src/lib/admin.functions.ts
++++ b/src/lib/admin.functions.ts
+@@ -4,7 +4,7 @@ import { z } from "zod";
+ import type { SupabaseClient } from "@supabase/supabase-js";
+ import type { Database } from "@/integrations/supabase/types";
+ 
+-const PRIMARY_ROOT_EMAIL = "shashank.bawane@gmail.com";
++import { ROOT_EMAIL as PRIMARY_ROOT_EMAIL, isRootEmail } from "@/lib/root-email";
+ 
+ type Ctx = { supabase: SupabaseClient<Database>; userId: string };
+ 
+@@ -24,7 +24,7 @@ async function getAccess(context: Ctx) {
+   if (roles.length === 0) {
+     const { data: authUser } = await context.supabase.auth.getUser();
+     const email = authUser.user?.email?.toLowerCase();
+-    if (email === PRIMARY_ROOT_EMAIL) {
++    if (isRootEmail(email)) {
+       const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+       await supabaseAdmin
+         .from("user_roles")
+@@ -292,7 +292,7 @@ export const revokeRole = createServerFn({ method: "POST" })
+ 
+     if (row?.role === "root") {
+       if (!access.isRoot) throw new Error("Only root can revoke root access");
+-      if (row.email.toLowerCase() === PRIMARY_ROOT_EMAIL) {
++      if (isRootEmail(row.email)) {
+         throw new Error("The primary root account cannot be demoted");
+       }
+     }
+@@ -316,7 +316,7 @@ export const deleteUser = createServerFn({ method: "POST" })
+       .eq("id", data.userId)
+       .maybeSingle();
+ 
+-    if (profile?.email.toLowerCase() === PRIMARY_ROOT_EMAIL) {
++    if (isRootEmail(profile?.email)) {
+       throw new Error("The primary root account cannot be removed");
+     }
+ 
+diff --git a/src/lib/agency.ts b/src/lib/agency.ts
+index 9feddaa..84fefec 100644
+--- a/src/lib/agency.ts
++++ b/src/lib/agency.ts
+@@ -1,7 +1,7 @@
+ import { useSyncExternalStore } from "react";
+ import { useQuery } from "@tanstack/react-query";
+ import { supabase } from "@/integrations/supabase/client";
+-import { ROOT_EMAIL } from "@/lib/generation-entitlements";
++import { isRootEmail } from "@/lib/root-email";
+ import { planById, type Plan } from "@/lib/plans";
+ 
+ /** Agency view (Scale plan): brand list, active-brand store and plan check. */
+@@ -20,7 +20,7 @@ type MeLike =
+  * server applies in getGenerationEntitlement().
+  */
+ export function agencyPlanFor(me: MeLike): Plan | undefined {
+-  if (me?.profile?.email?.trim().toLowerCase() === ROOT_EMAIL) return planById("scale");
++  if (isRootEmail(me?.profile?.email)) return planById("scale");
+   const plan = planById(me?.activeSubscription?.plan);
+   return plan?.id === "scale" ? plan : undefined;
+ }
+diff --git a/src/lib/auto-schedule.server.ts b/src/lib/auto-schedule.server.ts
+index 3621daa..caedc06 100644
+--- a/src/lib/auto-schedule.server.ts
++++ b/src/lib/auto-schedule.server.ts
+@@ -82,7 +82,9 @@ export async function runAutoGeneration(admin: Admin, now = new Date()) {
+   const { data: subs } = await admin.from("subscriptions").select("user_id").eq("status", "active");
+   const userIds = new Set<string>((subs ?? []).map((r: { user_id: string }) => r.user_id));
+   const { ROOT_EMAIL } = await import("@/lib/generation-entitlements");
+-  const { data: root } = await admin.from("profiles").select("id, created_at").eq("email", ROOT_EMAIL).maybeSingle();
++  const { data: root } = ROOT_EMAIL
++    ? await admin.from("profiles").select("id, created_at").eq("email", ROOT_EMAIL).maybeSingle()
++    : { data: null };
+   if (root?.id) userIds.add(root.id);
+ 
+   const result = { checked: 0, queued: 0, learned: 0, skipped: 0, errors: 0 };
+diff --git a/src/lib/generation-entitlements.ts b/src/lib/generation-entitlements.ts
+index 9fc30d9..90510af 100644
+--- a/src/lib/generation-entitlements.ts
++++ b/src/lib/generation-entitlements.ts
+@@ -3,7 +3,9 @@ import type { Database } from "@/integrations/supabase/types";
+ import { planById, type Plan } from "@/lib/plans";
+ import { isPeriodActive, LEGACY_AUTOPAY_GRACE_DAYS } from "@/lib/plan-access";
+ 
+-export const ROOT_EMAIL = "shashank.bawane@gmail.com";
++import { ROOT_EMAIL, isRootEmail } from "@/lib/root-email";
++
++export { ROOT_EMAIL, isRootEmail };
+ 
+ export interface GenerationEntitlement {
+   plan: Plan;
+@@ -70,7 +72,7 @@ export async function getGenerationEntitlement(
+     .maybeSingle();
+   if (profileError) throw new Error(profileError.message);
+ 
+-  if (profile?.email.trim().toLowerCase() === ROOT_EMAIL) {
++  if (isRootEmail(profile?.email)) {
+     const plan = planById("scale");
+     if (!plan) throw new Error("Scale plan configuration is missing.");
+     return { plan, isRoot: true };
+@@ -155,7 +157,7 @@ export async function usersWithAccess(
+     if (rowIsCurrent(row, now)) allowed.add(row.user_id);
+   }
+   for (const p of profiles ?? []) {
+-    if (p.email?.trim().toLowerCase() === ROOT_EMAIL) allowed.add(p.id);
++    if (isRootEmail(p.email)) allowed.add(p.id);
+   }
+   return allowed;
+ }
+diff --git a/src/lib/payments.functions.ts b/src/lib/payments.functions.ts
+index 352a38e..615a50b 100644
+--- a/src/lib/payments.functions.ts
++++ b/src/lib/payments.functions.ts
+@@ -257,14 +257,14 @@ export const getPlanStatus = createServerFn({ method: "POST" })
+   .middleware([requireSupabaseAuth])
+   .handler(async ({ context }): Promise<PlanStatus> => {
+     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+-    const { ROOT_EMAIL } = await import("@/lib/generation-entitlements");
++    const { isRootEmail } = await import("@/lib/root-email");
+ 
+     const { data: profile } = await supabaseAdmin
+       .from("profiles")
+       .select("email")
+       .eq("id", context.userId)
+       .maybeSingle();
+-    const isRoot = profile?.email?.trim().toLowerCase() === ROOT_EMAIL;
++    const isRoot = isRootEmail(profile?.email);
+ 
+     const { activeOneTimePass } = await import("@/lib/generation-entitlements");
+     const pass = await activeOneTimePass(supabaseAdmin, context.userId);
+diff --git a/src/lib/plans.ts b/src/lib/plans.ts
+index 38f0fb0..8181c13 100644
+--- a/src/lib/plans.ts
++++ b/src/lib/plans.ts
+@@ -1,7 +1,9 @@
+ export type PlanId = "starter" | "growth" | "scale";
+ 
+ /**
+- * One monthly allowance per content type. Kept as a plain literal type
++ * One monthly allowance per content type. Every plan includes 4 of each of the 11
++ * formats = 44 pieces a month (product decision), so plans differ in brands, channels,
++ * auto-posting, analytics and support, not in content volume. Kept as a plain literal type
+  * (not imported from content.server.ts) because plans.ts is imported
+  * directly by client components (checkout.tsx, pricing.tsx) — importing
+  * a .server.ts file from here would leak server-only code into the
+@@ -55,7 +57,7 @@ export const PLANS: Plan[] = [
+       "1 brand profile",
+       "44 pieces of content per month",
+       "Blog, posts, reels, video posts, shorts, carousels",
+-      "1 Reel, Short, TikTok & product video per month",
++      "4 of every format each month, incl. Reels, Shorts, TikTok & product videos",
+       "2 social channels",
+       "Performance analytics",
+       "Email support",
+@@ -64,14 +66,14 @@ export const PLANS: Plan[] = [
+       blog: 4,
+       linkedin_post: 4,
+       instagram_post: 4,
+-      facebook_post: 2,
+-      twitter_post: 2,
+-      pinterest: 2,
+-      carousel: 1,
+-      instagram_reel: 1,
+-      youtube_short: 1,
+-      tiktok_video: 1,
+-      product_service_video: 1,
++      facebook_post: 4,
++      twitter_post: 4,
++      pinterest: 4,
++      carousel: 4,
++      instagram_reel: 4,
++      youtube_short: 4,
++      tiktok_video: 4,
++      product_service_video: 4,
+     },
+     brandProfileLimit: 1,
+     channelLimit: 2,
+@@ -102,11 +104,11 @@ export const PLANS: Plan[] = [
+       facebook_post: 4,
+       twitter_post: 4,
+       pinterest: 4,
+-      carousel: 2,
+-      instagram_reel: 2,
+-      youtube_short: 2,
+-      tiktok_video: 2,
+-      product_service_video: 2,
++      carousel: 4,
++      instagram_reel: 4,
++      youtube_short: 4,
++      tiktok_video: 4,
++      product_service_video: 4,
+     },
+     brandProfileLimit: 2,
+     channelLimit: null,
+@@ -126,7 +128,6 @@ export const PLANS: Plan[] = [
+       "Blog, posts, reels, video posts, shorts, carousels",
+       "Auto-schedule & auto-posting",
+       "11 social channels",
+-      "Google Drive sync",
+       "Advanced performance analytics",
+       "Dedicated support manager",
+     ],
+@@ -139,11 +140,11 @@ export const PLANS: Plan[] = [
+       facebook_post: 4,
+       twitter_post: 4,
+       pinterest: 4,
+-      carousel: 2,
+-      instagram_reel: 2,
+-      youtube_short: 2,
+-      tiktok_video: 2,
+-      product_service_video: 2,
++      carousel: 4,
++      instagram_reel: 4,
++      youtube_short: 4,
++      tiktok_video: 4,
++      product_service_video: 4,
+     },
+     brandProfileLimit: 20,
+     channelLimit: null,
+diff --git a/src/lib/referrals.functions.ts b/src/lib/referrals.functions.ts
+index 463aa14..c3c119a 100644
+--- a/src/lib/referrals.functions.ts
++++ b/src/lib/referrals.functions.ts
+@@ -142,14 +142,14 @@ async function assertRoot(context: {
+   >;
+   userId: string;
+ }) {
+-  const { ROOT_EMAIL } = await import("@/lib/generation-entitlements");
++  const { isRootEmail } = await import("@/lib/root-email");
+   const { data: roles } = await context.supabase
+     .from("user_roles")
+     .select("role")
+     .eq("user_id", context.userId);
+   if ((roles ?? []).some((r) => r.role === "root")) return;
+   const { data } = await context.supabase.auth.getUser();
+-  if (data.user?.email?.toLowerCase() === ROOT_EMAIL) return;
++  if (isRootEmail(data.user?.email)) return;
+   throw new Error("Root access required");
+ }
+ 
+diff --git a/src/lib/root-email.ts b/src/lib/root-email.ts
+new file mode 100644
+index 0000000..9192b01
+--- /dev/null
++++ b/src/lib/root-email.ts
+@@ -0,0 +1,23 @@
++/**
++ * Owner (root) account email, read from the environment instead of being
++ * hard-coded in the repository.
++ *
++ *   Server:  ROOT_EMAIL
++ *   Browser: VITE_ROOT_EMAIL   (Vite inlines it at build time, so set both to the same value)
++ *
++ * If neither is set, NO account is treated as root by email. Root access can
++ * still be granted through the `user_roles` table in the Admin Portal.
++ *
++ * Safe to import from client and server code (no server-only imports).
++ */
++const fromServer = typeof process !== "undefined" ? process.env?.["ROOT_EMAIL"] : undefined;
++const fromClient = (import.meta as unknown as { env?: Record<string, string | undefined> }).env?.[
++  "VITE_ROOT_EMAIL"
++];
++
++export const ROOT_EMAIL: string = (fromServer || fromClient || "").trim().toLowerCase();
++
++/** True only when a root email is configured AND this email matches it. */
++export function isRootEmail(email: string | null | undefined): boolean {
++  return ROOT_EMAIL !== "" && (email ?? "").trim().toLowerCase() === ROOT_EMAIL;
++}
+diff --git a/src/lib/session.ts b/src/lib/session.ts
+index 5b8dab2..9995b4c 100644
+--- a/src/lib/session.ts
++++ b/src/lib/session.ts
+@@ -39,4 +39,4 @@ export function initials(user: User | null, profile?: AppProfile | null) {
+     .join("");
+ }
+ 
+-export const ROOT_EMAIL = "shashank.bawane@gmail.com";
++export { ROOT_EMAIL, isRootEmail } from "@/lib/root-email";

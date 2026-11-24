@@ -601,9 +601,27 @@ export async function publishToChannel(
     return { channel, ok: false, error: `${channel} is not connected — connect it in Brand Profile.` };
   }
 
+  const reconnectMsg = `${channel} login has expired. Open Brand Profile, disconnect ${channel}, connect it again, then post this card again.`;
+  const markNeedsReconnect = async () => {
+    let q = admin.from("channel_connections").update({ status: "needs_reconnect" } as never)
+      .eq("user_id", userId).eq("channel", channel);
+    if (brandId) q = q.eq("brand_id", brandId);
+    await q;
+  };
+  // Known to be expired already: do not call the network just to get a 401 back.
+  if (conn.expired) {
+    await markNeedsReconnect();
+    return { channel, ok: false, error: reconnectMsg };
+  }
+
   try {
     return await publisher(admin, conn, item);
   } catch (error) {
-    return { channel, ok: false, error: error instanceof Error ? error.message : "Unknown error" };
+    const message = error instanceof Error ? error.message : "Unknown error";
+    if (/\[401\]|EXPIRED_ACCESS_TOKEN|invalid[_ ]token|token.*expired/i.test(message)) {
+      await markNeedsReconnect();
+      return { channel, ok: false, error: reconnectMsg };
+    }
+    return { channel, ok: false, error: message };
   }
 }

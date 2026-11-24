@@ -3,13 +3,11 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { publishContentItem } from "@/lib/channels.functions";
 import { toast } from "sonner";
-import { CheckCircle2, Loader2, Send, Trash2 } from "lucide-react";
+import { CheckCircle2, Loader2, Send, Trash2, TriangleAlert } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { cachedMediaUrl, signedMediaUrl } from "@/lib/media";
-import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Switch } from "@/components/ui/switch";
 import { Progress } from "@/components/ui/progress";
 import {
   Dialog,
@@ -67,6 +65,11 @@ export interface ContentItem {
   enabled: boolean;
   reviewed_at?: string | null;
 }
+
+/** Title the queue writes on a slot the AI failed to fill. Such a card has nothing to post. */
+export const FAILED_PLACEHOLDER_TITLE = "Content generation failed";
+export const isFailedItem = (item: Pick<ContentItem, "status" | "title">) =>
+  item.status === "failed" || item.title === FAILED_PLACEHOLDER_TITLE;
 
 export const typeStyles: Record<string, string> = {
   blog: "bg-blog/15 text-blog border-blog/30",
@@ -143,38 +146,18 @@ export function ContentDetailDialog({
 
   const selected = item?.platforms ?? [];
 
-  const setPlatforms = useMutation({
-    mutationFn: async (platforms: string[]) => {
-      const { error } = await supabase
-        .from("content_items")
-        .update({ platforms })
-        .eq("id", item!.id);
-      if (error) throw error;
-    },
-    onSuccess: invalidate,
-    onError: () => toast.error("Could not update channels"),
-  });
-
-  const toggleChannel = (channel: string) => {
-    if (!configured(channel)) {
-      toast.error(
-        `${channel} is not configured — add your ${channel} handle/ID on the Brand Profile page first.`,
-      );
-      return;
-    }
-    const next = selected.includes(channel)
-      ? selected.filter((p) => p !== channel)
-      : [...selected, channel];
-    setPlatforms.mutate(next);
-  };
-
   const publish = useServerFn(publishContentItem);
 
   const post = useMutation({
     mutationFn: async () => {
-      const targets = selected.filter(configured);
-      if (targets.length === 0) throw new Error("No configured channel selected for this content");
-      return publish({ data: { itemId: item!.id, channels: targets } });
+      const allowed = CHANNELS_BY_TYPE[item!.type] ?? [];
+      // Channels picked for this card, else every channel the brand has set up for its format.
+      let targets = selected.filter((c) => allowed.includes(c) && configured(c));
+      if (targets.length === 0) targets = allowed.filter(configured);
+      if (targets.length === 0) {
+        throw new Error("No channel is set up for this content. Add your handles on the Brand Profile page first.");
+      }
+      return publish({ data: { itemId: item!.id, channels: targets, repost: item!.status === "posted" } });
     },
     onSuccess: ({ results }) => {
       const posted = results.filter((r) => r.ok && !r.manual).map((r) => r.channel);
@@ -190,6 +173,17 @@ export function ContentDetailDialog({
     onError: (e) => toast.error(e instanceof Error ? e.message : "Could not post"),
   });
 
+  const postNow = () => {
+    if (!item) return;
+    const again = item.status === "posted";
+    const ok = window.confirm(
+      again
+        ? `Post “${item.title}” again? It will be published again right now.`
+        : `Post “${item.title}” now? It will be published right now.`,
+    );
+    if (ok) post.mutate();
+  };
+
   const remove = useMutation({
     mutationFn: async () => {
       const { error } = await supabase.from("content_items").delete().eq("id", item!.id);
@@ -202,74 +196,55 @@ export function ContentDetailDialog({
     },
   });
 
-  const toggle = useMutation({
-    mutationFn: async (enabled: boolean) => {
-      const { error } = await supabase
-        .from("content_items")
-        .update({ enabled })
-        .eq("id", item!.id);
-      if (error) throw error;
-    },
-    onSuccess: invalidate,
-  });
-
   if (!item) return null;
 
   return (
     <Dialog open={Boolean(item)} onOpenChange={onOpenChange}>
-      <DialogContent className="max-h-[88vh] max-w-3xl overflow-y-auto">
-        <DialogHeader>
-          <div className="flex flex-wrap items-center gap-2">
-            <Badge variant="outline" className={typeStyles[item.type]}>
-              {item.type}
-            </Badge>
-            <span className="text-xs text-muted-foreground">
-              {item.scheduled_date} · {item.scheduled_time?.slice(0, 5) ?? "—"}
-            </span>
-            <Badge variant="secondary" className="capitalize">
-              {item.status}
-            </Badge>
+      <DialogContent className="flex max-h-[88vh] max-w-3xl flex-col gap-0 overflow-hidden p-0">
+        {/* Frozen header: stays in place while the content below scrolls. */}
+        <DialogHeader className="shrink-0 space-y-0 border-b border-border bg-background p-6 pr-12">
+          <div className="flex items-start justify-between gap-3">
+            <div className="flex flex-wrap items-center gap-2">
+              <Badge variant="outline" className={typeStyles[item.type]}>
+                {item.type}
+              </Badge>
+              <span className="text-xs text-muted-foreground">
+                {item.scheduled_date} · {item.scheduled_time?.slice(0, 5) ?? "—"}
+              </span>
+              <Badge variant="secondary" className="capitalize">
+                {item.status}
+              </Badge>
+            </div>
+            <Button
+              size="sm"
+              className="shrink-0"
+              onClick={postNow}
+              disabled={post.isPending || isFailedItem(item)}
+              title={isFailedItem(item) ? "This card failed to generate" : item.status === "posted" ? "Post this card again" : "Post this card now"}
+            >
+              {post.isPending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Send className="mr-2 h-4 w-4" />}
+              Post Now
+            </Button>
           </div>
           <DialogTitle className="pt-2 text-xl">{item.title}</DialogTitle>
-          {item.summary && <DialogDescription>{item.summary}</DialogDescription>}
+          {item.summary && <DialogDescription className="pt-1.5">{item.summary}</DialogDescription>}
         </DialogHeader>
 
-        <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-border p-3">
-          <div className="flex flex-wrap gap-1.5">
-            {(CHANNELS_BY_TYPE[item.type] ?? []).map((p) => {
-              const ready = configured(p);
-              const on = ready && selected.includes(p);
-              return (
-                <button
-                  key={p}
-                  type="button"
-                  aria-pressed={on}
-                  onClick={() => toggleChannel(p)}
-                  disabled={setPlatforms.isPending}
-                  className={cn(
-                    "rounded-full border px-3 py-1 text-xs font-medium transition-colors",
-                    on
-                      ? "border-primary bg-primary text-primary-foreground"
-                      : ready
-                        ? "border-border bg-muted/40 text-muted-foreground hover:bg-muted"
-                        : "cursor-not-allowed border-dashed border-border bg-transparent text-muted-foreground/50",
-                  )}
-                  title={ready ? p : `${p} handle not configured in Brand Profile`}
-                >
-                  {p}
-                </button>
-              );
-            })}
+        <div className="min-h-0 flex-1 space-y-4 overflow-y-auto p-6">
+        {isFailedItem(item) && (
+          <div className="flex items-start gap-3 rounded-lg border border-destructive/40 bg-destructive/10 p-3 text-sm">
+            <TriangleAlert className="mt-0.5 h-4 w-4 shrink-0 text-destructive" />
+            <div className="flex-1">
+              <p className="font-medium text-destructive">This card failed to generate</p>
+              <p className="text-muted-foreground">
+                The AI did not return content for this slot, so there is nothing to post. Delete it, then generate again.
+              </p>
+            </div>
+            <Button size="sm" variant="outline" onClick={() => remove.mutate()} disabled={remove.isPending}>
+              <Trash2 className="mr-1.5 h-3.5 w-3.5" /> Delete
+            </Button>
           </div>
-          <label className="flex items-center gap-2 text-sm">
-            <Switch
-              checked={item.enabled}
-              onCheckedChange={(v) => toggle.mutate(v)}
-              aria-label="Enable content"
-            />
-            {item.enabled ? "Scheduled" : "Disabled"}
-          </label>
-        </div>
+        )}
 
         {VIDEO_TYPES.includes(item.type) && (
           <div className="space-y-3">
@@ -354,8 +329,7 @@ export function ContentDetailDialog({
           </div>
         )}
 
-        {/* Delete and Post now are intentionally not shown on opened content cards. */}
-        {onFinishReview && item.status !== "posted" && !item.reviewed_at ? (
+        {onFinishReview && item.status !== "posted" && !item.reviewed_at && !isFailedItem(item) ? (
           <div className="flex flex-wrap justify-end gap-2 pt-2">
             <Button onClick={() => onFinishReview(item)} disabled={finishing}>
               {finishing ? (
@@ -367,6 +341,7 @@ export function ContentDetailDialog({
             </Button>
           </div>
         ) : null}
+        </div>
       </DialogContent>
     </Dialog>
   );

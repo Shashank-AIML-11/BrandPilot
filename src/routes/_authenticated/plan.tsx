@@ -189,7 +189,7 @@ function PlanPage() {
         <h2 className="text-sm font-semibold">Subscription history</h2>
         <ul className="mt-4 divide-y divide-border text-sm">
           {data?.subs.map((s) => (
-            <li key={s.id} className="flex items-center justify-between py-3">
+            <li key={s.id} className="flex flex-wrap items-center justify-between gap-x-4 gap-y-1 py-3">
               <div>
                 <p className="capitalize">
                   {s.plan} · {s.payment_method}

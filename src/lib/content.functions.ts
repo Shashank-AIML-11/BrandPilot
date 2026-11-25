@@ -104,6 +104,21 @@ export const generateWeek = createServerFn({
         brand.id,
       );
 
+    // Brand brain: the brand's playbook plus a per-piece plan (pillar, hook, template).
+    // Both fail soft, so generation works exactly as before if they are unavailable.
+    const { ensurePlaybook, playbookContext } = await import("@/lib/playbook.server");
+    const { planVariety, varietyContext, slotsFromQuotas } = await import("@/lib/variety.server");
+    const playbook = await ensurePlaybook(supabaseAdmin, brand as never);
+    const brainTypes = helpers.activeTypesForBatch(data.dates, quotaSchedule);
+    const brainSlots = slotsFromQuotas(data.dates, quotaSchedule, brainTypes);
+    const brainPlan = await planVariety(supabaseAdmin, {
+      userId: context.userId,
+      brandId: brand.id,
+      slots: brainSlots,
+      playbook,
+    });
+    const brainContext = playbookContext(playbook) + varietyContext(playbook, brainPlan, brainSlots);
+
     const result =
       await chatJSON<{
         days?: Array<
@@ -117,6 +132,7 @@ export const generateWeek = createServerFn({
           strategy,
           quotaSchedule,
           helpers.activeTypesForBatch(data.dates, quotaSchedule),
+          brainContext,
         ),
         helpers.buildWeekResponseSchema(
           helpers.activeTypesForBatch(data.dates, quotaSchedule),
@@ -150,6 +166,7 @@ export const generateWeek = createServerFn({
               autopost:
                 entitlement.plan
                   .autoPost,
+              styles: brainPlan,
             },
             quotaSchedule[
               date

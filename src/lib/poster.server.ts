@@ -159,6 +159,190 @@ function logoNode(brand: PosterBrand, height: number, textColor: string, chipBg?
   return h("div", { alignItems: "center", alignSelf: "flex-start", backgroundColor: chipBg, padding: `${height * 0.22}px ${height * 0.5}px`, borderRadius: 18 }, inner);
 }
 
+const strip = (t: string, re: RegExp) => t.replace(re, "").trim();
+
+/** Check mark drawn with borders (the font has no tick glyph). */
+function tick(size: number, color: string): Node {
+  return h("div", { width: size, height: size * 0.55, borderLeft: `${size * 0.16}px solid ${color}`, borderBottom: `${size * 0.16}px solid ${color}`, transform: "rotate(-45deg)", marginTop: -size * 0.12 });
+}
+
+function numberBadge(n: number, size: number, bg: string): Node {
+  return h("div", { width: size, height: size, borderRadius: 9999, backgroundColor: bg, color: onColor(bg), alignItems: "center", justifyContent: "center", fontSize: size * 0.5, fontWeight: 800, flexShrink: 0 }, String(n));
+}
+
+/** The newer templates. Returns null for ids it does not draw (the caller then uses the classic ones). */
+function buildTemplate(
+  id: string,
+  W: number,
+  H: number,
+  photo: string | null,
+  copy: PosterCopy,
+  brand: PosterBrand,
+): Node | null {
+  const primary = cleanColor(brand.colors?.primary, "#4f46e5");
+  const secondary = cleanColor(brand.colors?.secondary, "#0f172a");
+  const accent = cleanColor(brand.colors?.accent, "#f59e0b");
+  const pad = 72;
+  const inner = W - pad * 2;
+  const root = { width: W, height: H, fontFamily: "Poppins", position: "relative", overflow: "hidden", flexDirection: "column" } as const;
+  const pts = copy.points.length ? copy.points : copy.subline ? [copy.subline] : [];
+  const web = brand.website.replace(/^https?:\/\//i, "").replace(/\/.*$/, "");
+  const fade = (bg: string, a: number) =>
+    photo ? img(photo, { position: "absolute", top: 0, left: 0, width: W, height: H, objectFit: "cover", opacity: a }) : h("div", { position: "absolute", top: 0, left: 0, width: W, height: H, backgroundColor: bg });
+
+  switch (id) {
+    case "quote_card": {
+      const fg = "#ffffff";
+      return h("div", { ...root, backgroundColor: secondary, padding: pad },
+        photo ? img(photo, { position: "absolute", top: 0, left: 0, width: W, height: H, objectFit: "cover" }) : null,
+        h("div", { position: "absolute", top: 0, left: 0, width: W, height: H, backgroundColor: secondary, opacity: photo ? 0.84 : 0 }),
+        h("div", { position: "absolute", top: 0, left: 0, width: W, height: H, backgroundImage: `linear-gradient(160deg, ${primary}55, ${secondary}00)` }),
+        logoNode(brand, 58, "#0f172a", "#ffffffee"),
+        h("div", { flexGrow: 1, flexDirection: "column", justifyContent: "center" },
+          h("div", { fontSize: 300, fontWeight: 800, color: accent, lineHeight: 0.7, height: 150 }, "“"),
+          h("div", { fontSize: copy.headline.length > 70 ? 62 : 76, fontWeight: 800, color: fg, lineHeight: 1.18, letterSpacing: -1, maxWidth: inner }, copy.headline),
+          pts.length ? h("div", { marginTop: 44, fontSize: 30, fontWeight: 600, color: accent, maxWidth: inner }, pts.slice(0, 3).join("  ·  ")) : null),
+        h("div", { justifyContent: "space-between", alignItems: "center" },
+          pill(copy.cta, accent, 32),
+          h("div", { fontSize: 28, fontWeight: 600, color: fg, opacity: 0.8 }, web)));
+    }
+
+    case "tips_list": {
+      const rows = pts.slice(0, 3);
+      return h("div", { ...root, backgroundColor: "#f8fafc", padding: pad },
+        h("div", { position: "absolute", top: -W * 0.3, right: -W * 0.25, width: W * 0.8, height: W * 0.8, borderRadius: 9999, backgroundColor: primary, opacity: 0.1 }),
+        logoNode(brand, 58, secondary),
+        h("div", { marginTop: 40 }, headlineNode(copy.headline, 70, secondary, primary, inner)),
+        h("div", { flexGrow: 1, flexDirection: "column", justifyContent: "center" },
+          ...rows.map((t, i) =>
+            h("div", { alignItems: "center", backgroundColor: "#ffffff", borderRadius: 32, padding: 30, marginTop: 26, border: "2px solid #e2e8f0" },
+              numberBadge(i + 1, 84, primary),
+              h("div", { marginLeft: 30, fontSize: 40, fontWeight: 600, color: "#1e293b", lineHeight: 1.22, maxWidth: inner - 190 }, t)))),
+        h("div", { justifyContent: "space-between", alignItems: "center" }, pill(copy.cta, secondary, 32), h("div", { fontSize: 26, fontWeight: 600, color: "#64748b" }, web)));
+    }
+
+    case "stat_hero": {
+      const fg = onColor(primary);
+      const n = copy.headline.length;
+      const size = n <= 4 ? 360 : n <= 7 ? 250 : n <= 11 ? 170 : 110;
+      return h("div", { ...root, padding: pad, backgroundColor: primary },
+        photo ? img(photo, { position: "absolute", top: 0, left: 0, width: W, height: H, objectFit: "cover", opacity: 0.2 }) : null,
+        h("div", { position: "absolute", top: 0, left: 0, width: W, height: H, backgroundImage: `linear-gradient(180deg, ${primary}00, ${secondary}aa)` }),
+        logoNode(brand, 58, fg),
+        h("div", { flexGrow: 1, flexDirection: "column", justifyContent: "center" },
+          h("div", { fontSize: size, fontWeight: 800, color: fg, lineHeight: 1, letterSpacing: -6, flexWrap: "wrap", maxWidth: inner }, copy.headline),
+          h("div", { width: 160, height: 14, backgroundColor: accent, borderRadius: 8, marginTop: 36 }),
+          pointsNode(pts, 40, fg, accent, inner)),
+        h("div", { justifyContent: "space-between", alignItems: "center" }, pill(copy.cta, accent, 32), h("div", { fontSize: 26, fontWeight: 600, color: fg, opacity: 0.85 }, web)));
+    }
+
+    case "myth_fact": {
+      const myth = strip(pts[0] ?? "", /^myth\s*[:\-]\s*/i);
+      const fact = strip(pts[1] ?? "", /^fact\s*[:\-]\s*/i);
+      const proof = pts[2] ?? "";
+      if (!myth || !fact) return null;
+      const card = (label: string, color: string, text: string, size: number, strike: boolean) =>
+        h("div", { flexDirection: "column", backgroundColor: "#ffffff", borderRadius: 40, padding: 44, marginTop: 28, border: `6px solid ${color}` },
+          h("div", { alignSelf: "flex-start", backgroundColor: color, color: "#ffffff", fontSize: 30, fontWeight: 800, padding: "8px 28px", borderRadius: 999, letterSpacing: 2 }, label),
+          h("div", { marginTop: 24, fontSize: size, fontWeight: strike ? 600 : 800, color: strike ? "#64748b" : "#0f172a", lineHeight: 1.22, textDecoration: strike ? "line-through" : "none", maxWidth: inner - 90 }, text));
+      return h("div", { ...root, backgroundColor: secondary, padding: pad },
+        logoNode(brand, 56, "#0f172a", "#ffffffee"),
+        h("div", { marginTop: 36, fontSize: 56, fontWeight: 800, color: "#ffffff", lineHeight: 1.1, maxWidth: inner }, copy.headline),
+        h("div", { flexGrow: 1, flexDirection: "column", justifyContent: "center" },
+          card("MYTH", "#ef4444", myth, 42, true),
+          card("FACT", "#22c55e", fact, 48, false),
+          proof ? h("div", { marginTop: 26, fontSize: 32, fontWeight: 600, color: "#e2e8f0", maxWidth: inner }, proof) : null),
+        h("div", { justifyContent: "space-between", alignItems: "center" }, pill(copy.cta, accent, 32), h("div", { fontSize: 26, fontWeight: 600, color: "#ffffff", opacity: 0.8 }, web)));
+    }
+
+    case "checklist": {
+      const fg = onColor(primary);
+      return h("div", { ...root, backgroundColor: primary, padding: pad },
+        logoNode(brand, 58, fg),
+        h("div", { marginTop: 36 }, headlineNode(copy.headline, 72, fg, accent, inner)),
+        h("div", { flexGrow: 1, flexDirection: "column", justifyContent: "center" },
+          h("div", { flexDirection: "column", backgroundColor: "#ffffff", borderRadius: 44, padding: 48 },
+            ...pts.slice(0, 3).map((t, i) =>
+              h("div", { alignItems: "center", marginTop: i === 0 ? 0 : 38 },
+                h("div", { width: 76, height: 76, borderRadius: 22, backgroundColor: accent, alignItems: "center", justifyContent: "center", flexShrink: 0 }, tick(38, onColor(accent))),
+                h("div", { marginLeft: 32, fontSize: 40, fontWeight: 600, color: "#0f172a", lineHeight: 1.22, maxWidth: inner - 230 }, t))))),
+        h("div", { justifyContent: "space-between", alignItems: "center" }, pill(copy.cta, accent, 32), h("div", { fontSize: 26, fontWeight: 600, color: fg, opacity: 0.85 }, web)));
+    }
+
+    case "split_photo": {
+      if (!photo) return null;
+      const fg = onColor(primary);
+      const top = Math.round(H * 0.5);
+      return h("div", { ...root, backgroundColor: primary },
+        img(photo, { width: W, height: top, objectFit: "cover" }),
+        h("div", { position: "absolute", top: pad * 0.7, left: pad }, logoNode(brand, 56, "#0f172a", "#ffffffee")),
+        h("div", { width: W, height: 14, backgroundColor: accent }),
+        h("div", { flexGrow: 1, flexDirection: "column", justifyContent: "space-between", padding: `${pad * 0.6}px ${pad}px ${pad}px ${pad}px` },
+          h("div", { flexDirection: "column" },
+            headlineNode(copy.headline, 66, fg, accent, inner),
+            pointsNode(pts.slice(0, 3), 34, fg, accent, inner)),
+          h("div", { justifyContent: "space-between", alignItems: "center" }, pill(copy.cta, accent, 30), h("div", { fontSize: 26, fontWeight: 600, color: fg, opacity: 0.85 }, web))));
+    }
+
+    case "offer_badge": {
+      const fg = onColor(accent);
+      return h("div", { ...root, backgroundColor: accent, padding: pad },
+        photo ? img(photo, { position: "absolute", right: -W * 0.12, bottom: -W * 0.12, width: W * 0.5, height: W * 0.5, objectFit: "cover", borderRadius: 9999, border: `12px solid ${secondary}` }) : null,
+        h("div", { justifyContent: "space-between", alignItems: "center" },
+          logoNode(brand, 56, fg),
+          h("div", { width: 190, height: 190, borderRadius: 9999, backgroundColor: secondary, color: onColor(secondary), alignItems: "center", justifyContent: "center", fontSize: 40, fontWeight: 800, letterSpacing: 2, transform: "rotate(12deg)" }, "OFFER")),
+        h("div", { flexGrow: 1, flexDirection: "column", justifyContent: "center" },
+          h("div", { fontSize: copy.headline.length > 28 ? 84 : 104, fontWeight: 800, color: fg, lineHeight: 1.02, letterSpacing: -2, maxWidth: inner }, copy.headline),
+          h("div", { flexDirection: "column", marginTop: 40, maxWidth: inner },
+            ...pts.slice(0, 3).map((t) => h("div", { alignItems: "center", marginTop: 14, fontSize: 36, fontWeight: 600, color: fg }, h("div", { width: 18, height: 18, borderRadius: 9999, backgroundColor: fg, marginRight: 20, flexShrink: 0 }), t)))),
+        h("div", { justifyContent: "flex-start" }, pill(copy.cta, secondary, 38)));
+    }
+
+    case "steps_path": {
+      const rows = pts.slice(0, 3);
+      return h("div", { ...root, backgroundColor: secondary, padding: pad },
+        logoNode(brand, 56, "#0f172a", "#ffffffee"),
+        h("div", { marginTop: 36 }, headlineNode(copy.headline, 70, "#ffffff", accent, inner)),
+        h("div", { flexGrow: 1, flexDirection: "column", justifyContent: "center" },
+          ...rows.map((t, i) =>
+            h("div", { flexDirection: "column" },
+              h("div", { alignItems: "center" },
+                numberBadge(i + 1, 96, accent),
+                h("div", { marginLeft: 32, fontSize: 42, fontWeight: 600, color: "#ffffff", lineHeight: 1.22, maxWidth: inner - 150 }, t)),
+              i < rows.length - 1 ? h("div", { width: 8, height: 54, backgroundColor: accent, opacity: 0.55, marginLeft: 44 }) : null))),
+        h("div", { justifyContent: "space-between", alignItems: "center" }, pill(copy.cta, accent, 32), h("div", { fontSize: 26, fontWeight: 600, color: "#ffffff", opacity: 0.8 }, web)));
+    }
+
+    case "polaroid": {
+      if (!photo) return null;
+      const frameW = Math.round(W * 0.74);
+      const frameH = Math.round(Math.min(H * 0.6, frameW * 1.12));
+      return h("div", { ...root, padding: pad, backgroundImage: `linear-gradient(150deg, ${primary}, ${secondary})` },
+        logoNode(brand, 56, "#0f172a", "#ffffffee"),
+        h("div", { flexGrow: 1, alignItems: "center", justifyContent: "center" },
+          h("div", { flexDirection: "column", width: frameW, backgroundColor: "#ffffff", padding: 28, paddingBottom: 18, borderRadius: 14, transform: "rotate(-4deg)" },
+            img(photo, { width: frameW - 56, height: frameH - 190, objectFit: "cover" }),
+            h("div", { marginTop: 24, fontSize: 38, fontWeight: 800, color: "#0f172a", lineHeight: 1.2, paddingBottom: 14 }, copy.headline))),
+        pts.length ? h("div", { flexWrap: "wrap", justifyContent: "center", marginBottom: 26 }, ...pts.slice(0, 3).map((t) => h("div", { margin: 8, backgroundColor: "#ffffff22", color: "#ffffff", fontSize: 30, fontWeight: 600, padding: "10px 26px", borderRadius: 999, border: "2px solid #ffffff66" }, t))) : null,
+        h("div", { justifyContent: "space-between", alignItems: "center" }, pill(copy.cta, accent, 32), h("div", { fontSize: 26, fontWeight: 600, color: "#ffffff", opacity: 0.85 }, web)));
+    }
+
+    case "spotlight_chips": {
+      if (!photo) return null;
+      const phH = Math.round(H * 0.46);
+      return h("div", { ...root, padding: pad, backgroundImage: `linear-gradient(180deg, ${secondary}, #000000)` },
+        logoNode(brand, 56, "#0f172a", "#ffffffee"),
+        h("div", { marginTop: 36, width: inner, height: phH, borderRadius: 48, overflow: "hidden", border: `8px solid ${accent}` },
+          img(photo, { width: inner - 16, height: phH - 16, objectFit: "cover" })),
+        h("div", { flexGrow: 1, flexDirection: "column", justifyContent: "center" },
+          headlineNode(copy.headline, 70, "#ffffff", accent, inner),
+          h("div", { flexWrap: "wrap", marginTop: 26 }, ...pts.slice(0, 3).map((t) => h("div", { marginRight: 16, marginTop: 12, border: `3px solid ${accent}`, color: "#ffffff", fontSize: 30, fontWeight: 600, padding: "10px 28px", borderRadius: 999 }, t)))),
+        h("div", { justifyContent: "space-between", alignItems: "center" }, pill(copy.cta, accent, 32), h("div", { fontSize: 26, fontWeight: 600, color: "#ffffff", opacity: 0.8 }, web)));
+    }
+  }
+  return null;
+}
+
 function build(
   variant: number,
   W: number,
@@ -166,15 +350,20 @@ function build(
   photo: string | null,
   copy: PosterCopy,
   brand: PosterBrand,
+  template?: string | null,
 ): Node {
+  if (template) {
+    const designed = buildTemplate(template, W, H, photo, copy, brand);
+    if (designed) return designed;
+  }
   const primary = cleanColor(brand.colors?.primary, "#4f46e5");
   const secondary = cleanColor(brand.colors?.secondary, "#0f172a");
   const accent = cleanColor(brand.colors?.accent, "#f59e0b");
   const pad = 72;
   const root = { width: W, height: H, fontFamily: "Poppins", position: "relative", overflow: "hidden" } as const;
 
-  // No photo available: bold type-only poster.
-  if (!photo) {
+  // No photo available (or the type-only template was chosen): bold type-only poster.
+  if (!photo || template === "type_only") {
     return h(
       "div",
       { ...root, flexDirection: "column", justifyContent: "space-between", padding: pad, backgroundImage: `linear-gradient(135deg, ${primary}, ${secondary})` },
@@ -188,7 +377,8 @@ function build(
     );
   }
 
-  const v = variant % 3;
+  const classic: Record<string, number> = { hero_gradient: 0, color_block: 1, circle_ring: 2 };
+  const v = template && template in classic ? classic[template]! : variant % 3;
 
   // 1) Full-bleed photo, text on a gradient.
   if (v === 0) {
@@ -255,6 +445,8 @@ export async function composePoster(opts: {
   brand: PosterBrand;
   aspect: string;
   seed: string;
+  /** Template id from the variety planner; unset keeps the classic hash-picked layout. */
+  template?: string | null;
 }): Promise<Uint8Array> {
   const { w, h: hh } = sizeFor(opts.aspect);
   const satori = (await import("satori")).default;
@@ -272,6 +464,7 @@ export async function composePoster(opts: {
     opts.photo ? dataUri(opts.photo) : null,
     opts.copy,
     opts.brand,
+    opts.template,
   );
   const svg = await satori(tree as never, {
     width: w,

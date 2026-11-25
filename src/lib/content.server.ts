@@ -591,6 +591,8 @@ export function weekPrompt(
   strategy?: StrategyDirective | null,
   quotas?: Record<string, DailyContentQuota>,
   types: readonly ContentType[] = CONTENT_TYPES,
+  /** Brand playbook + per-piece content plan from the brand brain (empty when unavailable). */
+  brainContext = "",
 ): string {
   // Only pay the prompt-token cost of TYPE_SCHEMA explanations for types
   // actually requested somewhere in this batch, AND only within the given
@@ -615,7 +617,7 @@ export function weekPrompt(
     "\n",
   );
 
-  return `${brandContext(brand)}${strategyContext(strategy)}
+  return `${brandContext(brand)}${brainContext}${strategyContext(strategy)}
 
 
 Create content only for these requested quantities. Do not add any extra pieces:
@@ -650,6 +652,8 @@ interface RowInput {
   date: string;
   platforms: string[];
   autopost?: boolean;
+  /** Style chosen by the variety planner for each piece, keyed "date|type|index". */
+  styles?: Map<string, unknown> | null;
 }
 
 function clean(value: unknown, fallback = ""): string {
@@ -727,6 +731,12 @@ function baseRow(input: RowInput) {
   };
 }
 
+/** style_meta for a piece (only present when the brand brain planned this batch). */
+function styleFields(input: RowInput, type: string, index: number): Record<string, unknown> {
+  if (!input.styles) return {};
+  return { style_meta: input.styles.get(`${input.date}|${type}|${index}`) ?? null };
+}
+
 export function rowsForDay(
   day: GeneratedDay,
   input: RowInput,
@@ -749,6 +759,7 @@ export function rowsForDay(
         }));
         rows.push({
           ...baseRow(input),
+          ...styleFields(input, type, i),
           type,
           platforms,
           title: clean(piece.title, `Carousel ${i + 1}`),
@@ -763,6 +774,7 @@ export function rowsForDay(
 
       rows.push({
         ...baseRow(input),
+        ...styleFields(input, type, i),
         type,
         platforms,
         title: clean(piece.title, `${TYPE_LABEL[type]} ${i + 1}`),

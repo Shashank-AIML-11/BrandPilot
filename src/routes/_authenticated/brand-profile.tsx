@@ -4,6 +4,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { ChevronRight, FileText, Loader2, Save, Trash2, Upload } from "lucide-react";
 import { useServerFn } from "@tanstack/react-start";
+import { refreshBrandPlaybook } from "@/lib/brand-brain.functions";
 import {
   getBrandLogoUrl,
   listBrandAssets,
@@ -444,6 +445,8 @@ function BrandProfilePage() {
     },
     onSuccess: (saved) => {
       toast.success("Brand profile saved — future content will use it");
+      // Rebuild this brand's playbook in the background (generation also does it if this fails).
+      void refreshBrandPlaybook({ data: { brandId: saved.id } }).catch(() => undefined);
       if (isAgency) {
         setActiveBrandId(saved.id);
         queryClient.invalidateQueries({ queryKey: ["agency-brands"] });

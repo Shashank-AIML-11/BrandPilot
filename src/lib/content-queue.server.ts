@@ -120,12 +120,25 @@ export async function processGenerationQueue(admin: AdminClient, userId?: string
 
     // The model occasionally leaves out an (empty) type key and the strict schema check
     // rejects the reply. That is random, so retry a couple of times before giving up.
+    // Brand brain: the playbook plus a per-piece plan (pillar, hook, template); both fail soft.
+    const { ensurePlaybook, playbookContext } = await import("@/lib/playbook.server");
+    const { planVariety, varietyContext, slotsFromQuotas } = await import("@/lib/variety.server");
+    const playbook = await ensurePlaybook(admin, brand as never);
+    const brainSlots = slotsFromQuotas(batchDates, quotas, batchActiveTypes);
+    const brainPlan = await planVariety(admin, {
+      userId: job.user_id,
+      brandId: brand.id,
+      slots: brainSlots,
+      playbook,
+    });
+    const brainContext = playbookContext(playbook) + varietyContext(playbook, brainPlan, brainSlots);
+
     let result: { days?: Array<Record<string, unknown>> } = {};
     for (let attempt = 1; ; attempt += 1) {
       try {
         result = await chatJSON<{ days?: Array<Record<string, unknown>> }>(
           SYSTEM_PROMPT,
-          weekPrompt(brand as never, batchDates, strategy, quotas, batchActiveTypes),
+          weekPrompt(brand as never, batchDates, strategy, quotas, batchActiveTypes, brainContext),
           buildWeekResponseSchema(batchActiveTypes),
         );
         break;
@@ -165,6 +178,7 @@ export async function processGenerationQueue(admin: AdminClient, userId?: string
           date,
           platforms,
           autopost: entitlement.plan.autoPost,
+          styles: brainPlan,
         },
         quotas[date]!,
       );

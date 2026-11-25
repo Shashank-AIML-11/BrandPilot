@@ -174,9 +174,6 @@ export function BlogPublishing({ brandId }: { brandId?: string | null }) {
         )}
       </div>
 
-      <p className="text-xs text-muted-foreground">
-        Medium and Quora have no posting API for new accounts, so those posts are prepared in LOVIZA for you to post. LinkedIn is connected above.
-      </p>
     </section>
   );
 }

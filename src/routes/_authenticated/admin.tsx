@@ -455,12 +455,14 @@ function AdminPage() {
         </TabsContent>
 
         {data.isRoot && (
-          <TabsContent value="referrals" className="pt-4">
-            <AdminReferrals />
-          </TabsContent>
-          <TabsContent value="affiliates" className="pt-4">
-            <AdminAffiliates />
-          </TabsContent>
+          <>
+            <TabsContent value="referrals" className="pt-4">
+              <AdminReferrals />
+            </TabsContent>
+            <TabsContent value="affiliates" className="pt-4">
+              <AdminAffiliates />
+            </TabsContent>
+          </>
         )}
 
         <TabsContent value="automation" className="pt-4">

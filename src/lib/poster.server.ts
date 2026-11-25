@@ -523,3 +523,110 @@ export async function composeVideoOverlays(opts: {
       .asPng();
   return { hook: await render(hook), card: await render(card), width: W, height: H };
 }
+
+/* ---------------------------------------------------------------------------------------------
+ * Carousel slides, drawn by the app (exact text, brand colours, one consistent look per carousel)
+ * instead of one AI image per slide. Only the cover may carry a photo.
+ * ------------------------------------------------------------------------------------------- */
+
+export type CarouselStyle = "light" | "bold" | "dark";
+export const CAROUSEL_STYLES: CarouselStyle[] = ["light", "bold", "dark"];
+
+function chevron(size: number, color: string): Node {
+  return h("div", { width: size, height: size, borderTop: `${size * 0.22}px solid ${color}`, borderRight: `${size * 0.22}px solid ${color}`, transform: "rotate(45deg)" });
+}
+
+function dots(total: number, current: number, on: string, off: string): Node {
+  return h("div", { alignItems: "center" },
+    ...Array.from({ length: Math.min(total, 8) }, (_, i) =>
+      h("div", { width: i === current ? 46 : 16, height: 16, borderRadius: 9999, backgroundColor: i === current ? on : off, marginRight: 12 })));
+}
+
+function buildSlide(
+  slide: { headline: string; subtext: string },
+  index: number,
+  total: number,
+  W: number,
+  H: number,
+  photo: string | null,
+  brand: PosterBrand,
+  style: CarouselStyle,
+): Node {
+  const primary = cleanColor(brand.colors?.primary, "#4f46e5");
+  const secondary = cleanColor(brand.colors?.secondary, "#0f172a");
+  const accent = cleanColor(brand.colors?.accent, "#f59e0b");
+  const pad = 80;
+  const inner = W - pad * 2;
+  const web = brand.website.replace(/^https?:\/\//i, "").replace(/\/.*$/, "");
+  const isCover = index === 0;
+  const isLast = total > 1 && index === total - 1;
+
+  const bg = style === "light" ? "#f8fafc" : style === "bold" ? primary : secondary;
+  const fg = style === "light" ? secondary : onColor(bg);
+  const sub = style === "light" ? "#475569" : fg;
+  const hi = style === "light" ? primary : accent;
+  const dotOn = style === "light" ? primary : accent;
+  const dotOff = style === "light" ? "#cbd5e1" : "#ffffff44";
+  const root = { width: W, height: H, fontFamily: "Poppins", position: "relative", overflow: "hidden", flexDirection: "column", padding: pad, backgroundColor: bg } as const;
+
+  const head = (size: number) => headlineNode(slide.headline, size, fg, hi, inner);
+  const subline = (size: number) =>
+    slide.subtext ? h("div", { fontSize: size, fontWeight: 400, color: sub, opacity: style === "light" ? 1 : 0.92, lineHeight: 1.4, marginTop: 30, maxWidth: inner }, slide.subtext) : null;
+  const decor = h("div", { position: "absolute", top: -W * 0.28, right: -W * 0.22, width: W * 0.8, height: W * 0.8, borderRadius: 9999, backgroundColor: hi, opacity: style === "light" ? 0.1 : 0.16 });
+  const topRow = h("div", { justifyContent: "space-between", alignItems: "center", width: inner },
+    logoNode(brand, 58, fg, style === "light" ? undefined : undefined),
+    h("div", { fontSize: 32, fontWeight: 600, color: hi }, `${String(index + 1).padStart(2, "0")} / ${String(total).padStart(2, "0")}`));
+  const bottomRow = h("div", { justifyContent: "space-between", alignItems: "center", width: inner },
+    dots(total, index, dotOn, dotOff),
+    isLast ? null : h("div", { alignItems: "center" }, h("div", { fontSize: 30, fontWeight: 600, color: fg, marginRight: 22, opacity: 0.85 }, "Swipe"), chevron(26, hi)));
+
+  if (isCover) {
+    return h("div", { ...root }, decor, topRow,
+      photo ? h("div", { marginTop: 44, width: inner, height: Math.round(H * 0.36), borderRadius: 44, overflow: "hidden" }, img(photo, { width: inner, height: Math.round(H * 0.36), objectFit: "cover" })) : null,
+      h("div", { flexGrow: 1, flexDirection: "column", justifyContent: "center" },
+        head(photo ? 78 : 100), subline(photo ? 32 : 38)),
+      bottomRow);
+  }
+
+  if (isLast) {
+    return h("div", { ...root }, decor, topRow,
+      h("div", { flexGrow: 1, flexDirection: "column", justifyContent: "center" },
+        head(84), subline(38),
+        h("div", { marginTop: 54 }, pill(web ? `Visit ${web}` : "Get started", hi, 40))),
+      bottomRow);
+  }
+
+  return h("div", { ...root }, decor, topRow,
+    h("div", { flexGrow: 1, flexDirection: "column", justifyContent: "center" },
+      h("div", { width: 120, height: 12, backgroundColor: hi, borderRadius: 8, marginBottom: 36 }),
+      head(slide.headline.length > 46 ? 68 : 82), subline(40)),
+    bottomRow);
+}
+
+export async function composeCarouselSlide(opts: {
+  slide: { headline: string; subtext: string };
+  index: number;
+  total: number;
+  brand: PosterBrand;
+  photo: Uint8Array | null;
+  style: CarouselStyle;
+  aspect?: string;
+}): Promise<Uint8Array> {
+  const { w, h: hh } = sizeFor(opts.aspect ?? "4:5");
+  const satori = (await import("satori")).default;
+  const { Resvg } = await import("@resvg/resvg-js");
+  const font = (b64: string, weight: 400 | 600 | 800) => ({ name: "Poppins", data: Buffer.from(b64, "base64"), weight, style: "normal" as const });
+  const clip = (t: string, words: number) => t.replace(/[#*_"]/g, "").trim().split(/\s+/).slice(0, words).join(" ");
+  const tree = buildSlide(
+    { headline: clip(opts.slide.headline, 12), subtext: clip(opts.slide.subtext, 28) },
+    opts.index,
+    opts.total,
+    w,
+    hh,
+    opts.photo ? dataUri(opts.photo) : null,
+    opts.brand,
+    opts.style,
+  );
+  const svg = await satori(tree as never, { width: w, height: hh, fonts: [font(POPPINS_400, 400), font(POPPINS_600, 600), font(POPPINS_800, 800)] });
+  return new Resvg(svg, { fitTo: { mode: "width", value: w } }).render().asPng();
+}

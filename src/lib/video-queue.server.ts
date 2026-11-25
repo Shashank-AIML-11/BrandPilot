@@ -10,7 +10,6 @@ import {
   imagePromptFor,
   aspectForType,
   videoPromptFor,
-  carouselSlideImagePromptFor,
   CONTENT_TYPES,
   VIDEO_TYPES,
   SHARED_IMAGE_TYPES,
@@ -185,6 +184,76 @@ async function photoFor(
     () => generateImageWithRetry(prompt, aspect),
   );
   return result.bytes;
+}
+
+/**
+ * One carousel slide, drawn by the app (exact text, brand colours, one consistent look per
+ * carousel). Only the cover may carry a photo, taken from the media library first and
+ * generated only if nothing fits; every other slide is type-only, so it costs nothing.
+ *   CAROUSEL_COVER_PHOTO   on (default) | off   off = no photo at all, zero image cost
+ */
+export async function renderCarouselSlideBytes(
+  admin: AdminClient,
+  item: { id: string; user_id: string; brand_id?: string | null },
+  brand: Record<string, unknown> | null,
+  slides: Array<{ headline?: string; subtext?: string; image_prompt?: string }>,
+  index: number,
+): Promise<Uint8Array> {
+  const { composeCarouselSlide, CAROUSEL_STYLES } = await import("@/lib/poster.server");
+  const slide = slides[index] ?? {};
+
+  let logo: { bytes: Uint8Array; mime: string } | null = null;
+  const logoPath = String(brand?.["logo_url"] ?? "");
+  if (logoPath) {
+    const { data: file } = await admin.storage.from("content-media").download(logoPath);
+    if (file) {
+      const ext = logoPath.split(".").pop()?.toLowerCase();
+      logo = {
+        bytes: new Uint8Array(await file.arrayBuffer()),
+        mime: ext === "svg" ? "image/svg+xml" : ext === "jpg" ? "image/jpeg" : "image/png",
+      };
+    }
+  }
+
+  let photo: Uint8Array | null = null;
+  if (index === 0 && (process.env["CAROUSEL_COVER_PHOTO"] ?? "on").trim().toLowerCase() !== "off") {
+    try {
+      photo = await photoFor(
+        admin,
+        {
+          user_id: item.user_id,
+          brand_id: item.brand_id ?? null,
+          type: "carousel",
+          title: slide.headline ?? "",
+          summary: slide.subtext ?? "",
+          image_prompt: slide.image_prompt ?? "",
+        },
+        imagePromptFor(
+          { type: "linkedin_post", title: slide.headline ?? "", summary: slide.subtext ?? "", image_prompt: "" },
+          brand as never,
+        ),
+        "4:5",
+      );
+    } catch (error) {
+      console.error("[carousel] cover photo unavailable, drawing a type-only cover", error);
+    }
+  }
+
+  const sum = [...item.id].reduce((a, c) => (a * 31 + c.charCodeAt(0)) >>> 0, 7);
+  return composeCarouselSlide({
+    slide: { headline: slide.headline ?? "", subtext: slide.subtext ?? "" },
+    index,
+    total: slides.length,
+    brand: {
+      name: String(brand?.["business_name"] ?? ""),
+      website: String(brand?.["website"] ?? ""),
+      logo,
+      colors: (brand?.["brand_colors"] as Record<string, string> | null) ?? null,
+    },
+    photo,
+    style: CAROUSEL_STYLES[sum % CAROUSEL_STYLES.length]!,
+    aspect: aspectForType("carousel"),
+  });
 }
 
 async function generateImageWithRetry(
@@ -697,10 +766,7 @@ export async function processVideoQueue(admin: AdminClient, userId?: string) {
       // Make the next few slides at the same time; save every one that succeeds.
       const made = await Promise.allSettled(
         missing.map(async (index) => {
-          const bytes = await generateImageWithRetry(
-            carouselSlideImagePromptFor(slides[index]!, index, slides.length, brand as never),
-            aspectForType("carousel"),
-          );
+          const bytes = await renderCarouselSlideBytes(admin, item, brand as never, slides, index);
           const path = `${item.user_id}/${item.id}-slide-${index}.png`;
           const { error: uploadError } = await admin.storage
             .from("content-media")

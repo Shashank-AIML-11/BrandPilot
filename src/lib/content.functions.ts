@@ -385,9 +385,15 @@ export const generateMediaBatch =
 
             for (let i = 0; i < slides.length; i += 1) {
               if (existingUrls[i]) continue; // already rendered
-              const bytes = await generateImageBytes(
-                carouselSlideImagePromptFor(slides[i]!, i, slides.length, brandFor(item.brand_id) as never),
-                aspectForType("carousel"),
+              // Slides are drawn by the app (cover photo from the library first); see video-queue.server.
+              const { renderCarouselSlideBytes } = await import("@/lib/video-queue.server");
+              const { supabaseAdmin: slideAdmin } = await import("@/integrations/supabase/client.server");
+              const bytes = await renderCarouselSlideBytes(
+                slideAdmin as never,
+                { id: item.id, user_id: context.userId, brand_id: item.brand_id ?? null },
+                brandFor(item.brand_id) as never,
+                slides,
+                i,
               );
               const path = `${context.userId}/${item.id}-slide-${i}.png`;
               const { error: uploadError } = await context.supabase.storage

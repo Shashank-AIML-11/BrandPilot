@@ -603,7 +603,24 @@ function buildSlide(
     bottomRow);
 }
 
-export async function composeCarouselSlide(opts: {
+let satoriChain: Promise<unknown> = Promise.resolve();
+
+/** Layout runs one at a time: satori's wasm layout engine can abort when several run together. */
+export function composeCarouselSlide(opts: Parameters<typeof composeCarouselSlideOnce>[0]): Promise<Uint8Array> {
+  const run = async () => {
+    try {
+      return await composeCarouselSlideOnce(opts);
+    } catch (first) {
+      console.error("[carousel] slide layout failed, retrying without photo/logo", first);
+      return composeCarouselSlideOnce({ ...opts, photo: null, brand: { ...opts.brand, logo: null } });
+    }
+  };
+  const next = satoriChain.then(run, run);
+  satoriChain = next.catch(() => undefined);
+  return next;
+}
+
+async function composeCarouselSlideOnce(opts: {
   slide: { headline: string; subtext: string };
   index: number;
   total: number;

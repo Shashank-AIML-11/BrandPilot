@@ -26,6 +26,19 @@ export async function applyPlanPayment(
   });
   if (error) throw new Error(error.message);
 
+  // Affiliate commission for whoever referred this customer. Safe to repeat (one row per order),
+  // and a failure here must never undo or delay the customer's plan.
+  try {
+    const { error: affiliateError } = await untyped(supabaseAdmin).rpc("record_affiliate_commission", {
+      p_order_id: orderId,
+    });
+    if (affiliateError) {
+      console.error("[affiliate] could not record commission", orderId, affiliateError.message);
+    }
+  } catch (err) {
+    console.error("[affiliate] could not record commission", orderId, err);
+  }
+
   const r = data as {
     applied: boolean;
     plan: string;
@@ -44,25 +57,6 @@ export async function applyPlanPayment(
         // Already cancelled on Razorpay's side is fine; anything else is logged for follow-up.
         console.error(`[payments] could not cancel old autopay subscription ${id}`, err);
       }
-    }
-  }
-
-  // A one-time payment that SWITCHES plan ends the old plan's auto-renew, otherwise it would
-  // keep charging for the plan the customer just left. (Automatic charges are "auto_..." orders.)
-  if (r.applied && r.kind === "new" && !orderId.startsWith("auto_")) {
-    try {
-      const { data: owner } = await untyped(supabaseAdmin)
-        .from("plan_orders")
-        .select("user_id")
-        .eq("razorpay_order_id", orderId)
-        .maybeSingle();
-      const userId = (owner as { user_id?: string } | null)?.user_id;
-      if (userId) {
-        const { cancelAutorenewForUser } = await import("@/lib/payments/autorenew.server");
-        await cancelAutorenewForUser(userId);
-      }
-    } catch (err) {
-      console.error("[payments] could not stop auto-renew after a plan switch", err);
     }
   }
 

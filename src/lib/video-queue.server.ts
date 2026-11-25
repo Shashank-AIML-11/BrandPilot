@@ -52,18 +52,34 @@ async function explainerInputFor(
   return { ...input, scenes };
 }
 
+/** True when the planner chose a type-only template (no photo needed, so no image is generated). */
+async function templateNeedsNoPhoto(admin: AdminClient, itemId: string): Promise<boolean> {
+  try {
+    const { data } = await admin.from("content_items").select("style_meta" as never).eq("id", itemId).maybeSingle();
+    const tpl = (data as unknown as { style_meta?: { template?: string } | null } | null)?.style_meta?.template;
+    if (!tpl) return false;
+    const { posterTemplate } = await import("@/lib/poster-templates");
+    return posterTemplate(tpl)?.photo === "no";
+  } catch {
+    return false;
+  }
+}
+
 /**
  * Turns the plain AI photo into a designed poster (headline, logo, brand colours).
  * Never throws: if composing fails the plain photo is used so generation keeps working.
  */
 async function designPoster(
   admin: AdminClient,
-  photo: Uint8Array,
+  photo: Uint8Array | null,
   item: { id: string; title?: string | null; summary?: string | null; image_prompt?: string | null },
   brand: Record<string, unknown> | null,
   aspect: string,
 ): Promise<Uint8Array> {
-  if (!posterComposerEnabled() || aspect === "16:9" || aspect === "1:1") return photo;
+  if (!posterComposerEnabled() || aspect === "16:9" || aspect === "1:1") {
+    if (photo) return photo;
+    throw new Error("a photo is required for this format");
+  }
   try {
     const { composePoster, posterCopyFor } = await import("@/lib/poster.server");
     let logo: { bytes: Uint8Array; mime: string } | null = null;
@@ -78,8 +94,23 @@ async function designPoster(
         };
       }
     }
+    // The variety planner stores the chosen template on the item. Fails soft (no column or no
+    // value = the classic hash-picked layout), so this also works before the migration is run.
+    let template: string | null = null;
+    try {
+      const { data: styled } = await admin
+        .from("content_items")
+        .select("style_meta" as never)
+        .eq("id", item.id)
+        .maybeSingle();
+      const meta = (styled as unknown as { style_meta?: { template?: string } | null } | null)?.style_meta;
+      template = meta?.template ?? null;
+    } catch {
+      template = null;
+    }
     return await composePoster({
       photo,
+      template,
       copy: posterCopyFor(item, { website: String(brand?.["website"] ?? "") }),
       brand: {
         name: String(brand?.["business_name"] ?? ""),
@@ -91,6 +122,7 @@ async function designPoster(
       seed: `${item.id}`,
     });
   } catch (error) {
+    if (!photo) throw error;
     console.error("[poster] composing failed, using the plain photo", error);
     return photo;
   }
@@ -521,12 +553,14 @@ export async function processVideoQueue(admin: AdminClient, userId?: string) {
         // First of the group to render today — generate once, upload to
         // the SHARED path (not a per-item path) so siblings can find it.
         const brand = await loadBrand(admin, item.user_id, item.brand_id);
-        const photo = await photoFor(
-          admin,
-          item as never,
-          imagePromptFor(item as never, brand as never),
-          aspectForType(item.type),
-        );
+        const photo = (await templateNeedsNoPhoto(admin, item.id))
+          ? null
+          : await photoFor(
+              admin,
+              item as never,
+              imagePromptFor(item as never, brand as never),
+              aspectForType(item.type),
+            );
         const bytes = await designPoster(admin, photo, item, brand as never, aspectForType(item.type));
         const { error: uploadError } = await admin.storage
           .from("content-media")
@@ -587,12 +621,14 @@ export async function processVideoQueue(admin: AdminClient, userId?: string) {
       // Not in the shared group (pinterest, video thumbnails) — generate
       // its own unique image as before.
       const brand = await loadBrand(admin, item.user_id, item.brand_id);
-      const photo = await photoFor(
-        admin,
-        item as never,
-        imagePromptFor(item as never, brand as never),
-        aspectForType(item.type),
-      );
+      const photo = (await templateNeedsNoPhoto(admin, item.id))
+        ? null
+        : await photoFor(
+            admin,
+            item as never,
+            imagePromptFor(item as never, brand as never),
+            aspectForType(item.type),
+          );
       const bytes = await designPoster(admin, photo, item, brand as never, aspectForType(item.type));
       const path = `${item.user_id}/${item.id}.png`;
       const { error: uploadError } = await admin.storage

@@ -49,6 +49,7 @@ import {
 
 import {
   ContentDetailDialog,
+  isFailedItem,
   typeStyles,
   type ContentItem,
 } from "@/components/content-detail-dialog";
@@ -92,8 +93,9 @@ const REVIEW_TABS: Array<{ id: ReviewTab; label: string }> = [
   { id: "reviewed", label: "Reviewed - Ready to Post" },
   { id: "posted", label: "Posted" },
 ];
+// A card the AI failed to generate can never be reviewed or posted, so it stays in "Generated".
 const reviewTabOf = (item: ContentItem): ReviewTab =>
-  item.status === "posted" ? "posted" : item.reviewed_at ? "reviewed" : "generated";
+  isFailedItem(item) ? "generated" : item.status === "posted" ? "posted" : item.reviewed_at ? "reviewed" : "generated";
 
 /** Channels each format may be posted to (same split the detail dialog uses). */
 const CHANNELS_BY_TYPE: Record<string, string[]> = {
@@ -127,16 +129,57 @@ function CalendarPage() {
   const [todayKey, setTodayKey] = useState(() => format(new Date(), "yyyy-MM-dd"));
   useEffect(() => {
     // Re-check every minute so the tick boxes appear at 12 AM without a page reload.
-    const t = setInterval(() => setTodayKey(format(new Date(), "yyyy-MM-dd")), 60_000);
-    return () => clearInterval(t);
+    const refresh = () => setTodayKey(format(new Date(), "yyyy-MM-dd"));
+    const t = setInterval(refresh, 60_000);
+    // Browsers throttle timers in background tabs, so also re-check when the tab wakes up.
+    const onVisible = () => {
+      if (document.visibilityState === "visible") refresh();
+    };
+    document.addEventListener("visibilitychange", onVisible);
+    window.addEventListener("focus", refresh);
+    return () => {
+      clearInterval(t);
+      document.removeEventListener("visibilitychange", onVisible);
+      window.removeEventListener("focus", refresh);
+    };
   }, []);
+
+  // Keep "the current week" current. If the page is left open past Sunday midnight while it is
+  // showing the week that was current, move on to the new current week. A week the user
+  // deliberately browsed to (past or future) is left alone.
+  const currentWeekKey = format(startOfWeek(parseISO(todayKey), { weekStartsOn: 1 }), "yyyy-MM-dd");
+  const previousCurrentWeekKey = useRef(currentWeekKey);
+  useEffect(() => {
+    const previous = previousCurrentWeekKey.current;
+    if (previous === currentWeekKey) return;
+    previousCurrentWeekKey.current = currentWeekKey;
+    if (format(weekStart, "yyyy-MM-dd") === previous) {
+      const next = parseISO(currentWeekKey);
+      setWeekStart(next);
+      setCursor(startOfMonth(next));
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentWeekKey]);
+
+  /** Jump back to today: the current week in Weekly view, the current month in Monthly view. */
+  function goToToday() {
+    const thisWeek = startOfWeek(new Date(), { weekStartsOn: 1 });
+    setWeekStart(thisWeek);
+    setCursor(startOfMonth(thisWeek));
+  }
   useEffect(() => {
     if (autopostOn) setReviewTab("generated");
   }, [autopostOn]);
   const tabOf = (item: ContentItem): ReviewTab => (autopostOn ? "generated" : reviewTabOf(item));
-  /** Manual posting is only for reviewed cards dated today (or earlier, if one was missed). */
+  /**
+   * Manual posting: reviewed cards dated today (or earlier, if one was missed), and any card
+   * already posted (so it can be posted again). Failed cards are never postable.
+   */
   const canPostNow = (item: ContentItem) =>
-    !autopostOn && reviewTabOf(item) === "reviewed" && item.scheduled_date <= todayKey;
+    !autopostOn &&
+    !isFailedItem(item) &&
+    (reviewTabOf(item) === "posted" ||
+      (reviewTabOf(item) === "reviewed" && item.scheduled_date <= todayKey));
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [finishing, setFinishing] = useState(false);
   const [postProgress, setPostProgress] = useState<{ done: number; total: number } | null>(null);
@@ -533,12 +576,21 @@ function CalendarPage() {
       for (const i of weekItems) c[tabOf(i)] += 1;
       return c;
     }, [weekItems, autopostOn]);
+    // Postable cards of the tab being shown (Select all only touches this tab).
+    const tabPostable = useMemo(
+      () => weekItems.filter((i) => tabOf(i) === reviewTab && canPostNow(i)),
+      [weekItems, reviewTab, autopostOn, todayKey],
+    );
     const selectedItems = useMemo(
       () => items.filter((i) => selectedIds.has(i.id) && canPostNow(i)),
       [items, selectedIds, autopostOn, todayKey],
     );
 
     async function finishReview(item: ContentItem) {
+      if (isFailedItem(item)) {
+        toast.error("This card failed to generate. Delete it and generate again.");
+        return;
+      }
       setFinishing(true);
       const { error } = await supabase
         .from("content_items")
@@ -557,7 +609,9 @@ function CalendarPage() {
     async function postSelected() {
       const queue = selectedItems;
       if (queue.length === 0) return;
-      if (!window.confirm(`Post ${queue.length} reviewed piece${queue.length === 1 ? "" : "s"} now? This publishes immediately to your connected handles.`)) return;
+      const reposts = queue.filter((q) => q.status === "posted").length;
+      const what = reposts === queue.length ? "again" : "now";
+      if (!window.confirm(`Post ${queue.length} piece${queue.length === 1 ? "" : "s"} ${what}? This publishes immediately to your connected handles${reposts ? ` (${reposts} already posted before, so it will be a repost)` : ""}.`)) return;
       setPostProgress({ done: 0, total: queue.length });
       const done: string[] = [];
       for (let i = 0; i < queue.length; i += 1) {
@@ -565,7 +619,9 @@ function CalendarPage() {
         const allowed = CHANNELS_BY_TYPE[item.type] ?? [];
         const chosen = (item.platforms ?? []).filter((c) => allowed.includes(c));
         try {
-          const { results } = await publishItem({ data: { itemId: item.id, channels: chosen.length ? chosen : allowed } });
+          const { results } = await publishItem({
+            data: { itemId: item.id, channels: chosen.length ? chosen : allowed, repost: item.status === "posted" },
+          });
           const failed = results.filter((r) => !r.ok);
           for (const f of failed) toast.error(`“${item.title}” → ${f.channel}: ${f.error}`);
           if (results.some((r) => r.ok && !r.manual)) toast.success(`Posted “${item.title}”`);
@@ -863,6 +919,11 @@ function CalendarPage() {
             <ChevronRight className="h-4 w-4" />
           </Button>
 
+          {/* Back to the current week / month */}
+          <Button type="button" variant="outline" size="sm" className="h-9" onClick={goToToday}>
+            Today
+          </Button>
+
           {/* Generate */}
           <Button
             onClick={generateMonth}
@@ -989,14 +1050,14 @@ function CalendarPage() {
               </Button>
             ))}
           </div>
-          {reviewTab === "reviewed" && !autopostOn && (
+          {(reviewTab === "reviewed" || reviewTab === "posted") && !autopostOn && (
             <div className="flex items-center gap-2">
             <Button
               size="sm"
               variant="outline"
-              disabled={!weekItems.some(canPostNow) || postProgress !== null}
+              disabled={tabPostable.length === 0 || postProgress !== null}
               onClick={() => {
-                const ids = weekItems.filter(canPostNow).map((i) => i.id);
+                const ids = tabPostable.map((i) => i.id);
                 const allSelected = ids.length > 0 && ids.every((id) => selectedIds.has(id));
                 setSelectedIds((prev) => {
                   const next = new Set(prev);
@@ -1008,14 +1069,13 @@ function CalendarPage() {
                 });
               }}
             >
-              {weekItems.filter(canPostNow).every((i) => selectedIds.has(i.id)) &&
-              weekItems.some(canPostNow)
+              {tabPostable.length > 0 && tabPostable.every((i) => selectedIds.has(i.id))
                 ? "Clear selection"
                 : "Select all"}
             </Button>
             <Button size="sm" onClick={() => void postSelected()} disabled={selectedItems.length === 0 || postProgress !== null}>
               {postProgress ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Send className="mr-2 h-4 w-4" />}
-              {postProgress ? `Posting ${postProgress.done}/${postProgress.total}…` : selectedItems.length ? `Post now (${selectedItems.length})` : "Post now"}
+              {postProgress ? `Posting ${postProgress.done}/${postProgress.total}…` : selectedItems.length ? `${reviewTab === "posted" ? "Post again" : "Post now"} (${selectedItems.length})` : reviewTab === "posted" ? "Post again" : "Post now"}
             </Button>
             </div>
           )}
@@ -1025,7 +1085,9 @@ function CalendarPage() {
               ? "Daily content will be posted automatically at 7 AM daily."
               : reviewTab === "reviewed"
                 ? "Reviewed cards dated today or earlier are posted automatically at 7 AM. Today's cards can also be posted now; later days' cards wait for their own day."
-                : "Review each card and press Finish Review to move it to Reviewed - Ready to Post."}
+                : reviewTab === "posted"
+                  ? "Tick a posted card and press Post again to publish it once more."
+                  : "Review each card and press Finish Review to move it to Reviewed - Ready to Post."}
         </p>
         </>
       )}
@@ -1034,9 +1096,9 @@ function CalendarPage() {
       {/* CALENDAR */}
       {/* ====================================================== */}
 
-      <div className="surface overflow-x-auto">
+      <div className="surface overflow-hidden">
 
-        <div className="grid min-w-[720px] grid-cols-7 border-b border-border bg-card md:min-w-0">
+        <div className="grid grid-cols-7 border-b border-border bg-card">
 
           {DOW.map((day, i) => (
             <div
@@ -1057,7 +1119,7 @@ function CalendarPage() {
             <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
           </div>
         ) : view === "week" ? (
-          <div className="grid min-w-[720px] grid-cols-7 md:min-w-0">
+          <div className="grid grid-cols-7">
             {weekDays.map((day) => {
               const key = format(day, "yyyy-MM-dd");
               const list = (byDate.get(key) ?? []).filter((i) => tabOf(i) === reviewTab);
@@ -1105,7 +1167,10 @@ function CalendarPage() {
                             {reviewTab === "generated" && autopostOn && item.status === "posted" && (
                               <Badge className="bg-success text-[10px] text-success-foreground">Posted</Badge>
                             )}
-                            {reviewTab === "generated" && !autopostOn && (
+                            {reviewTab === "generated" && !autopostOn && isFailedItem(item) && (
+                              <Badge variant="destructive" className="text-[10px]">Failed</Badge>
+                            )}
+                            {reviewTab === "generated" && !autopostOn && !isFailedItem(item) && (
                               <Button size="sm" className="h-7 px-2.5 text-xs" disabled={rendering} onClick={() => setDetail(item)}>
                                 {rendering ? "Generating…" : "Review"}
                               </Button>
@@ -1121,7 +1186,7 @@ function CalendarPage() {
                             )}
                           </div>
 
-                          {reviewTab === "reviewed" && canPostNow(item) && (
+                          {(reviewTab === "reviewed" || reviewTab === "posted") && canPostNow(item) && (
                             <div className="absolute right-1.5 top-1.5 z-10 rounded-md bg-background/80 p-1 shadow-sm backdrop-blur-sm">
                               <Checkbox
                                 className="h-5 w-5"
@@ -1147,7 +1212,7 @@ function CalendarPage() {
             })}
           </div>
         ) : (
-          <div className="grid min-w-[720px] grid-cols-7 md:min-w-0">
+          <div className="grid grid-cols-7">
 
             {days.map((day) => {
 

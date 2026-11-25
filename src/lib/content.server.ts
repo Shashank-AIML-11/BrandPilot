@@ -8,6 +8,15 @@ export interface BrandRow {
   tone: string;
   keywords: string;
   social_handles: Record<string, string> | null;
+  /** Optional extras from the Brand Profile (empty string when the brand left them blank). */
+  industry?: string | null;
+  current_offers?: string | null;
+  testimonials?: string | null;
+  competitors?: string | null;
+  locations?: string | null;
+  languages?: string | null;
+  voice_dos_donts?: string | null;
+  compliance_notes?: string | null;
 }
 
 /**
@@ -278,6 +287,24 @@ function handleList(brand: BrandRow): string {
   return entries.length ? entries.map(([k, v]) => `${k}: ${v}`).join(", ") : "none provided";
 }
 
+/** The optional Brand Profile extras, as prompt lines. Empty when the brand left them blank. */
+function extraBrandContext(brand: BrandRow): string {
+  const line = (label: string, v?: string | null, max = 700) => {
+    const t = String(v ?? "").replace(/\s+/g, " ").trim().slice(0, max);
+    return t ? `\n${label}: ${t}` : "";
+  };
+  return (
+    line("Industry", brand.industry, 120) +
+    line("Current offers (promote only these, exactly as written; never invent discounts, prices or deadlines)", brand.current_offers) +
+    line("Real customer testimonials supplied by the brand (may be quoted word for word with attribution as given; NEVER invent a testimonial, name or result)", brand.testimonials, 1200) +
+    line("Competitors (for positioning only; NEVER name, mention or criticise them in any content)", brand.competitors, 300) +
+    line("Locations served", brand.locations, 300) +
+    line("Audience languages (reference only; write in English unless the content plan says otherwise)", brand.languages, 120) +
+    line("Voice do's and don'ts (follow strictly)", brand.voice_dos_donts, 800) +
+    line("Compliance notes (these OVERRIDE everything else: claims or words that must or must not appear)", brand.compliance_notes, 800)
+  );
+}
+
 export function brandContext(brand: BrandRow): string {
   return `=== BRAND PROFILE (the ONLY source of truth) ===
 Business name: ${brand.business_name || "Unnamed business"}
@@ -289,7 +316,7 @@ Value propositions (the promises to repeat): ${brand.propositions || "n/a"}
 Tone of voice (imitate exactly): ${brand.tone || "professional, clear, helpful"}
 Focus keywords (must appear naturally): ${brand.keywords || "n/a"}
 Social handles / channels: ${handleList(brand)}
-Active channels: ${activePlatforms(brand).join(", ")}
+Active channels: ${activePlatforms(brand).join(", ")}${extraBrandContext(brand)}
 === END BRAND PROFILE ===`;
 }
 
@@ -591,6 +618,8 @@ export function weekPrompt(
   strategy?: StrategyDirective | null,
   quotas?: Record<string, DailyContentQuota>,
   types: readonly ContentType[] = CONTENT_TYPES,
+  /** Brand playbook + per-piece content plan from the brand brain (empty when unavailable). */
+  brainContext = "",
 ): string {
   // Only pay the prompt-token cost of TYPE_SCHEMA explanations for types
   // actually requested somewhere in this batch, AND only within the given
@@ -615,7 +644,7 @@ export function weekPrompt(
     "\n",
   );
 
-  return `${brandContext(brand)}${strategyContext(strategy)}
+  return `${brandContext(brand)}${brainContext}${strategyContext(strategy)}
 
 
 Create content only for these requested quantities. Do not add any extra pieces:
@@ -650,6 +679,8 @@ interface RowInput {
   date: string;
   platforms: string[];
   autopost?: boolean;
+  /** Style chosen by the variety planner for each piece, keyed "date|type|index". */
+  styles?: Map<string, unknown> | null;
 }
 
 function clean(value: unknown, fallback = ""): string {
@@ -727,6 +758,12 @@ function baseRow(input: RowInput) {
   };
 }
 
+/** style_meta for a piece (only present when the brand brain planned this batch). */
+function styleFields(input: RowInput, type: string, index: number): Record<string, unknown> {
+  if (!input.styles) return {};
+  return { style_meta: input.styles.get(`${input.date}|${type}|${index}`) ?? null };
+}
+
 export function rowsForDay(
   day: GeneratedDay,
   input: RowInput,
@@ -749,6 +786,7 @@ export function rowsForDay(
         }));
         rows.push({
           ...baseRow(input),
+          ...styleFields(input, type, i),
           type,
           platforms,
           title: clean(piece.title, `Carousel ${i + 1}`),
@@ -763,6 +801,7 @@ export function rowsForDay(
 
       rows.push({
         ...baseRow(input),
+        ...styleFields(input, type, i),
         type,
         platforms,
         title: clean(piece.title, `${TYPE_LABEL[type]} ${i + 1}`),

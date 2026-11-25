@@ -231,7 +231,7 @@ export interface PlanStatus {
   daysLeft: number | null;
   /** Expiry date if the customer renews right now. */
   renewedUntil: string | null;
-  /** A paid one-time "generate this week" pass that is still valid (INR 300), if any. */
+  /** A paid one-time "generate this week" pass that is still valid (INR 500), if any. */
   oneTime: { expiresAt: string; used: boolean } | null;
 }
 
@@ -257,14 +257,14 @@ export const getPlanStatus = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .handler(async ({ context }): Promise<PlanStatus> => {
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
-    const { ROOT_EMAIL } = await import("@/lib/generation-entitlements");
+    const { isRootEmail } = await import("@/lib/root-email");
 
     const { data: profile } = await supabaseAdmin
       .from("profiles")
       .select("email")
       .eq("id", context.userId)
       .maybeSingle();
-    const isRoot = profile?.email?.trim().toLowerCase() === ROOT_EMAIL;
+    const isRoot = isRootEmail(profile?.email);
 
     const { activeOneTimePass } = await import("@/lib/generation-entitlements");
     const pass = await activeOneTimePass(supabaseAdmin, context.userId);
@@ -272,7 +272,7 @@ export const getPlanStatus = createServerFn({ method: "POST" })
 
     const { data: sub, error } = await supabaseAdmin
       .from("subscriptions")
-      .select("id, plan, status, current_period_end, razorpay_subscription_id, auto_renew")
+      .select("id, plan, status, current_period_end, razorpay_subscription_id")
       .eq("user_id", context.userId)
       .in("status", ["active", "expired"])
       .order("created_at", { ascending: false })
@@ -285,10 +285,7 @@ export const getPlanStatus = createServerFn({ method: "POST" })
     if (!plan) return { ...NO_PLAN, isRoot, oneTime };
 
     const now = new Date();
-    const grace =
-      sub.razorpay_subscription_id || (sub as { auto_renew?: boolean | null }).auto_renew
-        ? LEGACY_AUTOPAY_GRACE_DAYS
-        : 0;
+    const grace = sub.razorpay_subscription_id ? LEGACY_AUTOPAY_GRACE_DAYS : 0;
     const lapsed = sub.status === "expired" || !isPeriodActive(sub.current_period_end, now, grace);
 
     if (lapsed && sub.status === "active") {
@@ -331,7 +328,7 @@ export const getPlanStatus = createServerFn({ method: "POST" })
   });
 
 // ---------------------------------------------------------------------------
-// One-time "generate this week" pass (INR 300)
+// One-time "generate this week" pass (INR 500)
 // ---------------------------------------------------------------------------
 
 /** Opens a payment for the one-time pass. Only for people without a running plan. */

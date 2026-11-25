@@ -612,8 +612,11 @@ export function composeCarouselSlide(opts: Parameters<typeof composeCarouselSlid
     try {
       return await composeCarouselSlideOnce(opts);
     } catch (first) {
-      console.error("[carousel] slide layout failed, retrying without photo/logo", first);
-      return composeCarouselSlideOnce({ ...opts, photo: null, brand: { ...opts.brand, logo: null } });
+      console.error("[carousel] slide layout failed, drawing the simple fallback", first, JSON.stringify({
+        slide: opts.slide, index: opts.index, total: opts.total, style: opts.style, hasPhoto: !!opts.photo,
+        brand: { name: opts.brand.name, website: opts.brand.website, colors: opts.brand.colors, logo: opts.brand.logo ? { mime: opts.brand.logo.mime, bytes: opts.brand.logo.bytes.length } : null },
+      }));
+      return composeCarouselSlideFallback(opts);
     }
   };
   const next = satoriChain.then(run, run);
@@ -656,4 +659,52 @@ async function composeCarouselSlideOnce(opts: {
   );
   const svg = await satori(tree as never, { width: w, height: hh, fonts: [font(POPPINS_400, 400), font(POPPINS_600, 600), font(POPPINS_800, 800)] });
   return new Resvg(svg, { fitTo: { mode: "width", value: w } }).render().asPng();
+}
+
+
+const esc = (t: string) => t.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+function wrapLines(text: string, size: number, maxWidth: number, weightFactor: number): string[] {
+  const perLine = Math.max(8, Math.floor(maxWidth / (size * weightFactor)));
+  const lines: string[] = [];
+  let cur = "";
+  for (const word of text.split(/\s+/).filter(Boolean)) {
+    if ((cur + " " + word).trim().length > perLine && cur) { lines.push(cur); cur = word; } else cur = (cur + " " + word).trim();
+  }
+  if (cur) lines.push(cur);
+  return lines.slice(0, 6);
+}
+
+/** Plain SVG slide (no layout engine) used only if the normal layout fails, so a slide is never left blank. */
+async function composeCarouselSlideFallback(opts: Parameters<typeof composeCarouselSlideOnce>[0]): Promise<Uint8Array> {
+  const { w, h: hh } = sizeFor(opts.aspect ?? "4:5");
+  const { Resvg } = await import("@resvg/resvg-js");
+  const primary = cleanColor(opts.brand.colors?.primary, "#4f46e5");
+  const secondary = cleanColor(opts.brand.colors?.secondary, "#0f172a");
+  const accent = cleanColor(opts.brand.colors?.accent, "#f59e0b");
+  const light = opts.style === "light";
+  const bg = light ? "#f8fafc" : opts.style === "bold" ? primary : secondary;
+  const fg = light ? secondary : onColor(bg);
+  const hi = light ? primary : accent;
+  const pad = 80;
+  const inner = w - pad * 2;
+  const isLast = opts.total > 1 && opts.index === opts.total - 1;
+  const hSize = opts.index === 0 ? 100 : 84;
+  const head = wrapLines(opts.slide.headline.replace(/[#*_"]/g, ""), hSize, inner, 0.62);
+  const sub = wrapLines(opts.slide.subtext.replace(/[#*_"]/g, ""), 38, inner, 0.55);
+  const blockH = head.length * hSize * 1.2 + (sub.length ? 40 + sub.length * 38 * 1.4 : 0);
+  let y = Math.max(260, (hh - blockH) / 2 + hSize);
+  const parts: string[] = [];
+  head.forEach((l) => { parts.push(`<text x="${pad}" y="${y}" font-family="Poppins" font-weight="800" font-size="${hSize}" fill="${fg}">${esc(l)}</text>`); y += hSize * 1.2; });
+  y += 30;
+  sub.forEach((l) => { parts.push(`<text x="${pad}" y="${y}" font-family="Poppins" font-weight="400" font-size="38" fill="${fg}" fill-opacity="0.9">${esc(l)}</text>`); y += 38 * 1.4; });
+  if (isLast) {
+    const web = opts.brand.website.replace(/^https?:\/\//i, "").replace(/\/.*$/, "");
+    const label = web ? `Visit ${web}` : "Get started";
+    y += 40;
+    parts.push(`<rect x="${pad}" y="${y}" rx="40" width="${Math.min(inner, label.length * 26 + 90)}" height="80" fill="${hi}"/><text x="${pad + 45}" y="${y + 54}" font-family="Poppins" font-weight="800" font-size="36" fill="${onColor(hi)}">${esc(label)}</text>`);
+  }
+  const dots = Array.from({ length: Math.min(opts.total, 8) }, (_, i) => `<rect x="${pad + i * 28 + (i > opts.index ? 30 : 0)}" y="${hh - pad - 16}" rx="8" width="${i === opts.index ? 46 : 16}" height="16" fill="${i === opts.index ? hi : light ? "#cbd5e1" : "#ffffff55"}"/>`).join("");
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${w}" height="${hh}" viewBox="0 0 ${w} ${hh}"><rect width="${w}" height="${hh}" fill="${bg}"/><circle cx="${w * 0.9}" cy="${w * 0.12}" r="${w * 0.4}" fill="${hi}" fill-opacity="0.14"/><text x="${pad}" y="${pad + 44}" font-family="Poppins" font-weight="800" font-size="36" fill="${fg}">${esc(opts.brand.name.slice(0, 22))}</text><text x="${w - pad}" y="${pad + 44}" text-anchor="end" font-family="Poppins" font-weight="600" font-size="32" fill="${hi}">${String(opts.index + 1).padStart(2, "0")} / ${String(opts.total).padStart(2, "0")}</text>${parts.join("")}${dots}</svg>`;
+  const fontBuffers = [POPPINS_400, POPPINS_600, POPPINS_800].map((b) => Buffer.from(b, "base64"));
+  return new Resvg(svg, { fitTo: { mode: "width", value: w }, font: { fontBuffers, defaultFontFamily: "Poppins", loadSystemFonts: false } }).render().asPng();
 }

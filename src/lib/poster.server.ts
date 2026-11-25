@@ -7,6 +7,7 @@
  * If anything fails the caller keeps the plain photo, so generation never breaks.
  */
 import { POPPINS_400, POPPINS_600, POPPINS_800 } from "@/lib/poster-fonts";
+import { POPPINS_400_TTF, POPPINS_600_TTF, POPPINS_800_TTF } from "@/lib/poster-fonts-ttf";
 
 export interface PosterBrand {
   name: string;
@@ -704,7 +705,13 @@ async function composeCarouselSlideFallback(opts: Parameters<typeof composeCarou
     parts.push(`<rect x="${pad}" y="${y}" rx="40" width="${Math.min(inner, label.length * 26 + 90)}" height="80" fill="${hi}"/><text x="${pad + 45}" y="${y + 54}" font-family="Poppins" font-weight="800" font-size="36" fill="${onColor(hi)}">${esc(label)}</text>`);
   }
   const dots = Array.from({ length: Math.min(opts.total, 8) }, (_, i) => `<rect x="${pad + i * 28 + (i > opts.index ? 30 : 0)}" y="${hh - pad - 16}" rx="8" width="${i === opts.index ? 46 : 16}" height="16" fill="${i === opts.index ? hi : light ? "#cbd5e1" : "#ffffff55"}"/>`).join("");
-  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${w}" height="${hh}" viewBox="0 0 ${w} ${hh}"><rect width="${w}" height="${hh}" fill="${bg}"/><circle cx="${w * 0.9}" cy="${w * 0.12}" r="${w * 0.4}" fill="${hi}" fill-opacity="0.14"/><text x="${pad}" y="${pad + 44}" font-family="Poppins" font-weight="800" font-size="36" fill="${fg}">${esc(opts.brand.name.slice(0, 22))}</text><text x="${w - pad}" y="${pad + 44}" text-anchor="end" font-family="Poppins" font-weight="600" font-size="32" fill="${hi}">${String(opts.index + 1).padStart(2, "0")} / ${String(opts.total).padStart(2, "0")}</text>${parts.join("")}${dots}</svg>`;
-  const fontBuffers = [POPPINS_400, POPPINS_600, POPPINS_800].map((b) => Buffer.from(b, "base64"));
+  let nameX = pad;
+  let logoSvg = "";
+  if (opts.brand.logo && opts.brand.logo.mime !== "image/svg+xml") {
+    logoSvg = `<image x="${pad}" y="${pad}" height="58" width="58" preserveAspectRatio="xMinYMid meet" href="${dataUri(opts.brand.logo.bytes, opts.brand.logo.mime)}"/>`;
+    nameX = pad + 74;
+  }
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${w}" height="${hh}" viewBox="0 0 ${w} ${hh}"><rect width="${w}" height="${hh}" fill="${bg}"/><circle cx="${w * 0.9}" cy="${w * 0.12}" r="${w * 0.4}" fill="${hi}" fill-opacity="0.14"/>${logoSvg}<text x="${nameX}" y="${pad + 44}" font-family="Poppins" font-weight="800" font-size="36" fill="${fg}">${esc(opts.brand.name.slice(0, 22))}</text><text x="${w - pad}" y="${pad + 44}" text-anchor="end" font-family="Poppins" font-weight="600" font-size="32" fill="${hi}">${String(opts.index + 1).padStart(2, "0")} / ${String(opts.total).padStart(2, "0")}</text>${parts.join("")}${dots}</svg>`;
+  const fontBuffers = [POPPINS_400_TTF, POPPINS_600_TTF, POPPINS_800_TTF].map((b) => Buffer.from(b, "base64"));
   return new Resvg(svg, { fitTo: { mode: "width", value: w }, font: { fontBuffers, defaultFontFamily: "Poppins", loadSystemFonts: false } }).render().asPng();
 }

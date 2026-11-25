@@ -603,6 +603,7 @@ function buildSlide(
     bottomRow);
 }
 
+const FONT_CACHE = new Map<string, Buffer>();
 let satoriChain: Promise<unknown> = Promise.resolve();
 
 /** Layout runs one at a time: satori's wasm layout engine can abort when several run together. */
@@ -630,9 +631,18 @@ async function composeCarouselSlideOnce(opts: {
   aspect?: string;
 }): Promise<Uint8Array> {
   const { w, h: hh } = sizeFor(opts.aspect ?? "4:5");
-  const satori = (await import("satori")).default;
+  // Each slide gets its own fresh pure-JS layout engine. The shared wasm one can run out of
+  // memory on a warm server and then fails every later call with "Aborted()".
+  const satoriMod = await import("satori/wasm");
+  const initYoga = (await import("yoga-wasm-web/asm")).default;
+  satoriMod.init(initYoga() as never);
+  const satori = satoriMod.default;
   const { Resvg } = await import("@resvg/resvg-js");
-  const font = (b64: string, weight: 400 | 600 | 800) => ({ name: "Poppins", data: Buffer.from(b64, "base64"), weight, style: "normal" as const });
+  const font = (b64: string, weight: 400 | 600 | 800) => {
+    let data = FONT_CACHE.get(b64);
+    if (!data) FONT_CACHE.set(b64, (data = Buffer.from(b64, "base64")));
+    return { name: "Poppins", data, weight, style: "normal" as const };
+  };
   const clip = (t: string, words: number) => t.replace(/[#*_"]/g, "").trim().split(/\s+/).slice(0, words).join(" ");
   const tree = buildSlide(
     { headline: clip(opts.slide.headline, 12), subtext: clip(opts.slide.subtext, 28) },

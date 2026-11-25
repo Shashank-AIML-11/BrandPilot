@@ -395,7 +395,7 @@ export const generateMediaBatch =
                 slides,
                 i,
               );
-              const path = `${context.userId}/${item.id}-slide-${i}.png`;
+              const path = `${context.userId}/${item.id}-slide-${i}-${Date.now().toString(36)}.png`;
               const { error: uploadError } = await context.supabase.storage
                 .from("content-media")
                 .upload(path, bytes, { contentType: "image/png", upsert: true });

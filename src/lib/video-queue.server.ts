@@ -767,7 +767,7 @@ export async function processVideoQueue(admin: AdminClient, userId?: string) {
       const made = await Promise.allSettled(
         missing.map(async (index) => {
           const bytes = await renderCarouselSlideBytes(admin, item, brand as never, slides, index);
-          const path = `${item.user_id}/${item.id}-slide-${index}.png`;
+          const path = `${item.user_id}/${item.id}-slide-${index}-${Date.now().toString(36)}.png`;
           const { error: uploadError } = await admin.storage
             .from("content-media")
             .upload(path, bytes, { contentType: "image/png", upsert: true });

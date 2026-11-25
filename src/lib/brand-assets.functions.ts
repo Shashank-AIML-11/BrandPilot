@@ -69,6 +69,7 @@ const ASSET_TYPES: Record<string, string> = {
 };
 const ASSET_MAX_BYTES = 3_000_000;
 const ASSET_MAX_COUNT = 20;
+const PRODUCT_MAX_COUNT = 8;
 
 export interface BrandAsset {
   path: string;
@@ -84,21 +85,23 @@ function mimeFromName(name: string): string {
   );
 }
 
-async function assetFolder(userId: string, brandId: string | null | undefined) {
+export type AssetKind = "assets" | "products";
+
+async function assetFolder(userId: string, brandId: string | null | undefined, kind: AssetKind = "assets") {
   const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
   const { loadBrand } = await import("@/lib/brand.server");
   const brand = await loadBrand(supabaseAdmin as never, userId, brandId ?? null);
   if (!brand) throw new Error("Save your Brand Profile once, then upload brand assets.");
-  return { supabaseAdmin, folder: `${userId}/brand/${brand.id}/assets` };
+  return { supabaseAdmin, folder: `${userId}/brand/${brand.id}/${kind === "products" ? "products" : "assets"}` };
 }
 
 export const listBrandAssets = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((input: { brandId?: string }) => input ?? {})
+  .inputValidator((input: { brandId?: string; kind?: AssetKind }) => input ?? {})
   .handler(async ({ data, context }): Promise<{ assets: BrandAsset[] }> => {
     let ctx;
     try {
-      ctx = await assetFolder(context.userId, data.brandId);
+      ctx = await assetFolder(context.userId, data.brandId, data.kind);
     } catch {
       return { assets: [] };
     }
@@ -125,24 +128,27 @@ export const listBrandAssets = createServerFn({ method: "GET" })
 export const uploadBrandAsset = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator(
-    (input: { brandId?: string; name: string; mime: string; base64: string; replacePath?: string }) =>
+    (input: { brandId?: string; kind?: AssetKind; name: string; mime: string; base64: string; replacePath?: string }) =>
       input,
   )
   .handler(async ({ data, context }) => {
+    const isProducts = data.kind === "products";
     const ext = ASSET_TYPES[data.mime];
-    if (!ext) throw new Error("Brand assets must be PNG, JPG, SVG, WebP or PDF files.");
+    if (!ext || (isProducts && !["png", "jpg", "webp"].includes(ext)))
+      throw new Error(isProducts ? "Product photos must be PNG, JPG or WebP images." : "Brand assets must be PNG, JPG, SVG, WebP or PDF files.");
     const bytes = Buffer.from(data.base64, "base64");
     if (!bytes.length || bytes.length > ASSET_MAX_BYTES)
       throw new Error("Each brand asset must be smaller than 3 MB.");
 
-    const { supabaseAdmin, folder } = await assetFolder(context.userId, data.brandId);
+    const { supabaseAdmin, folder } = await assetFolder(context.userId, data.brandId, data.kind);
+    const maxCount = isProducts ? PRODUCT_MAX_COUNT : ASSET_MAX_COUNT;
 
     if (!data.replacePath) {
       const { data: existing } = await supabaseAdmin.storage
         .from("content-media")
-        .list(folder, { limit: ASSET_MAX_COUNT + 1 });
-      if ((existing ?? []).length >= ASSET_MAX_COUNT)
-        throw new Error(`You can keep up to ${ASSET_MAX_COUNT} brand assets. Delete one first.`);
+        .list(folder, { limit: maxCount + 1 });
+      if ((existing ?? []).length >= maxCount)
+        throw new Error(`You can keep up to ${maxCount} ${isProducts ? "product photos" : "brand assets"}. Delete one first.`);
     }
 
     const base = (data.name || "asset").replace(/\.[^.]+$/, "").replace(/[^a-zA-Z0-9_-]+/g, "-");
@@ -161,9 +167,9 @@ export const uploadBrandAsset = createServerFn({ method: "POST" })
 
 export const removeBrandAsset = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((input: { brandId?: string; path: string }) => input)
+  .inputValidator((input: { brandId?: string; kind?: AssetKind; path: string }) => input)
   .handler(async ({ data, context }) => {
-    const { supabaseAdmin, folder } = await assetFolder(context.userId, data.brandId);
+    const { supabaseAdmin, folder } = await assetFolder(context.userId, data.brandId, data.kind);
     if (!data.path.startsWith(`${folder}/`)) throw new Error("Not your file.");
     await supabaseAdmin.storage.from("content-media").remove([data.path]);
     return { ok: true };

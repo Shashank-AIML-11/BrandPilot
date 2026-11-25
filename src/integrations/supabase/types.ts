@@ -41,6 +41,14 @@ export type Database = {
     Tables: {
       brand_profiles: {
         Row: {
+          industry: string
+          current_offers: string
+          testimonials: string
+          competitors: string
+          locations: string
+          languages: string
+          voice_dos_donts: string
+          compliance_notes: string
           brand_colors: Json
           logo_url: string
           business_name: string
@@ -59,6 +67,14 @@ export type Database = {
           website: string
         }
         Insert: {
+          industry?: string
+          current_offers?: string
+          testimonials?: string
+          competitors?: string
+          locations?: string
+          languages?: string
+          voice_dos_donts?: string
+          compliance_notes?: string
           brand_colors?: Json
           logo_url?: string
           business_name?: string
@@ -77,6 +93,14 @@ export type Database = {
           website?: string
         }
         Update: {
+          industry?: string
+          current_offers?: string
+          testimonials?: string
+          competitors?: string
+          locations?: string
+          languages?: string
+          voice_dos_donts?: string
+          compliance_notes?: string
           brand_colors?: Json
           logo_url?: string
           business_name?: string

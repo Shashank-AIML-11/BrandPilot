@@ -15,6 +15,7 @@ import {
 } from "@/lib/brand-assets.functions";
 import { supabase } from "@/integrations/supabase/client";
 import { ChannelConnections } from "@/components/channel-connections";
+import { ProductPhotos } from "@/components/product-photos";
 import { useMe } from "@/components/app-shell";
 import {
   agencyPlanFor,
@@ -70,6 +71,14 @@ interface FormState {
   tone: string;
   keywords: string;
   google_drive_folder: string;
+  industry: string;
+  current_offers: string;
+  testimonials: string;
+  competitors: string;
+  locations: string;
+  languages: string;
+  voice_dos_donts: string;
+  compliance_notes: string;
   social_handles: Record<string, string>;
   logo_url: string;
   brand_colors: { primary: string; secondary: string; accent: string };
@@ -85,6 +94,14 @@ const EMPTY: FormState = {
   tone: "",
   keywords: "",
   google_drive_folder: "",
+  industry: "",
+  current_offers: "",
+  testimonials: "",
+  competitors: "",
+  locations: "",
+  languages: "",
+  voice_dos_donts: "",
+  compliance_notes: "",
   social_handles: {},
   logo_url: "",
   brand_colors: { primary: "#4f46e5", secondary: "#0f172a", accent: "#f59e0b" },
@@ -383,6 +400,14 @@ function BrandProfilePage() {
       tone: data.tone ?? "",
       keywords: data.keywords ?? "",
       google_drive_folder: data.google_drive_folder ?? "",
+      industry: (data as { industry?: string }).industry ?? "",
+      current_offers: (data as { current_offers?: string }).current_offers ?? "",
+      testimonials: (data as { testimonials?: string }).testimonials ?? "",
+      competitors: (data as { competitors?: string }).competitors ?? "",
+      locations: (data as { locations?: string }).locations ?? "",
+      languages: (data as { languages?: string }).languages ?? "",
+      voice_dos_donts: (data as { voice_dos_donts?: string }).voice_dos_donts ?? "",
+      compliance_notes: (data as { compliance_notes?: string }).compliance_notes ?? "",
       social_handles: (data.social_handles as Record<string, string>) ?? {},
       logo_url: (data as { logo_url?: string }).logo_url ?? "",
       brand_colors: {
@@ -415,6 +440,14 @@ function BrandProfilePage() {
         tone: form.tone.trim(),
         keywords: form.keywords.trim(),
         google_drive_folder: form.google_drive_folder.trim(),
+        industry: form.industry.trim(),
+        current_offers: form.current_offers.trim(),
+        testimonials: form.testimonials.trim(),
+        competitors: form.competitors.trim(),
+        locations: form.locations.trim(),
+        languages: form.languages.trim(),
+        voice_dos_donts: form.voice_dos_donts.trim(),
+        compliance_notes: form.compliance_notes.trim(),
         social_handles: handles,
         brand_colors: form.brand_colors,
         updated_at: new Date().toISOString(),
@@ -632,6 +665,108 @@ function BrandProfilePage() {
             />
           </div>
         </div>
+      </section>
+
+      <section className="surface space-y-4 p-6">
+        <div>
+          <h2 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">
+            More about your brand <span className="font-normal normal-case">(optional)</span>
+          </h2>
+          <p className="mt-1 text-sm text-muted-foreground">
+            The more you tell LOVIZA, the more specific and varied your content gets. Leave anything blank to skip it.
+          </p>
+        </div>
+        <div className="grid gap-4 sm:grid-cols-2">
+          <div className="space-y-2">
+            <Label htmlFor="industry">Industry</Label>
+            <Input
+              id="industry"
+              maxLength={120}
+              placeholder="Skincare, CA firm, restaurant, SaaS..."
+              value={form.industry}
+              onChange={(e) => set("industry", e.target.value)}
+            />
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor="languages">Languages your audience speaks</Label>
+            <Input
+              id="languages"
+              maxLength={120}
+              placeholder="English, Hindi, Marathi"
+              value={form.languages}
+              onChange={(e) => set("languages", e.target.value)}
+            />
+          </div>
+        </div>
+        <div className="space-y-2">
+          <Label htmlFor="current_offers">Current offers</Label>
+          <Textarea
+            id="current_offers"
+            rows={3}
+            maxLength={1000}
+            placeholder="Free audit this month; 20% off annual plans until 31 Dec"
+            value={form.current_offers}
+            onChange={(e) => set("current_offers", e.target.value)}
+          />
+        </div>
+        <div className="space-y-2">
+          <Label htmlFor="testimonials">Real customer testimonials</Label>
+          <Textarea
+            id="testimonials"
+            rows={4}
+            maxLength={1500}
+            placeholder={'"Saved us 10 hours a week" - Priya, founder, Acme (only real quotes you have permission to use)'}
+            value={form.testimonials}
+            onChange={(e) => set("testimonials", e.target.value)}
+          />
+        </div>
+        <div className="grid gap-4 sm:grid-cols-2">
+          <div className="space-y-2">
+            <Label htmlFor="competitors">Competitors</Label>
+            <Textarea
+              id="competitors"
+              rows={3}
+              maxLength={400}
+              placeholder="Used only to position you differently. They are never named in posts."
+              value={form.competitors}
+              onChange={(e) => set("competitors", e.target.value)}
+            />
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor="locations">Locations you serve</Label>
+            <Textarea
+              id="locations"
+              rows={3}
+              maxLength={400}
+              placeholder="Bengaluru, Pune, pan-India online"
+              value={form.locations}
+              onChange={(e) => set("locations", e.target.value)}
+            />
+          </div>
+        </div>
+        <div className="space-y-2">
+          <Label htmlFor="voice_dos_donts">Voice do's and don'ts</Label>
+          <Textarea
+            id="voice_dos_donts"
+            rows={3}
+            maxLength={1000}
+            placeholder="Do: speak plainly, use real examples. Don't: use slang, emojis in headlines, or the word 'cheap'."
+            value={form.voice_dos_donts}
+            onChange={(e) => set("voice_dos_donts", e.target.value)}
+          />
+        </div>
+        <div className="space-y-2">
+          <Label htmlFor="compliance_notes">Compliance notes</Label>
+          <Textarea
+            id="compliance_notes"
+            rows={3}
+            maxLength={1000}
+            placeholder="Claims or words that must or must not appear, e.g. 'Never promise results' or 'Always add: T&C apply'"
+            value={form.compliance_notes}
+            onChange={(e) => set("compliance_notes", e.target.value)}
+          />
+        </div>
+        <ProductPhotos brandId={isAgency ? activeBrand?.id : data?.id} />
       </section>
 
       <section className="surface space-y-3 p-6">

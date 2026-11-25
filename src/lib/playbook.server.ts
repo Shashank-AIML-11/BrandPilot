@@ -82,7 +82,7 @@ function templateMenu(): string {
 function playbookPrompt(brand: Record<string, unknown>): string {
   return `${brandContext(brand as never)}
 
-Build this brand's playbook as JSON:
+Build this brand's playbook as JSON. When the profile includes optional details (industry, offers, testimonials, locations, voice do's and don'ts, compliance notes), build on them: testimonials feed a proof pillar, offers feed an offers pillar, locations shape occasions and visuals, and the voice and compliance notes shape voice_do and voice_dont. Never invent testimonials, offers, prices or claims.
 - voice_summary: 1-2 sentences describing how this brand sounds.
 - voice_do: 4-6 short rules for writing in this voice. voice_dont: 4-6 things to avoid.
 - pillars: 5 or 6 content pillars (name + a one-sentence angle) that together cover education, proof, product/service, audience pain points, behind-the-scenes or culture, and offers. Each must be specific to this brand.

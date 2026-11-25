@@ -13,7 +13,6 @@ import {
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { OneTimeGenerate } from "@/components/one-time-generate";
-import { AutoRenewToggle } from "@/components/autorenew-toggle";
 
 export const Route = createFileRoute("/_authenticated/plan")({
   head: () => ({
@@ -138,7 +137,7 @@ function PlanPage() {
               <Link to="/pricing">Change plan</Link>
             </Button>
             <Button variant="outline" asChild>
-              <Link to="/referrals">Refer &amp; save 20%</Link>
+              <Link to="/referrals">Refer &amp; earn 20%</Link>
             </Button>
           </div>
         </div>
@@ -177,19 +176,11 @@ function PlanPage() {
         </div>
       )}
 
-      {current && activeSub && (
-        <AutoRenewToggle
-          planId={current.id}
-          cycle={isAnnual ? "annual" : "monthly"}
-          periodEnd={activeSub.current_period_end}
-        />
-      )}
-
       <div className="surface p-6">
         <h2 className="text-sm font-semibold">Subscription history</h2>
         <ul className="mt-4 divide-y divide-border text-sm">
           {data?.subs.map((s) => (
-            <li key={s.id} className="flex flex-wrap items-center justify-between gap-x-4 gap-y-1 py-3">
+            <li key={s.id} className="flex items-center justify-between py-3">
               <div>
                 <p className="capitalize">
                   {s.plan} · {s.payment_method}

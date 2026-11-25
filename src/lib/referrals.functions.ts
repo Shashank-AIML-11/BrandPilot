@@ -5,13 +5,14 @@ import { MAX_REFERRAL_PERCENT, USER_REFERRAL_PERCENT } from "@/lib/referrals.sha
 
 /**
  * Referral links.
- *  - Paid users: one personal link, 20% off for the person they refer.
+ *  - Everyone (paid or not): one personal link, 20% off for the person they refer, and the
+ *    owner of the link earns commission (see affiliate.functions.ts).
  *  - Root account: any number of links with a custom discount, optionally
  *    locked to one email address.
  */
 
 export interface MyReferral {
-  /** Only users with a running paid plan (or the root account) may create a link. */
+  /** Everyone may create a link. */
   canCreate: boolean;
   /** Why not, when canCreate is false. */
   reason: string | null;
@@ -27,8 +28,6 @@ export interface MyReferral {
 export const getMyReferral = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .handler(async ({ context }): Promise<MyReferral> => {
-    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
-    const { getGenerationEntitlement } = await import("@/lib/generation-entitlements");
     const { db } = await import("@/lib/referrals.server");
 
     const { data: existing, error } = await (
@@ -41,21 +40,10 @@ export const getMyReferral = createServerFn({ method: "POST" })
       .maybeSingle();
     if (error) throw new Error(error.message);
 
-    let canCreate = true;
-    let reason: string | null = null;
-    try {
-      await getGenerationEntitlement(supabaseAdmin, context.userId);
-    } catch (err) {
-      canCreate = false;
-      reason =
-        err instanceof Error && err.message !== "Upgrade Plan"
-          ? err.message
-          : "Referral links are available to paid plans.";
-    }
-
+    // Everyone (paid or not) can have a link now.
     return {
-      canCreate,
-      reason,
+      canCreate: true,
+      reason: null,
       code: (existing?.code as string | undefined) ?? null,
       discountPercent: (existing?.discount_percent as number | undefined) ?? USER_REFERRAL_PERCENT,
       usesCount: (existing?.uses_count as number | undefined) ?? 0,
@@ -65,20 +53,7 @@ export const getMyReferral = createServerFn({ method: "POST" })
 export const createMyReferral = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .handler(async ({ context }): Promise<MyReferral> => {
-    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
-    const { getGenerationEntitlement } = await import("@/lib/generation-entitlements");
     const { insertReferral } = await import("@/lib/referrals.server");
-
-    // Paid users only. Throws "Upgrade Plan" / "Your plan has expired..." otherwise.
-    try {
-      await getGenerationEntitlement(supabaseAdmin, context.userId);
-    } catch (err) {
-      throw new Error(
-        err instanceof Error && err.message !== "Upgrade Plan"
-          ? err.message
-          : "Referral links are available to paid plans.",
-      );
-    }
 
     const row = await insertReferral({
       created_by: context.userId,

@@ -26,6 +26,7 @@ import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { AdminReferrals } from "@/components/admin-referrals";
+import { AdminAffiliates } from "@/components/admin-affiliates";
 import { AdminAutomation } from "@/components/admin-automation";
 import {
   Table,
@@ -188,6 +189,7 @@ function AdminPage() {
           <TabsTrigger value="subscribers">Subscribers</TabsTrigger>
           <TabsTrigger value="access">User Access</TabsTrigger>
           {data.isRoot && <TabsTrigger value="referrals">Referrals</TabsTrigger>}
+          {data.isRoot && <TabsTrigger value="affiliates">Affiliates</TabsTrigger>}
           <TabsTrigger value="automation">Automation</TabsTrigger>
         </TabsList>
 
@@ -455,6 +457,9 @@ function AdminPage() {
         {data.isRoot && (
           <TabsContent value="referrals" className="pt-4">
             <AdminReferrals />
+          </TabsContent>
+          <TabsContent value="affiliates" className="pt-4">
+            <AdminAffiliates />
           </TabsContent>
         )}
 

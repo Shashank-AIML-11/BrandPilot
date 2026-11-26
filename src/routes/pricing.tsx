@@ -41,9 +41,11 @@ function PricingPage() {
   // A referral link (…/pricing?ref=CODE) is remembered in this browser so the
   // discount survives signing up / signing in before checkout.
   const [refCode, setRefCode] = useState("");
-  const [cycle, setCycle] = useState<BillingCycle>("monthly");
+  // Opens on Annual; a link with ?cycle=monthly still opens Monthly.
+  const [cycle, setCycle] = useState<BillingCycle>("annual");
   useEffect(() => {
-    setCycle(parseBillingCycle(new URLSearchParams(window.location.search).get("cycle")));
+    const fromUrl = new URLSearchParams(window.location.search).get("cycle");
+    if (fromUrl) setCycle(parseBillingCycle(fromUrl));
   }, []);
   useEffect(() => {
     const fromUrl = normalizeReferralCode(new URLSearchParams(window.location.search).get("ref"));

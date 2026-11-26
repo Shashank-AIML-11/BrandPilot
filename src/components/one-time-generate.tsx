@@ -3,7 +3,7 @@ import { Link, useNavigate } from "@tanstack/react-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
-import { Loader2, Sparkles } from "lucide-react";
+import { Loader2 } from "lucide-react";
 import { confirmOneTimePayment, createOneTimeOrder, getPlanStatus } from "@/lib/payments.functions";
 import { loadRazorpayScript } from "@/lib/payments/load-razorpay-script";
 import { ONE_TIME_PASS_DAYS, ONE_TIME_PRICE_INR } from "@/lib/one-time-pass";
@@ -102,11 +102,7 @@ export function OneTimeGenerate() {
         subscription, no autoposting; you post it yourself within {ONE_TIME_PASS_DAYS} days.
       </p>
       <Button className="mt-3" onClick={pay} disabled={busy || !status}>
-        {busy ? (
-          <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-        ) : (
-          <Sparkles className="mr-2 h-4 w-4" />
-        )}
+        {busy && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
         Generate One Time with {formatINR(ONE_TIME_PRICE_INR)}
       </Button>
     </div>
@@ -147,11 +143,7 @@ export function SidebarOneTimeButton() {
           onClick={pay}
           disabled={busy}
         >
-          {busy ? (
-            <Loader2 className="mr-2 h-4 w-4 shrink-0 animate-spin" />
-          ) : (
-            <Sparkles className="mr-2 h-4 w-4 shrink-0" />
-          )}
+          {busy && <Loader2 className="mr-2 h-4 w-4 shrink-0 animate-spin" />}
           Generate One Time with {formatINR(ONE_TIME_PRICE_INR)}
         </Button>
       )}
@@ -243,11 +235,7 @@ export function OneTimePricingButton() {
 
   return (
     <Button onClick={click} disabled={busy} size="sm">
-      {busy ? (
-        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-      ) : (
-        <Sparkles className="mr-2 h-4 w-4" />
-      )}
+      {busy && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
       {passReady
         ? "Go to Content Calendar"
         : `Generate One Time with ${formatINR(ONE_TIME_PRICE_INR)}`}

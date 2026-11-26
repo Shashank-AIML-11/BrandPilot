@@ -900,7 +900,7 @@ function CalendarPage() {
           </Button>
 
           {/* Current period */}
-          <span className="w-44 text-center font-display text-lg font-semibold">
+          <span className="min-w-[13rem] whitespace-nowrap text-center font-display text-lg font-semibold">
             {view === "week" ? weekLabel : format(cursor, "MMMM yyyy")}
           </span>
 

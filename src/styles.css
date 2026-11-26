@@ -15,7 +15,7 @@
   --color-yellow-300: oklch(0.87 0.12 212);
   --color-yellow-400: oklch(0.8 0.141 214);
   --color-yellow-500: oklch(0.72 0.14 215);
-   --font-display: "Space Grotesk", ui-sans-serif, system-ui, sans-serif;
+   --font-display: var(--font-sans);
   --font-sans: "DM Sans", ui-sans-serif, system-ui, sans-serif;
 
   --radius-sm: calc(var(--radius) - 4px);
@@ -155,6 +155,8 @@
 
   html {
     color-scheme: dark;
+    /* Same proportions as viewing the page at 90% browser zoom. */
+    font-size: 90%;
   }
 
   body {

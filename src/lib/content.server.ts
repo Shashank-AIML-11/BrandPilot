@@ -934,8 +934,8 @@ export function videoPromptFor(
     `Style: photoreal handheld and smooth gimbal shots, natural daylight, shallow depth of field, authentic candid people, ${
       vertical ? "fast cuts every 1-2 seconds" : "2-3 quick scene cuts"
     }, colour grade matching a ${tone} brand feel.`,
-    `Include natural ambient sound and an upbeat background music bed. Confident spoken voice-over narrating the key message.`,
-    `English language only. No captions burned in, no on-screen text, no logos, no distorted text.`,
+    `Include natural ambient sound and an upbeat background music bed. No speech or voice-over.`,
+    `The picture must contain no text of any kind: no subtitles, no captions, no lower-third titles, no signs or labels with readable lettering, no watermarks, no logos, no on-screen words or numbers. Keep the lower third of the frame clear.`,
     SAFETY_IMAGE_SUFFIX.trim(),
   ]
     .filter(Boolean)

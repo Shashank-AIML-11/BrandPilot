@@ -413,7 +413,7 @@ function falVideoBody(
   if (model.includes("veo3")) {
     // Veo 3 supports 9:16 and audio; duration is "4s", "6s" or "8s".
     const d = seconds >= 8 ? "8s" : seconds >= 6 ? "6s" : "4s";
-    return { prompt, aspect_ratio: aspectRatio, duration: d, generate_audio: true };
+    return { prompt, aspect_ratio: aspectRatio, duration: d, generate_audio: true, negative_prompt: "subtitles, captions, on-screen text, lettering, watermark, logo" };
   }
   return { prompt, aspect_ratio: aspectRatio, duration: String(seconds) };
 }

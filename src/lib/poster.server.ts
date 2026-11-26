@@ -664,21 +664,40 @@ async function composeCarouselSlideOnce(opts: {
 
 
 const esc = (t: string) => t.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
-function wrapLines(text: string, size: number, maxWidth: number, weightFactor: number): string[] {
-  const perLine = Math.max(8, Math.floor(maxWidth / (size * weightFactor)));
+
+type OtFont = { getAdvanceWidth(text: string, size: number): number; getPath(text: string, x: number, y: number, size: number): { toPathData(digits?: number): string } };
+let ttfFonts: { 400: OtFont; 600: OtFont; 800: OtFont } | null = null;
+
+async function loadTtfFonts() {
+  if (ttfFonts) return ttfFonts;
+  // @ts-expect-error no bundled types for this transitive dependency of satori
+  const ot = await import("@shuding/opentype.js");
+  const parse = (ot.parse ?? ot.default?.parse) as (b: ArrayBuffer) => OtFont;
+  const load = (b64: string) => {
+    const buf = Buffer.from(b64, "base64");
+    return parse(buf.buffer.slice(buf.byteOffset, buf.byteOffset + buf.byteLength) as ArrayBuffer);
+  };
+  ttfFonts = { 400: load(POPPINS_400_TTF), 600: load(POPPINS_600_TTF), 800: load(POPPINS_800_TTF) };
+  return ttfFonts;
+}
+
+function wrapByWidth(font: OtFont, text: string, size: number, maxWidth: number): string[] {
   const lines: string[] = [];
   let cur = "";
   for (const word of text.split(/\s+/).filter(Boolean)) {
-    if ((cur + " " + word).trim().length > perLine && cur) { lines.push(cur); cur = word; } else cur = (cur + " " + word).trim();
+    const next = cur ? `${cur} ${word}` : word;
+    if (cur && font.getAdvanceWidth(next, size) > maxWidth) { lines.push(cur); cur = word; } else cur = next;
   }
   if (cur) lines.push(cur);
   return lines.slice(0, 6);
 }
 
-/** Plain SVG slide (no layout engine) used only if the normal layout fails, so a slide is never left blank. */
+/** Plain SVG slide used only if the normal layout fails, so a slide is never left blank.
+ *  Text is drawn as outlines (no system fonts needed) and no layout engine is used. */
 async function composeCarouselSlideFallback(opts: Parameters<typeof composeCarouselSlideOnce>[0]): Promise<Uint8Array> {
   const { w, h: hh } = sizeFor(opts.aspect ?? "4:5");
   const { Resvg } = await import("@resvg/resvg-js");
+  const f = await loadTtfFonts();
   const primary = cleanColor(opts.brand.colors?.primary, "#4f46e5");
   const secondary = cleanColor(opts.brand.colors?.secondary, "#0f172a");
   const accent = cleanColor(opts.brand.colors?.accent, "#f59e0b");
@@ -690,19 +709,25 @@ async function composeCarouselSlideFallback(opts: Parameters<typeof composeCarou
   const inner = w - pad * 2;
   const isLast = opts.total > 1 && opts.index === opts.total - 1;
   const hSize = opts.index === 0 ? 100 : 84;
-  const head = wrapLines(opts.slide.headline.replace(/[#*_"]/g, ""), hSize, inner, 0.62);
-  const sub = wrapLines(opts.slide.subtext.replace(/[#*_"]/g, ""), 38, inner, 0.55);
+  const text = (font: OtFont, t: string, x: number, y: number, size: number, fill: string, opacity = 1, anchor: "start" | "end" = "start") => {
+    const width = font.getAdvanceWidth(t, size);
+    const px = anchor === "end" ? x - width : x;
+    return `<path d="${font.getPath(t, px, y, size).toPathData(2)}" fill="${fill}" fill-opacity="${opacity}"/>`;
+  };
+  const head = wrapByWidth(f[800], opts.slide.headline.replace(/[#*_"]/g, ""), hSize, inner);
+  const sub = wrapByWidth(f[400], opts.slide.subtext.replace(/[#*_"]/g, ""), 38, inner);
   const blockH = head.length * hSize * 1.2 + (sub.length ? 40 + sub.length * 38 * 1.4 : 0);
   let y = Math.max(260, (hh - blockH) / 2 + hSize);
   const parts: string[] = [];
-  head.forEach((l) => { parts.push(`<text x="${pad}" y="${y}" font-family="Poppins" font-weight="800" font-size="${hSize}" fill="${fg}">${esc(l)}</text>`); y += hSize * 1.2; });
+  head.forEach((l) => { parts.push(text(f[800], l, pad, y, hSize, fg)); y += hSize * 1.2; });
   y += 30;
-  sub.forEach((l) => { parts.push(`<text x="${pad}" y="${y}" font-family="Poppins" font-weight="400" font-size="38" fill="${fg}" fill-opacity="0.9">${esc(l)}</text>`); y += 38 * 1.4; });
+  sub.forEach((l) => { parts.push(text(f[400], l, pad, y, 38, fg, 0.9)); y += 38 * 1.4; });
   if (isLast) {
     const web = opts.brand.website.replace(/^https?:\/\//i, "").replace(/\/.*$/, "");
     const label = web ? `Visit ${web}` : "Get started";
+    const bw = Math.min(inner, f[800].getAdvanceWidth(label, 36) + 90);
     y += 40;
-    parts.push(`<rect x="${pad}" y="${y}" rx="40" width="${Math.min(inner, label.length * 26 + 90)}" height="80" fill="${hi}"/><text x="${pad + 45}" y="${y + 54}" font-family="Poppins" font-weight="800" font-size="36" fill="${onColor(hi)}">${esc(label)}</text>`);
+    parts.push(`<rect x="${pad}" y="${y}" rx="40" width="${bw}" height="80" fill="${hi}"/>${text(f[800], label, pad + 45, y + 54, 36, onColor(hi))}`);
   }
   const dots = Array.from({ length: Math.min(opts.total, 8) }, (_, i) => `<rect x="${pad + i * 28 + (i > opts.index ? 30 : 0)}" y="${hh - pad - 16}" rx="8" width="${i === opts.index ? 46 : 16}" height="16" fill="${i === opts.index ? hi : light ? "#cbd5e1" : "#ffffff55"}"/>`).join("");
   let nameX = pad;
@@ -711,7 +736,7 @@ async function composeCarouselSlideFallback(opts: Parameters<typeof composeCarou
     logoSvg = `<image x="${pad}" y="${pad}" height="58" width="58" preserveAspectRatio="xMinYMid meet" href="${dataUri(opts.brand.logo.bytes, opts.brand.logo.mime)}"/>`;
     nameX = pad + 74;
   }
-  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${w}" height="${hh}" viewBox="0 0 ${w} ${hh}"><rect width="${w}" height="${hh}" fill="${bg}"/><circle cx="${w * 0.9}" cy="${w * 0.12}" r="${w * 0.4}" fill="${hi}" fill-opacity="0.14"/>${logoSvg}<text x="${nameX}" y="${pad + 44}" font-family="Poppins" font-weight="800" font-size="36" fill="${fg}">${esc(opts.brand.name.slice(0, 22))}</text><text x="${w - pad}" y="${pad + 44}" text-anchor="end" font-family="Poppins" font-weight="600" font-size="32" fill="${hi}">${String(opts.index + 1).padStart(2, "0")} / ${String(opts.total).padStart(2, "0")}</text>${parts.join("")}${dots}</svg>`;
-  const fontBuffers = [POPPINS_400_TTF, POPPINS_600_TTF, POPPINS_800_TTF].map((b) => Buffer.from(b, "base64"));
-  return new Resvg(svg, { fitTo: { mode: "width", value: w }, font: { fontBuffers, defaultFontFamily: "Poppins", loadSystemFonts: false } }).render().asPng();
+  const counter = `${String(opts.index + 1).padStart(2, "0")} / ${String(opts.total).padStart(2, "0")}`;
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${w}" height="${hh}" viewBox="0 0 ${w} ${hh}"><rect width="${w}" height="${hh}" fill="${bg}"/><circle cx="${w * 0.9}" cy="${w * 0.12}" r="${w * 0.4}" fill="${hi}" fill-opacity="0.14"/>${logoSvg}${text(f[800], opts.brand.name.slice(0, 22), nameX, pad + 44, 36, fg)}${text(f[600], counter, w - pad, pad + 44, 32, hi, 1, "end")}${parts.join("")}${dots}</svg>`;
+  return new Resvg(svg, { fitTo: { mode: "width", value: w } }).render().asPng();
 }

@@ -82,12 +82,21 @@ export async function productSceneFor(
   ctx: { userId: string; brandId: string | null | undefined; aspect: string; seed: string },
 ): Promise<Uint8Array | null> {
   try {
-    if (!productScenesEnabled() || !ctx.brandId) return null;
-    if (hash(`${ctx.seed}|share`) % 100 >= pct("PRODUCT_SCENE_SHARE", 50)) return null;
+    if (!productScenesEnabled() || !ctx.brandId) {
+      console.log(`[scene] skipped: ${!ctx.brandId ? "no brand id on the post" : "switched off or FAL_KEY missing"}`);
+      return null;
+    }
+    if (hash(`${ctx.seed}|share`) % 100 >= pct("PRODUCT_SCENE_SHARE", 50)) {
+      console.log("[scene] skipped: this post did not draw a product scene (PRODUCT_SCENE_SHARE)");
+      return null;
+    }
 
     const root = `${ctx.userId}/brand/${ctx.brandId}`;
     const products = (await listNames(admin, `${root}/products`)).filter((n) => IMG.test(n));
-    if (!products.length) return null;
+    if (!products.length) {
+      console.log(`[scene] skipped: no product photos found in ${root}/products`);
+      return null;
+    }
 
     const shape = ctx.aspect.replace(":", "x");
     const sceneFolder = `${root}/scenes`;

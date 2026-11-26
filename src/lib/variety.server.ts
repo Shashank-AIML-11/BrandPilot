@@ -22,8 +22,26 @@ export interface StyleMeta {
   pillar: string;
   hook: string;
   template?: string;
+  /** Reel recipe id (video types only): the shape of the scene sequence. */
+  recipe?: string;
   wildcard?: boolean;
 }
+
+/**
+ * Reel recipes: the order of scene layouts a video should follow. They are a guide for the
+ * scene writer (it still checks each layout has what it needs), so reels do not all share the
+ * same hook, list, phone, call-to-action shape.
+ */
+export const REEL_RECIPES: Array<{ id: string; order: string; note: string }> = [
+  { id: "problem_fix", order: "hook > problem_solution > feature_cards > broll > cta_end", note: "name a pain, show the fix, prove it with real life footage" },
+  { id: "numbers_story", order: "hook > stat_hero > steps > broll > cta_end", note: "lead with one strong number from the brand info, then explain how it works" },
+  { id: "tips_list", order: "question > checklist > statement > phone_post > cta_end", note: "quick useful tips in a list" },
+  { id: "compare_choose", order: "hook > compare > feature_cards > offer_card > cta_end", note: "before vs after or us vs the usual way, then the offer" },
+  { id: "journey", order: "hook > timeline > broll > statement > cta_end", note: "a short journey from problem to result" },
+  { id: "phone_demo", order: "hook > phone_chat > phone_notify > statement > cta_end", note: "show it working on a phone, human and simple" },
+  { id: "myth_truth", order: "question > statement > problem_solution > checklist > cta_end", note: "a common belief, then the truth" },
+  { id: "offer_push", order: "hook > feature_cards > tags > offer_card > cta_end", note: "what is included, who it is for, the offer" },
+];
 
 export const HOOK_STYLES: Array<{ id: string; how: string }> = [
   { id: "question", how: "open with a direct question the audience is already asking" },
@@ -119,6 +137,7 @@ async function recentHistory(admin: AdminClient, userId: string, brandId: string
     pillars: metas.map((m) => m.pillar).filter(Boolean),
     hooks: metas.map((m) => m.hook).filter(Boolean),
     templates: metas.map((m) => m.template).filter((t): t is string => !!t),
+    recipes: metas.map((m) => m.recipe).filter((t): t is string => !!t),
     pillarsByType: byType((m) => m.pillar),
     hooksByType: byType((m) => m.hook),
   };
@@ -146,6 +165,8 @@ export async function planVariety(
     const usedTemplates = [...hist.templates];
     const pillarsByType: Record<string, string[]> = Object.fromEntries(Object.entries(hist.pillarsByType).map(([k, v]) => [k, [...v]]));
     const hooksByType: Record<string, string[]> = Object.fromEntries(Object.entries(hist.hooksByType).map(([k, v]) => [k, [...v]]));
+    const usedRecipes = [...hist.recipes];
+    const groupRecipe = new Map<string, string>(); // all video types of one day share one render
     const groupTemplate = new Map<string, string>(); // one template per date for the shared image
     const out = new Map<string, StyleMeta>();
     let n = 0;
@@ -178,11 +199,23 @@ export async function planVariety(
         template = undefined; // blog and carousel carry no poster template
       }
 
+      let recipe: string | undefined;
+      if ((VIDEO_TYPES as string[]).includes(slot.type)) {
+        const key = `${slot.date}|video`;
+        recipe = groupRecipe.get(key);
+        if (!recipe) {
+          recipe = pickLeastRecent(REEL_RECIPES.map((r) => r.id), usedRecipes, 3, `${seed}r`);
+          usedRecipes.unshift(recipe);
+          groupRecipe.set(key, recipe);
+        }
+      }
+
       out.set(slotKey(slot.date, slot.type, slot.index), {
         v: 1,
         pillar,
         hook,
         ...(template ? { template } : {}),
+        ...(recipe ? { recipe } : {}),
         ...(wildcard ? { wildcard: true } : {}),
       });
     }

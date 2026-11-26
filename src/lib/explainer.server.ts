@@ -241,6 +241,35 @@ async function recentHooks(admin: Admin, input: ExplainerInput): Promise<string>
   }
 }
 
+/**
+ * The brand brain's plan for this video (content pillar, hook style, scene recipe), read from the item.
+ * Returns "" when there is none (older items, or the migration is not run yet), so nothing changes.
+ */
+async function styleDirection(admin: Admin, input: ExplainerInput): Promise<string> {
+  try {
+    const { data } = await (admin as unknown as import("@supabase/supabase-js").SupabaseClient)
+      .from("content_items")
+      .select("style_meta")
+      .eq("id", input.item.id)
+      .maybeSingle();
+    const meta = (data as { style_meta?: { pillar?: string; hook?: string; recipe?: string } | null } | null)?.style_meta;
+    if (!meta) return "";
+    const { REEL_RECIPES, HOOK_STYLES } = await import("@/lib/variety.server");
+    const recipe = REEL_RECIPES.find((r) => r.id === meta.recipe);
+    const hook = HOOK_STYLES.find((h) => h.id === meta.hook);
+    const lines = [
+      meta.pillar ? `Content pillar for this video: ${meta.pillar}.` : "",
+      hook ? `Hook style: ${hook.id} (${hook.how}).` : "",
+      recipe
+        ? `Scene recipe to follow as a guide: ${recipe.order} (${recipe.note}). Keep this order where each layout has what it needs; if a layout cannot be filled with real brand information, swap it for the closest one that can.`
+        : "",
+    ].filter(Boolean);
+    return lines.length ? `${lines.join("\n")}\n` : "";
+  } catch {
+    return "";
+  }
+}
+
 /** Library: keeps every script (layouts, lines, length) so the library grows with each video. Never throws. */
 async function saveScript(admin: Admin, input: ExplainerInput, scenes: ExplainerScene[]) {
   if (!input.userId) return;
@@ -279,6 +308,7 @@ export async function prepareScenes(
   const maxBroll = Math.max(0, Number.parseInt(process.env["EXPLAINER_MAX_BROLL"] ?? "3", 10) || 0);
   const budget = wordBudget();
   const recent = await recentHooks(admin, input);
+  const direction = await styleDirection(admin, input);
   const colors = { primary: cleanColor(input.colors?.primary, "#4f46e5"), accent: cleanColor(input.colors?.accent, "#f59e0b") };
 
   try {
@@ -296,7 +326,7 @@ Call to action: ${plan.cta}
 Brand website: ${input.website}
 
 The whole video must be ${maxSeconds()} seconds or less when spoken aloud. That means the TOTAL of all "voice" lines is at most ${budget} words and every voice line is a COMPLETE sentence of at most 13 words (never a fragment that depends on the next line).
-${recent ? `Recent videos for this brand already used these hooks, so open differently: ${recent}\n` : ""}Write exactly ${count} scenes. Scene 1 is a hook that stops the scroll (a problem the audience feels). The middle scenes each teach ONE concrete thing about THIS brand using its own products, services and words. The last scene is the call to action naming ${input.brandName} (layout "cta_end").
+${recent ? `Recent videos for this brand already used these hooks, so open differently: ${recent}\n` : ""}${direction}Write exactly ${count} scenes. Scene 1 is a hook that stops the scroll (a problem the audience feels). The middle scenes each teach ONE concrete thing about THIS brand using its own products, services and words. The last scene is the call to action naming ${input.brandName} (layout "cta_end").
 
 Each scene is one screen. Choose the layout that best SHOWS the idea, vary them (never the same layout twice in a row, mix text, list, phone and comparison screens). Layouts:
 ${layoutCatalogue()}

@@ -171,6 +171,15 @@ async function photoFor(
   prompt: string,
   aspect: Parameters<typeof generateImageBytes>[1] = "1:1",
 ): Promise<Uint8Array> {
+  // The brand's own product photos, restyled into fresh scenes (null when it has none or it is switched off).
+  const { productSceneFor } = await import("@/lib/product-scenes.server");
+  const scene = await productSceneFor(admin as never, {
+    userId: item.user_id,
+    brandId: item.brand_id ?? null,
+    aspect,
+    seed: `${item.type}|${item.title ?? ""}|${item.summary ?? ""}`,
+  });
+  if (scene) return scene;
   const { reuseOrGenerate } = await import("@/lib/media-library.server");
   const result = await reuseOrGenerate(
     admin as never,

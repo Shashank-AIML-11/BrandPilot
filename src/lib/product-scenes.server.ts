@@ -35,6 +35,15 @@ export const SCENE_STYLES: Array<{ id: string; scene: string }> = [
 const hash = (s: string) => [...s].reduce((a, c) => (a * 31 + c.charCodeAt(0)) >>> 0, 7);
 const IMG = /\.(png|jpe?g|webp)$/i;
 
+/** What each product-scene decision was in this run; the worker returns it so it can be read without server logs. */
+export const sceneNotes: string[] = [];
+const note = (message: string, error?: unknown) => {
+  sceneNotes.push(error ? `${message}: ${error instanceof Error ? error.message : String(error)}`.slice(0, 300) : message);
+  if (sceneNotes.length > 30) sceneNotes.shift();
+  if (error) console.error(message, error);
+  else console.log(message);
+};
+
 export function productScenesEnabled(): boolean {
   return (process.env["PRODUCT_SCENES"] ?? "on").trim().toLowerCase() !== "off" && Boolean(process.env["FAL_KEY"]?.trim());
 }
@@ -81,20 +90,21 @@ export async function productSceneFor(
   admin: Admin,
   ctx: { userId: string; brandId: string | null | undefined; aspect: string; seed: string },
 ): Promise<Uint8Array | null> {
+  note(`[scene] checking ${ctx.aspect} (brand ${ctx.brandId ?? "none"})`);
   try {
     if (!productScenesEnabled() || !ctx.brandId) {
-      console.log(`[scene] skipped: ${!ctx.brandId ? "no brand id on the post" : "switched off or FAL_KEY missing"}`);
+      note(`[scene] skipped: ${!ctx.brandId ? "no brand id on the post" : "switched off or FAL_KEY missing"}`);
       return null;
     }
     if (hash(`${ctx.seed}|share`) % 100 >= pct("PRODUCT_SCENE_SHARE", 50)) {
-      console.log("[scene] skipped: this post did not draw a product scene (PRODUCT_SCENE_SHARE)");
+      note("[scene] skipped: this post did not draw a product scene (PRODUCT_SCENE_SHARE)");
       return null;
     }
 
     const root = `${ctx.userId}/brand/${ctx.brandId}`;
     const products = (await listNames(admin, `${root}/products`)).filter((n) => IMG.test(n));
     if (!products.length) {
-      console.log(`[scene] skipped: no product photos found in ${root}/products`);
+      note(`[scene] skipped: no product photos found in ${root}/products`);
       return null;
     }
 
@@ -121,10 +131,10 @@ export async function productSceneFor(
         if (!signed?.signedUrl) throw new Error("Could not read the product photo.");
         const bytes = await editWithFal(signed.signedUrl, pick.style.scene, ctx.aspect);
         await admin.storage.from("content-media").upload(`${sceneFolder}/${fileFor(pick.product, pick.style.id)}`, bytes, { contentType: "image/png", upsert: true });
-        console.log(`[scene] new product scene: ${pick.product} / ${pick.style.id} / ${shape}`);
+        note(`[scene] new product scene: ${pick.product} / ${pick.style.id} / ${shape}`);
         return bytes;
       } catch (error) {
-        console.error("[scene] could not make a new product scene, trying a saved one", error);
+        note("[scene] could not make a new product scene, trying a saved one", error);
         if (!existing.length) return null;
       }
     }
@@ -133,10 +143,10 @@ export async function productSceneFor(
     const chosen = existing[hash(ctx.seed) % existing.length]!;
     const file = await admin.storage.from("content-media").download(`${sceneFolder}/${chosen}`);
     if (file.error || !file.data) return null;
-    console.log(`[scene] reused product scene ${chosen} - no image cost`);
+    note(`[scene] reused product scene ${chosen} - no image cost`);
     return new Uint8Array(await file.data.arrayBuffer());
   } catch (error) {
-    console.error("[scene] product scenes unavailable, using the normal image path", error);
+    note("[scene] product scenes unavailable, using the normal image path", error);
     return null;
   }
 }

@@ -811,6 +811,7 @@ export async function processVideoQueue(admin: AdminClient, userId?: string) {
   });
   const carouselsStored = carouselResults.filter((result) => result.status === "fulfilled").length;
 
+  const { sceneNotes } = await import("@/lib/product-scenes.server");
   return {
     started,
     stored,
@@ -818,5 +819,6 @@ export async function processVideoQueue(admin: AdminClient, userId?: string) {
     imagesStored,
     carouselsStored,
     paused: !videoGenerationEnabled,
+    sceneNotes: [...sceneNotes],
   };
 }

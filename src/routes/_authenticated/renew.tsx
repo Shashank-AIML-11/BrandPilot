@@ -1,8 +1,8 @@
 import { useEffect, useState } from "react";
-import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
+import { createFileRoute, Link, useNavigate, useRouter } from "@tanstack/react-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { CalendarClock, Check, Loader2, Lock } from "lucide-react";
+import { ArrowLeft, CalendarClock, Check, Loader2, Lock } from "lucide-react";
 import {
   formatINR,
   parseBillingCycle,
@@ -32,6 +32,18 @@ export const Route = createFileRoute("/_authenticated/renew")({
 
 function RenewPage() {
   const navigate = useNavigate();
+  const router = useRouter();
+  /** Back to the page the person came from; falls back to their plan page if there is no history. */
+  function goBack() {
+    if (typeof window !== "undefined" && window.history.length > 1) router.history.back();
+    else void navigate({ to: "/plan" });
+  }
+  const backButton = (
+    <Button type="button" variant="outline" size="sm" className="shrink-0" onClick={goBack}>
+      <ArrowLeft className="mr-2 h-4 w-4" />
+      Back
+    </Button>
+  );
   const queryClient = useQueryClient();
   const [busy, setBusy] = useState(false);
 
@@ -108,7 +120,10 @@ function RenewPage() {
   if (!status || status.state === "none" || !plan) {
     return (
       <div className="mx-auto max-w-xl space-y-4">
-        <h1 className="text-2xl font-bold">Renew your plan</h1>
+        <div className="flex items-start justify-between gap-4">
+          <h1 className="text-2xl font-bold">Renew your plan</h1>
+          {backButton}
+        </div>
         <p className="text-sm text-muted-foreground">
           You don't have a plan to renew yet. Choose a plan to get started.
         </p>
@@ -131,7 +146,10 @@ function RenewPage() {
   return (
     <div className="mx-auto max-w-xl space-y-6">
       <div>
-        <h1 className="text-2xl font-bold">Renew your plan</h1>
+        <div className="flex items-start justify-between gap-4">
+          <h1 className="text-2xl font-bold">Renew your plan</h1>
+          {backButton}
+        </div>
         <p className="mt-1 text-sm text-muted-foreground">
           Pay for another {cycle === "annual" ? "year" : "30 days"} of your {plan.name} plan.
         </p>

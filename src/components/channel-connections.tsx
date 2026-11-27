@@ -57,6 +57,21 @@ export function ChannelConnections({
   }, [queryClient]);
 
   const [pendingChannel, setPendingChannel] = useState<string | null>(null);
+  // TikTok is banned in India, so say so next to the button instead of starting a login that cannot work.
+  const [blockedNote, setBlockedNote] = useState<string | null>(null);
+  const inIndia = () => {
+    try {
+      const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
+      return tz === "Asia/Calcutta" || tz === "Asia/Kolkata";
+    } catch {
+      return false;
+    }
+  };
+  useEffect(() => {
+    if (!blockedNote) return;
+    const t = window.setTimeout(() => setBlockedNote(null), 5000);
+    return () => window.clearTimeout(t);
+  }, [blockedNote]);
 
   const connect = useMutation({
     mutationFn: async (channel: string) => {
@@ -153,19 +168,32 @@ export function ChannelConnections({
                     <Unlink className="h-4 w-4" />
                   </Button>
                 ) : (
-                  <Button
-                    size="sm"
-                    variant="secondary"
-                    onClick={() => connect.mutate(channel.key)}
-                    disabled={connect.isPending && pendingChannel === channel.key}
-                  >
-                    {connect.isPending && pendingChannel === channel.key ? (
-                      <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
-                    ) : (
-                      <Link2 className="mr-1.5 h-3.5 w-3.5" />
+                  <div className="flex shrink-0 items-center gap-2">
+                    {blockedNote === channel.key && (
+                      <span role="status" className="max-w-[10rem] text-right text-xs font-medium text-destructive">
+                        {channel.label} is not available in India
+                      </span>
                     )}
-                    Connect
-                  </Button>
+                    <Button
+                      size="sm"
+                      variant="secondary"
+                      onClick={() => {
+                        if (channel.key === "TikTok" && inIndia()) {
+                          setBlockedNote(channel.key);
+                          return;
+                        }
+                        connect.mutate(channel.key);
+                      }}
+                      disabled={connect.isPending && pendingChannel === channel.key}
+                    >
+                      {connect.isPending && pendingChannel === channel.key ? (
+                        <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
+                      ) : (
+                        <Link2 className="mr-1.5 h-3.5 w-3.5" />
+                      )}
+                      Connect
+                    </Button>
+                  </div>
                 )}
               </div>
             );

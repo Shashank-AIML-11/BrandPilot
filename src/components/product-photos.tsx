@@ -6,6 +6,7 @@ import { Loader2, Trash2, Upload } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { syncBrain } from "@/lib/brain-sync";
+import { FilePreview, usePreview } from "@/components/file-preview";
 import { listBrandAssets, removeBrandAsset, uploadBrandAsset } from "@/lib/brand-assets.functions";
 
 const MAX_BYTES = 3_000_000;
@@ -20,6 +21,7 @@ export function ProductPhotos({ brandId }: { brandId?: string | undefined }) {
   const remove = useServerFn(removeBrandAsset);
   const qc = useQueryClient();
   const fileRef = useRef<HTMLInputElement>(null);
+  const preview = usePreview();
 
   const { data } = useQuery({
     queryKey: ["brand-products", brandId ?? "default"],
@@ -84,9 +86,14 @@ export function ProductPhotos({ brandId }: { brandId?: string | undefined }) {
         <div className="flex flex-wrap gap-3">
           {photos.map((p) => (
             <div key={p.path} className="w-24 space-y-1">
-              <div className="flex h-24 w-24 items-center justify-center overflow-hidden rounded-md border border-border bg-muted/30">
+              <button
+                type="button"
+                onClick={() => preview.open({ name: p.name, url: p.url, mime: "image/*" })}
+                className="flex h-24 w-24 cursor-zoom-in items-center justify-center overflow-hidden rounded-md border border-border bg-muted/30"
+                title="Click to preview"
+              >
                 {p.url ? <img src={p.url} alt={p.name} className="h-full w-full object-cover" /> : null}
-              </div>
+              </button>
               <div className="flex items-center justify-between gap-1">
                 <p className="truncate text-[11px] text-muted-foreground" title={p.name}>{p.name}</p>
                 <Button type="button" size="sm" variant="ghost" className="h-7 px-2" disabled={del.isPending} onClick={() => del.mutate(p.path)} aria-label={`Delete ${p.name}`}>
@@ -97,6 +104,7 @@ export function ProductPhotos({ brandId }: { brandId?: string | undefined }) {
           ))}
         </div>
       )}
+      <FilePreview {...preview} />
     </div>
   );
 }

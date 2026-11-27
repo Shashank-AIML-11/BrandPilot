@@ -198,3 +198,19 @@
   background-clip: text;
   color: transparent;
 }
+
+/* Draws the eye to Save changes / Discard when someone tries to leave with unsaved edits. */
+@keyframes nudge-attention {
+  0%, 100% { transform: translateX(0); box-shadow: 0 0 0 0 oklch(0.79 0.166 76 / 0); }
+  15% { transform: translateX(-6px); box-shadow: 0 0 0 4px oklch(0.79 0.166 76 / 0.55); }
+  30% { transform: translateX(6px); }
+  45% { transform: translateX(-4px); box-shadow: 0 0 0 6px oklch(0.79 0.166 76 / 0.35); }
+  60% { transform: translateX(4px); }
+  80% { transform: translateX(0); box-shadow: 0 0 0 4px oklch(0.79 0.166 76 / 0.45); }
+}
+.nudge-attention {
+  animation: nudge-attention 0.9s ease-in-out;
+}
+@media (prefers-reduced-motion: reduce) {
+  .nudge-attention { animation: none; box-shadow: 0 0 0 3px oklch(0.79 0.166 76 / 0.6); }
+}

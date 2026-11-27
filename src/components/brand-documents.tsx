@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { listBrandDocuments, removeBrandDocument, uploadBrandDocument } from "@/lib/brand-knowledge.functions";
 import { syncBrain } from "@/lib/brain-sync";
+import { FilePreview, usePreview } from "@/components/file-preview";
 
 const MAX_BYTES = 3_000_000;
 
@@ -17,6 +18,7 @@ export function BrandDocuments({ brandId }: { brandId?: string | undefined }) {
   const remove = useServerFn(removeBrandDocument);
   const qc = useQueryClient();
   const fileRef = useRef<HTMLInputElement>(null);
+  const preview = usePreview();
 
   const { data } = useQuery({
     queryKey: ["brand-documents", brandId ?? "default"],
@@ -81,14 +83,19 @@ export function BrandDocuments({ brandId }: { brandId?: string | undefined }) {
           {docs.map((d) => (
             <li key={d.path} className="flex items-center gap-2 rounded-md border border-border px-2 py-1.5">
               <FileText className="h-4 w-4 shrink-0 text-muted-foreground" />
-              <div className="min-w-0 flex-1">
-                <p className="truncate text-xs" title={d.name}>{d.name}</p>
+              <button
+                type="button"
+                onClick={() => preview.open({ name: d.name, url: d.url })}
+                className="min-w-0 flex-1 cursor-pointer text-left"
+                title="Click to preview"
+              >
+                <p className="truncate text-xs hover:underline" title={d.name}>{d.name}</p>
                 <p className="flex items-center gap-1 text-[11px] text-muted-foreground">
                   {d.status === "ready" && <><CheckCircle2 className="h-3 w-3 text-emerald-600" /> Read by the Brand Brain</>}
                   {d.status === "processing" && <><Loader2 className="h-3 w-3 animate-spin" /> Reading…</>}
                   {d.status === "failed" && <><AlertCircle className="h-3 w-3 text-destructive" /> {d.error ?? "Could not be read"}</>}
                 </p>
-              </div>
+              </button>
               <Button type="button" size="sm" variant="ghost" className="h-7 px-2" disabled={del.isPending} onClick={() => del.mutate(d.path)} aria-label={`Delete ${d.name}`}>
                 <Trash2 className="h-4 w-4" />
               </Button>
@@ -96,6 +103,7 @@ export function BrandDocuments({ brandId }: { brandId?: string | undefined }) {
           ))}
         </ul>
       )}
+      <FilePreview {...preview} />
     </div>
   );
 }

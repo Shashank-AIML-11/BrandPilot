@@ -50,6 +50,7 @@ export interface BrandDocument {
   name: string;
   status: "processing" | "ready" | "failed";
   error: string | null;
+  url: string | null;
 }
 
 export const listBrandDocuments = createServerFn({ method: "GET" })
@@ -65,19 +66,23 @@ export const listBrandDocuments = createServerFn({ method: "GET" })
       .list(root.slice(0, -1), { limit: 100, sortBy: { column: "created_at", order: "desc" } });
     const rows = await knowledgeOverview(supabaseAdmin, brand.id).catch(() => []);
     const byPath = new Map(rows.filter((r) => r.kind === "document").map((r) => [r.name, r]));
+    const kept = (files ?? []).filter((f) => f.name && !f.name.startsWith("."));
+    const { data: signed } = kept.length
+      ? await supabaseAdmin.storage.from("content-media").createSignedUrls(kept.map((f) => `${root}${f.name}`), 60 * 60)
+      : { data: [] as Array<{ path: string | null; signedUrl: string }> };
+    const urlByPath = new Map((signed ?? []).map((s) => [s.path, s.signedUrl]));
     return {
-      documents: (files ?? [])
-        .filter((f) => f.name && !f.name.startsWith("."))
-        .map((f) => {
-          const name = f.name.replace(/^\d+-/, "");
-          const row = byPath.get(name);
-          return {
-            path: `${root}${f.name}`,
-            name,
-            status: row?.status ?? "processing",
-            error: row?.error ?? null,
-          };
-        }),
+      documents: kept.map((f) => {
+        const name = f.name.replace(/^\d+-/, "");
+        const row = byPath.get(name);
+        return {
+          path: `${root}${f.name}`,
+          name,
+          status: row?.status ?? "processing",
+          error: row?.error ?? null,
+          url: urlByPath.get(`${root}${f.name}`) ?? null,
+        };
+      }),
     };
   });
 

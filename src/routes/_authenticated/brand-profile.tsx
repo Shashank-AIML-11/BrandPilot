@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useRef, useState, type Dispatch, type SetStateAction } from "react";
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, useBlocker } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { ChevronRight, FileText, Loader2, Save, Trash2, Upload } from "lucide-react";
+import { ChevronRight, FileText, Loader2, RotateCcw, Save, Trash2, Upload } from "lucide-react";
 import { useServerFn } from "@tanstack/react-start";
 import { refreshBrandPlaybook } from "@/lib/brand-brain.functions";
 import {
@@ -17,6 +17,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { ChannelConnections } from "@/components/channel-connections";
 import { ProductPhotos } from "@/components/product-photos";
 import { BrandDocuments } from "@/components/brand-documents";
+import { FilePreview, usePreview } from "@/components/file-preview";
 import { BrainStatus } from "@/components/brain-status";
 import { WebsiteScan, type ScanApproval } from "@/components/website-scan";
 import { syncBrain } from "@/lib/brain-sync";
@@ -140,6 +141,7 @@ function BrandAssets({
   const uploadAsset = useServerFn(uploadBrandAsset);
   const removeAsset = useServerFn(removeBrandAsset);
   const qc = useQueryClient();
+  const preview = usePreview();
 
   const { data: assetData } = useQuery({
     queryKey: ["brand-assets", brandId ?? "default"],
@@ -221,17 +223,24 @@ function BrandAssets({
 
   return (
     <div className="grid gap-4 lg:grid-cols-[minmax(0,3fr)_minmax(0,2fr)]">
+      <div className="grid gap-6 sm:grid-cols-[auto_minmax(0,1fr)]">
       <div className="space-y-2">
         <Label>Brand logo</Label>
         <div className="flex flex-wrap items-start gap-6">
           <div className="space-y-2">
-            <div className="flex h-16 w-28 items-center justify-center overflow-hidden rounded-md border border-border bg-muted/30">
+            <button
+              type="button"
+              disabled={!logo?.url}
+              onClick={() => preview.open({ name: "Brand logo", url: logo?.url, mime: "image/*" })}
+              className="flex h-16 w-28 cursor-zoom-in items-center justify-center overflow-hidden rounded-md border border-border bg-muted/30 disabled:cursor-default"
+              title={logo?.url ? "Click to preview" : undefined}
+            >
               {logo?.url ? (
                 <img src={logo.url} alt="Brand logo" className="max-h-full max-w-full object-contain" />
               ) : (
                 <span className="text-xs text-muted-foreground">No logo</span>
               )}
-            </div>
+            </button>
             <input
               ref={fileRef}
               type="file"
@@ -260,6 +269,8 @@ function BrandAssets({
           Logo: PNG, JPG or SVG, up to 1.5 MB (a transparent PNG looks best).
         </p>
       </div>
+      <ProductPhotos brandId={brandId} />
+      </div>
       <div className="space-y-2">
         <Label>Brand colours</Label>
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
@@ -285,7 +296,7 @@ function BrandAssets({
           ))}
         </div>
       </div>
-      <div className="grid gap-6 lg:col-span-2 lg:grid-cols-3">
+      <div className="grid gap-6 lg:col-span-2 lg:grid-cols-2">
       <div className="min-w-0 space-y-2">
         <Label>Brand assets</Label>
             <input
@@ -320,13 +331,18 @@ function BrandAssets({
               <div className="flex flex-wrap gap-3">
                 {assets.map((a) => (
                   <div key={a.path} className="w-24 space-y-1">
-                    <div className="flex h-16 w-24 items-center justify-center overflow-hidden rounded-md border border-border bg-muted/30">
+                    <button
+                      type="button"
+                      onClick={() => preview.open({ name: a.name, url: a.url, mime: a.mime })}
+                      className="flex h-16 w-24 cursor-zoom-in items-center justify-center overflow-hidden rounded-md border border-border bg-muted/30"
+                      title="Click to preview"
+                    >
                       {a.mime.startsWith("image/") && a.url ? (
                         <img src={a.url} alt={a.name} className="max-h-full max-w-full object-contain" />
                       ) : (
                         <FileText className="h-6 w-6 text-muted-foreground" />
                       )}
-                    </div>
+                    </button>
                     <p className="truncate text-[11px] text-muted-foreground" title={a.name}>{a.name}</p>
                     <div className="flex items-center gap-1">
                       <Button
@@ -362,9 +378,9 @@ function BrandAssets({
               PNG, JPG, SVG, WebP or PDF, up to 3 MB each, 20 per brand. The Brand Brain studies them to learn your look and feel.
             </p>
           </div>
-        <ProductPhotos brandId={brandId} />
         <BrandDocuments brandId={brandId} />
       </div>
+      <FilePreview {...preview} />
     </div>
   );
 }
@@ -372,6 +388,12 @@ function BrandAssets({
 function BrandProfilePage() {
   const queryClient = useQueryClient();
   const [form, setForm] = useState<FormState>(EMPTY);
+  // What is saved right now. "Discard" returns the form to this, and any difference means unsaved edits.
+  const [baseline, setBaseline] = useState<FormState>(EMPTY);
+  const [nudge, setNudge] = useState(false);
+  const dirty = JSON.stringify(form) !== JSON.stringify(baseline);
+  const dirtyRef = useRef(false);
+  const loadedIdRef = useRef<string | null>(null);
 
   // Scale-plan (agency) users can own several brands; everyone else keeps the single-brand behaviour.
   const { data: me, isLoading: meLoading } = useMe();
@@ -404,9 +426,16 @@ function BrandProfilePage() {
     },
   });
 
+  // Unsaved edits only matter once a profile exists. A first-time form just saves normally.
+  const editing = dirty && !!data?.id;
+  dirtyRef.current = editing;
+
   useEffect(() => {
     if (!data) return;
-    setForm({
+    // A background refresh of the same brand must not wipe edits the user is in the middle of.
+    if (loadedIdRef.current === data.id && dirtyRef.current) return;
+    loadedIdRef.current = data.id;
+    const loaded: FormState = {
       business_name: data.business_name ?? "",
       website: data.website ?? "",
       description: data.description ?? "",
@@ -430,7 +459,9 @@ function BrandProfilePage() {
         ...EMPTY.brand_colors,
         ...(((data as { brand_colors?: Record<string, string> }).brand_colors) ?? {}),
       },
-    });
+    };
+    setForm(loaded);
+    setBaseline(loaded);
   }, [data]);
 
   const save = useMutation({
@@ -493,6 +524,7 @@ function BrandProfilePage() {
       return saved;
     },
     onSuccess: (saved) => {
+      setBaseline(form);
       toast.success("Brand profile saved — future content will use it");
       // Rebuild this brand's playbook in the background (generation also does it if this fails).
       void refreshBrandPlaybook({ data: { brandId: saved.id } }).catch(() => undefined);
@@ -566,6 +598,25 @@ function BrandProfilePage() {
 
   const set = (key: keyof FormState, value: string) => setForm((f) => ({ ...f, [key]: value }));
 
+  // Leaving with unsaved edits is blocked: the two buttons light up instead.
+  const pulse = useCallback(() => {
+    setNudge(false);
+    window.setTimeout(() => setNudge(true), 20);
+    window.setTimeout(() => setNudge(false), 1600);
+  }, []);
+  useBlocker({
+    shouldBlockFn: () => {
+      if (!dirtyRef.current) return false;
+      pulse();
+      return true;
+    },
+    enableBeforeUnload: () => dirtyRef.current,
+  });
+  const discard = () => {
+    setForm(baseline);
+    toast.message("Changes discarded");
+  };
+
   if (meLoading || (isAgency && brandsLoading) || isLoading) {
     return (
       <div className="flex h-64 items-center justify-center">
@@ -576,7 +627,7 @@ function BrandProfilePage() {
 
   return (
     <div className="w-full space-y-6">
-      <div className="sticky top-16 z-10 -mx-4 border-b border-border bg-background/95 px-4 py-4 backdrop-blur sm:-mx-8 sm:px-8">
+      <div className="sticky top-16 z-10 border-b border-border bg-background/95 py-4 backdrop-blur">
         {isAgency && (
           <nav
             aria-label="Breadcrumb"
@@ -589,17 +640,35 @@ function BrandProfilePage() {
         )}
         <div className="flex items-center justify-between gap-4">
           <h1 className="text-2xl font-bold">Brand Profile</h1>
-          <Button onClick={() => save.mutate()} disabled={save.isPending}>
-            {save.isPending ? (
-              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-            ) : (
-              <Save className="mr-2 h-4 w-4" />
-            )}
-            Save profile
-          </Button>
+          {editing ? (
+            <div className={`flex items-center gap-2 rounded-lg p-1 ${nudge ? "nudge-attention" : ""}`}>
+              <span className="hidden text-xs text-amber-500 sm:inline">Unsaved changes</span>
+              <Button variant="secondary" onClick={discard} disabled={save.isPending}>
+                <RotateCcw className="mr-2 h-4 w-4" />
+                Discard
+              </Button>
+              <Button onClick={() => save.mutate()} disabled={save.isPending}>
+                {save.isPending ? (
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                ) : (
+                  <Save className="mr-2 h-4 w-4" />
+                )}
+                Save changes
+              </Button>
+            </div>
+          ) : (
+            <Button onClick={() => save.mutate()} disabled={save.isPending}>
+              {save.isPending ? (
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+              ) : (
+                <Save className="mr-2 h-4 w-4" />
+              )}
+              Save profile
+            </Button>
+          )}
         </div>
         <p className="mt-1 text-sm text-muted-foreground">
-          Everything here feeds the generator. The richer this page, the sharper the content.
+          Everything here feeds the generator. The richer this page, the sharper the content. Only Business name is required; every other field is optional.
         </p>
       </div>
 

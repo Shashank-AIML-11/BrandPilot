@@ -27,12 +27,14 @@ import {
   W,
   layoutCatalogue,
   renderScene,
+  esc,
   dottedBackground,
   readableOn,
   TRANSITIONS,
   type SceneFields,
   type Theme,
 } from "@/lib/explainer-layouts.server";
+import { FONT_CSS } from "@/lib/explainer-font.server";
 
 export type ExplainerScene = SceneFields & {
   imageUrl?: string | null; // picture for photo / illustration layouts
@@ -473,6 +475,8 @@ export function buildTimeline(input: ExplainerInput, embedFont = true) {
             type: "html5",
             html: "<div class='c'></div>",
             css: `html,body{margin:0;padding:0;width:${side}px;height:${side}px;overflow:hidden}.c{width:${side}px;height:${side}px;border-radius:44px;background:#fff;box-shadow:0 18px 50px rgba(15,23,42,.14)}`,
+            width: side,
+            height: side,
           },
           width: side,
           height: side,
@@ -506,6 +510,32 @@ export function buildTimeline(input: ExplainerInput, embedFont = true) {
     }
   });
 
+  // Optional captions: the spoken line shown as a clean English subtitle near the bottom
+  // (EXPLAINER_CAPTIONS=on), for people watching with the sound off.
+  const captionClips: unknown[] = [];
+  if ((process.env["EXPLAINER_CAPTIONS"] ?? "").trim().toLowerCase() === "on") {
+    const capH = 230;
+    scenes.forEach((sc, i) => {
+      const line = String(sc.voice ?? "").replace(/\*+/g, "").trim();
+      if (!line || i === last) return; // the closing call-to-action screen already carries its own words
+      captionClips.push({
+        asset: {
+          type: "html5",
+          html: `<div class='w'><div class='cap'>${esc(line)}</div></div>`,
+          css: `${embedFont ? FONT_CSS : ""}html,body{margin:0;padding:0;width:${W}px;height:${capH}px;overflow:hidden;background:transparent}.w{width:${W}px;height:${capH}px;display:flex;align-items:center;justify-content:center;padding:0 48px}.cap{font-family:'Montserrat',Arial,Helvetica,sans-serif;font-weight:700;font-size:38px;line-height:1.3;text-align:center;color:#fff;background:rgba(15,23,42,.82);padding:16px 26px;border-radius:22px}`,
+          width: W,
+          height: capH,
+        },
+        width: W,
+        height: capH,
+        ...timing(i),
+        position: "bottom",
+        offset: { y: 0.05 },
+        transition: { in: "fade", out: "fade" },
+      });
+    });
+  }
+
   const tracks: unknown[] = [];
   if (synced) {
     tracks.push({
@@ -522,6 +552,7 @@ export function buildTimeline(input: ExplainerInput, embedFont = true) {
       clips: [{ asset: { type: "image", src: input.logoUrl }, start: 0, length: "end", position: "topLeft", offset: { x: 0.05, y: -0.028 }, fit: "contain", width: 72, height: 72 }],
     });
   }
+  if (captionClips.length) tracks.push({ clips: captionClips });
   tracks.push({ clips: sceneClips });
   if (cardClips.length) tracks.push({ clips: cardClips });
   if (imageClips.length) tracks.push({ clips: imageClips });

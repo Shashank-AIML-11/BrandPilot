@@ -433,6 +433,8 @@ export function renderScene(s: SceneFields, T: Theme, index: number, total: numb
       type: "html5",
       html,
       css: baseCss(T, dark),
+      width: W,
+      height: T.H,
     },
   };
 }
@@ -443,6 +445,8 @@ export function dottedBackground(T: Theme) {
     type: "html5",
     html: "<div></div>",
     css: `html,body{margin:0;padding:0;width:${W}px;height:${T.H}px;overflow:hidden}body{background-color:#f5f6fa;background-image:radial-gradient(rgba(15,23,42,.15) 2px,transparent 2.6px);background-size:30px 30px}`,
+    width: W,
+    height: T.H,
   };
 }
 

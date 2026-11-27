@@ -187,6 +187,7 @@ export async function processGenerationQueue(admin: AdminClient, userId?: string
     // The model sometimes returns fewer pieces than asked for one type (for example a reel).
     // Ask once more for just the missing pieces instead of leaving "Content generation failed" slots.
     // Fails soft: if the second call also fails, the usual failed-slot handling below applies.
+    let askedAgain = false;
     try {
       const missingQuotas: Record<string, DailyContentQuota> = {};
       const missingTypes = new Set<string>();
@@ -205,6 +206,7 @@ export async function processGenerationQueue(admin: AdminClient, userId?: string
       const retryDates = Object.keys(missingQuotas);
       if (retryDates.length) {
         console.warn(`[generate] model left out pieces, asking again for ${retryDates.length} day(s): ${[...missingTypes].join(", ")}`);
+        askedAgain = true;
         const retryTypes = batchActiveTypes.filter((t) => missingTypes.has(String(t)));
         const again = await chatJSON<{ days?: Array<Record<string, unknown>> }>(
           SYSTEM_PROMPT,
@@ -344,7 +346,7 @@ export async function processGenerationQueue(admin: AdminClient, userId?: string
           .update({
             status: "failed",
             title: "Content generation failed",
-            summary: "The AI generator did not return content for this slot.",
+            summary: `The AI generator did not return content for this slot (${placeholder.type} on ${placeholder.scheduled_date}; asked again: ${askedAgain ? "yes" : "no"}; got ${generatedRows.filter((r) => String(r.scheduled_date) === placeholder.scheduled_date && String(r.type) === placeholder.type).length} of ${quotas[placeholder.scheduled_date]?.[placeholder.type as keyof DailyContentQuota] ?? 0}).`,
           })
           .eq("id", placeholder.id)
           .eq("user_id", job.user_id);

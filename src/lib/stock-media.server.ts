@@ -127,7 +127,7 @@ export async function stockVideo(
         return { h, file, ov, score: ov * 2 + (file && (file.height ?? 0) > (file.width ?? 0) ? 3 : 0) };
       })
       // the clip must match the idea by its own tags; a vertical shape alone is never enough
-      .filter((c) => c.file?.url && c.ov >= 1 && (c.file.size ?? 0) < 30_000_000)
+      .filter((c) => c.file?.url && c.ov >= Math.min(2, q.split(" ").filter(Boolean).length) && (c.file.size ?? 0) < 30_000_000)
       .sort((x, y) => y.score - x.score);
     const best = candidates[0];
     if (!best?.file?.url) return null;

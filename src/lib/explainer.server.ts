@@ -344,11 +344,20 @@ For every scene return ALL of these fields (use "" or [] when a field is not use
 - "a" / "b": short points for compare layouts
 - "img": a concrete picture or stock-clip idea ONLY for photo_hero, split_photo, illustration or broll; otherwise ""
 
-Use at most ${maxImages} picture layouts. Use between ${maxBroll > 0 ? 1 : 0} and ${maxBroll} "broll" (stock video) layouts: at least one scene must be "broll" when the brand can be shown through real life. Choose "broll" for scenes where real life, people at work, shops, customers or results make the brand's positioning message feel real, and give "img" as a concrete, filmable stock-footage search of 2 to 4 plain words that describe what the camera sees, such as "woman typing laptop cafe", "team meeting office", "hands holding smartphone", "shop owner counter" or "chef kitchen". Never use the headline, abstract ideas, landmarks, places or temples, a person's name or a brand. Do not add contact details that are not in the brand information.
+Use at most ${maxImages} picture layouts. Use between ${maxBroll > 0 ? 1 : 0} and ${maxBroll} "broll" (stock video) layouts: at least one scene must be "broll" when the brand can be shown through real life. Choose "broll" for scenes where real life, people at work, shops, customers or results make the brand's positioning message feel real, and give "img" as a concrete, filmable stock-footage search of 2 to 4 plain words that describe what the camera sees. It must show THIS brand's own products, craft, customers or setting (for a brass handicraft store: "brass diya lamp", "artisan hands metalwork", "festival lamps lit"; for a cafe: "barista pouring coffee"; for a clinic: "doctor patient consultation"), never a generic office, family or lifestyle scene that has nothing to do with what the brand sells. Never use the headline, abstract ideas, landmarks, places or temples, a person's name or a brand. Do not add contact details that are not in the brand information.
 Return JSON: {"scenes":[...]}`,
       SCENE_SCHEMA as unknown as Record<string, unknown>,
     );
-    const good = (out.scenes ?? []).map(normaliseScene).filter((x): x is ExplainerScene => Boolean(x)).slice(0, 7);
+    // Never keep a number the brand did not give us (the model sometimes invents statistics).
+    const facts = brandContext(brand as never).replace(/[,\s]/g, "").toLowerCase();
+    const numbersOk = (text: string) =>
+      (text.match(/\d+(?:\.\d+)?/g) ?? []).every((n) => facts.includes(n));
+    const good = (out.scenes ?? [])
+      .map(normaliseScene)
+      .filter((x): x is ExplainerScene => Boolean(x))
+      .map((sc) => ({ ...sc, stats: sc.stats.filter((st) => numbersOk(st.v)) }))
+      .filter((sc) => !/\d\s?%/.test(`${sc.voice} ${sc.title} ${sc.sub}`) || numbersOk(`${sc.voice} ${sc.title} ${sc.sub}`))
+      .slice(0, 7);
     if (good.length >= 4) scenes = fitToBudget(ensureBroll(arrange(good, maxImages, maxBroll), maxBroll, input));
   } catch (error) {
     console.error("[explainer] scene writer failed, using plain script:", error);

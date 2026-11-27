@@ -168,7 +168,7 @@ export async function processGenerationQueue(admin: AdminClient, userId?: string
       return { job: job.id, generated: 0, cancelled: true };
     }
 
-    const rows = batchDates.flatMap((date, index) => {
+    let rows = batchDates.flatMap((date, index) => {
       const day = days.find((d) => (d as { date?: string }).date === date) ?? days[index] ?? {};
       return rowsForDay(
         day as never,
@@ -183,6 +183,48 @@ export async function processGenerationQueue(admin: AdminClient, userId?: string
         quotas[date]!,
       );
     });
+
+    // The model sometimes returns fewer pieces than asked for one type (for example a reel).
+    // Ask once more for just the missing pieces instead of leaving "Content generation failed" slots.
+    // Fails soft: if the second call also fails, the usual failed-slot handling below applies.
+    try {
+      const missingQuotas: Record<string, DailyContentQuota> = {};
+      const missingTypes = new Set<string>();
+      for (const date of batchDates) {
+        for (const type of Object.keys(quotas[date] ?? {}) as Array<keyof DailyContentQuota>) {
+          const want = quotas[date]?.[type] ?? 0;
+          if (want <= 0) continue;
+          const got = rows.filter((r) => String(r.scheduled_date) === date && String(r.type) === type).length;
+          if (got < want) {
+            missingQuotas[date] = { ...(missingQuotas[date] ?? emptyQuota()) } as DailyContentQuota;
+            missingQuotas[date]![type] = want - got;
+            missingTypes.add(String(type));
+          }
+        }
+      }
+      const retryDates = Object.keys(missingQuotas);
+      if (retryDates.length) {
+        console.warn(`[generate] model left out pieces, asking again for ${retryDates.length} day(s): ${[...missingTypes].join(", ")}`);
+        const retryTypes = batchActiveTypes.filter((t) => missingTypes.has(String(t)));
+        const again = await chatJSON<{ days?: Array<Record<string, unknown>> }>(
+          SYSTEM_PROMPT,
+          weekPrompt(brand as never, retryDates, strategy, missingQuotas, retryTypes as never, brainContext),
+          buildWeekResponseSchema(retryTypes as never),
+        );
+        const extraDays = (again.days ?? []) as Array<{ date?: string }>;
+        const extra = retryDates.flatMap((date, index) => {
+          const day = extraDays.find((d) => d.date === date) ?? extraDays[index] ?? {};
+          return rowsForDay(
+            day as never,
+            { userId: job.user_id, brandId: brand.id, date, platforms, autopost: entitlement.plan.autoPost, styles: brainPlan },
+            missingQuotas[date]!,
+          );
+        });
+        rows = [...rows, ...extra];
+      }
+    } catch (retryError) {
+      console.warn("[generate] second pass for missing pieces failed", retryError);
+    }
 
     if (!rows.length) {
       throw new Error("The generator returned no content for this batch.");

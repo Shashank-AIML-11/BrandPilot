@@ -90,7 +90,7 @@ export function BlogPublishing({ brandId }: { brandId?: string | null }) {
       <div>
         <h2 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">Blog publishing</h2>
         <p className="mt-1 text-sm text-muted-foreground">
-          LOVIZA blogs go to your website's blog section, plus LinkedIn. Medium and Quora posts are prepared in LOVIZA for you to post by hand.
+          LOVIZA blogs go to your website's blog section, plus LinkedIn.
         </p>
       </div>
 

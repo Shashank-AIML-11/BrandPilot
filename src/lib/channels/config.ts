@@ -54,18 +54,6 @@ export const CHANNELS: ChannelDef[] = [
     kind: "webhook",
     note: "Publishes each blog to your own website's blog section (WordPress, Ghost, Webflow, Shopify, custom endpoint or a LOVIZA-hosted blog).",
   },
-  {
-    key: "Quora",
-    label: "Quora",
-    kind: "manual",
-    note: "No public posting API — publishing is recorded for manual posting.",
-  },
-  {
-    key: "Medium",
-    label: "Medium",
-    kind: "manual",
-    note: "Posts automatically if you add a Medium integration token; otherwise recorded for manual posting.",
-  },
 ];
 
 export const CHANNEL_BY_KEY = Object.fromEntries(CHANNELS.map((c) => [c.key, c])) as Record<

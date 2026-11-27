@@ -201,9 +201,6 @@ export function ChannelConnections({
         </div>
       )}
 
-      <p className="text-xs text-muted-foreground">
-        Threads, Quora and Medium cannot be connected automatically. Add their handles above; content for them is prepared in LOVIZA and you post it manually.
-      </p>
     </section>
     <BlogPublishing brandId={brandId} />
     </>

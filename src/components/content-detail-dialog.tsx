@@ -24,7 +24,7 @@ import {
  * Keep both lists in sync by hand.
  */
 const CHANNELS_BY_TYPE: Record<string, string[]> = {
-  blog: ["Website", "LinkedIn", "Medium", "Quora"],
+  blog: ["Website", "LinkedIn"],
   linkedin_post: ["LinkedIn"],
   instagram_post: ["Instagram"],
   instagram_reel: ["Instagram"],

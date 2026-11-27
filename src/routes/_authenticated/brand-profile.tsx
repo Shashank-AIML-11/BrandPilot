@@ -881,35 +881,6 @@ function BrandProfilePage() {
         </div>
       </section>
 
-      <section className="surface space-y-3 p-6">
-        <h2 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">
-          Other channels & assets
-        </h2>
-        <p className="text-sm text-muted-foreground">
-          These networks have no connect button. Add your handle so they count as ready channels.
-        </p>
-        <div className="grid gap-4 sm:grid-cols-3">
-          {SOCIALS.filter((x) => ["Threads", "Quora", "Medium"].includes(x.key)).map((x) => (
-            <div key={x.key} className="space-y-2">
-              <Label htmlFor={x.key}>{x.key}</Label>
-              <Input
-                id={x.key}
-                maxLength={200}
-                placeholder={x.placeholder}
-                value={form.social_handles[x.key] ?? ""}
-                onChange={(e) =>
-                  setForm((f) => ({
-                    ...f,
-                    social_handles: { ...f.social_handles, [x.key]: e.target.value },
-                  }))
-                }
-              />
-            </div>
-          ))}
-        </div>
-        {/* Google Drive folder link is switched off for now (kept out of the page during Google review). */}
-      </section>
-
       <ChannelConnections
         brandId={isAgency ? (activeBrand?.id ?? null) : (data?.id ?? null)}
         onConnections={syncHandles}

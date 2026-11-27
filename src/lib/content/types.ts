@@ -141,7 +141,7 @@ export const DEFAULT_PLATFORMS = [
  *  home per type, except blog (syndicated) and carousel (native to both
  *  LinkedIn and Instagram). */
 export const CHANNELS_BY_TYPE: Record<ContentType, string[]> = {
-  blog: ["Website", "LinkedIn", "Medium", "Quora"],
+  blog: ["Website", "LinkedIn"],
   linkedin_post: ["LinkedIn"],
   instagram_post: ["Instagram"],
   instagram_reel: ["Instagram"],

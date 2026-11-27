@@ -22,6 +22,8 @@ export interface StyleMeta {
   pillar: string;
   hook: string;
   template?: string;
+  /** The specific angle chosen from ANGLE_BANK, so two pieces never tell the same story. */
+  angle?: string;
   /** Reel recipe id (video types only): the shape of the scene sequence. */
   recipe?: string;
   wildcard?: boolean;
@@ -56,12 +58,52 @@ export const HOOK_STYLES: Array<{ id: string; how: string }> = [
   { id: "behind_scenes", how: "show how the work actually gets done, in a human voice" },
   { id: "customer_voice", how: "speak in the audience's own words about their problem (no invented quotes or names)" },
   { id: "offer", how: "lead with the offer or next step and why now" },
+  { id: "pov", how: "open with 'POV:' and put the viewer inside a relatable moment from their day" },
+  { id: "mistake", how: "name one common mistake people make with this product or service, then the fix (no fear tactics)" },
+  { id: "if_you", how: "open with 'If you are [specific person in a specific situation]...' so the right viewer feels called out" },
+  { id: "unpopular_opinion", how: "state an honest, mild opinion most in this industry would not say out loud, then explain it" },
+  { id: "one_thing", how: "promise one single thing to know or do, then deliver exactly that" },
+  { id: "whats_inside", how: "show what is inside or included, piece by piece, like unboxing" },
+  { id: "honest_truth", how: "say something plainly honest about price, effort or limits that builds trust" },
+  { id: "right_now", how: "tie the post to this season, week or moment and why it matters now" },
+];
+
+/**
+ * Angles: the specific story a piece tells. A pillar says WHAT it is about; the angle says HOW.
+ * One angle is assigned per piece, and none repeats within a day or among the last few used.
+ */
+export const ANGLE_BANK: string[] = [
+  "answer the one question customers ask most before buying",
+  "one step of how the work is actually done, behind the scenes",
+  "three mistakes people make, and what to do instead",
+  "two choices compared honestly, and who each one suits",
+  "a day in the life of the owner or the team",
+  "before and after, described in words, without inventing a customer",
+  "a quick how-to a beginner can try today",
+  "a common myth, corrected kindly",
+  "what to check before you buy, a short checklist",
+  "who this is for and who it is not for",
+  "a close look at one detail of one product or service",
+  "the story of why the brand started, using only what the brand info says",
+  "what is included and what it costs in value terms, no made-up prices",
+  "a seasonal or festival moment and a practical idea for it",
+  "a simple care, usage or planning tip",
+  "a small win a customer can get in the first week",
+  "an honest limit or trade-off, and how the brand handles it",
+  "a question that invites the audience to reply with their own experience",
+  "a local touch: the neighbourhood, city or community the brand serves",
+  "a trend or change in this industry and what it means for the customer",
+  "a short story told in three beats: situation, turn, result",
+  "an offer or next step explained clearly, with why it is available now",
+  "the thing people assume costs more or takes longer, and the real picture",
+  "a mini guide: first, next, last",
 ];
 
 /** Block this many most recent uses before an option may repeat. */
 const BLOCK_PILLAR = 3;
 const BLOCK_HOOK = 5;
 const BLOCK_TEMPLATE = 6;
+const BLOCK_ANGLE = 10;
 const HISTORY_LIMIT = 80;
 
 const hash = (s: string) => [...s].reduce((a, c) => (a * 31 + c.charCodeAt(0)) >>> 0, 7);
@@ -138,6 +180,7 @@ async function recentHistory(admin: AdminClient, userId: string, brandId: string
     hooks: metas.map((m) => m.hook).filter(Boolean),
     templates: metas.map((m) => m.template).filter((t): t is string => !!t),
     recipes: metas.map((m) => m.recipe).filter((t): t is string => !!t),
+    angles: metas.map((m) => m.angle).filter((t): t is string => !!t),
     pillarsByType: byType((m) => m.pillar),
     hooksByType: byType((m) => m.hook),
   };
@@ -166,6 +209,8 @@ export async function planVariety(
     const pillarsByType: Record<string, string[]> = Object.fromEntries(Object.entries(hist.pillarsByType).map(([k, v]) => [k, [...v]]));
     const hooksByType: Record<string, string[]> = Object.fromEntries(Object.entries(hist.hooksByType).map(([k, v]) => [k, [...v]]));
     const usedRecipes = [...hist.recipes];
+    const usedAngles = [...hist.angles];
+    const dayUsed = new Map<string, { angles: Set<string>; hooks: Set<string>; pillars: Set<string> }>();
     const groupRecipe = new Map<string, string>(); // all video types of one day share one render
     const groupTemplate = new Map<string, string>(); // one template per date for the shared image
     const out = new Map<string, StyleMeta>();
@@ -175,10 +220,22 @@ export async function planVariety(
       n += 1;
       const seed = `${opts.brandId}|${slot.date}|${slot.type}|${slot.index}`;
       const wildcard = n % 5 === 0;
-      const pillar = pickLeastRecent(pillars, usedPillars, BLOCK_PILLAR, `${seed}p`, pillarsByType[slot.type] ?? []);
-      const hook = pickLeastRecent(hooks, usedHooks, BLOCK_HOOK, `${seed}h`, hooksByType[slot.type] ?? []);
+      // Within one day nothing repeats while there are fresh options left.
+      const day = dayUsed.get(slot.date) ?? { angles: new Set<string>(), hooks: new Set<string>(), pillars: new Set<string>() };
+      dayUsed.set(slot.date, day);
+      const fresh = (all: string[], used: Set<string>) => {
+        const left = all.filter((o) => !used.has(o));
+        return left.length ? left : all;
+      };
+      const pillar = pickLeastRecent(fresh(pillars, day.pillars), usedPillars, BLOCK_PILLAR, `${seed}p`, pillarsByType[slot.type] ?? []);
+      const hook = pickLeastRecent(fresh(hooks, day.hooks), usedHooks, BLOCK_HOOK, `${seed}h`, hooksByType[slot.type] ?? []);
+      const angle = pickLeastRecent(fresh(ANGLE_BANK, day.angles), usedAngles, BLOCK_ANGLE, `${seed}a`);
+      day.pillars.add(pillar);
+      day.hooks.add(hook);
+      day.angles.add(angle);
       usedPillars.unshift(pillar);
       usedHooks.unshift(hook);
+      usedAngles.unshift(angle);
       (pillarsByType[slot.type] ??= []).unshift(pillar);
       (hooksByType[slot.type] ??= []).unshift(hook);
 
@@ -214,6 +271,7 @@ export async function planVariety(
         v: 1,
         pillar,
         hook,
+        angle,
         ...(template ? { template } : {}),
         ...(recipe ? { recipe } : {}),
         ...(wildcard ? { wildcard: true } : {}),
@@ -240,7 +298,7 @@ export function varietyContext(
       const m = plan.get(slotKey(s.date, s.type, s.index));
       if (!m) return "";
       const tpl = m.template ? posterTemplate(m.template) : null;
-      return `- ${s.date} ${s.type} #${s.index + 1}: pillar "${m.pillar}" (${pillarAngle.get(m.pillar) ?? ""}); hook style "${m.hook}" (${hookHow.get(m.hook) ?? ""})${
+      return `- ${s.date} ${s.type} #${s.index + 1}: pillar "${m.pillar}" (${pillarAngle.get(m.pillar) ?? ""}); hook style "${m.hook}" (${hookHow.get(m.hook) ?? ""})${m.angle ? `; angle: ${m.angle}` : ""}${
         tpl ? `; poster template "${tpl.label}": write image_prompt as HEADLINE || POINT 1 || POINT 2 || POINT 3 || CTA with ${tpl.copyHint}` : ""
       }`;
     })
@@ -256,7 +314,7 @@ export function varietyContext(
   return `
 
 === CONTENT PLAN (assigned by the brand brain; follow it exactly) ===
-Each piece below has its own content pillar, hook style and, for image posts, its own poster template. Write that piece on that pillar, in that hook style. Do NOT reuse the same opening, structure or angle across pieces.
+Each piece below has its own content pillar, hook style and, for image posts, its own poster template. Write that piece on that pillar, in that hook style, telling that angle. Do NOT reuse the same opening, structure or angle across pieces. Write like a person who knows this business: concrete details, plain words, no stock phrases such as "unlock", "elevate", "game-changer" or "in today's fast-paced world".
 ${lines.join("\n")}${occasions}${photos}
 === END CONTENT PLAN ===`;
 }

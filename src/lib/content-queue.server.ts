@@ -235,6 +235,21 @@ export async function processGenerationQueue(admin: AdminClient, userId?: string
       throw new Error("The generator returned no content for this batch.");
     }
 
+    // Quality gate: plain clean-ups, then one editor pass that scores every piece and rewrites weak ones.
+    // Fails soft, so a slow or failed editor call never blocks the week.
+    {
+      const { polishRows } = await import("@/lib/content-quality.server");
+      const { brandContext } = await import("@/lib/content.server");
+      const polished = await polishRows(admin, {
+        userId: job.user_id,
+        brandId: brand.id,
+        rows: rows as Array<Record<string, unknown>>,
+        brandText: brandContext(brand as never) + brainContext,
+      });
+      rows = polished.rows;
+      console.log(`[quality] ${polished.note}`);
+    }
+
     /*
      * ============================================================
      * FIND THE PLACEHOLDER "RENDERING" ROWS

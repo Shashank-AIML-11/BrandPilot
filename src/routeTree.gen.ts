@@ -20,6 +20,7 @@ import { Route as Char91DotwellKnownChar93OauthProtectedResourceRouteImport } fr
 import { Route as AuthenticatedAddBrandRouteImport } from './routes/_authenticated/add-brand'
 import { Route as AuthenticatedAdminRouteImport } from './routes/_authenticated/admin'
 import { Route as AuthenticatedAnalyticsRouteImport } from './routes/_authenticated/analytics'
+import { Route as AuthenticatedBrandManagementRouteImport } from './routes/_authenticated/brand-management'
 import { Route as AuthenticatedBrandProfileRouteImport } from './routes/_authenticated/brand-profile'
 import { Route as AuthenticatedCalendarRouteImport } from './routes/_authenticated/calendar'
 import { Route as AuthenticatedCheckoutRouteImport } from './routes/_authenticated/checkout'
@@ -27,13 +28,16 @@ import { Route as AuthenticatedContentLibraryRouteImport } from './routes/_authe
 import { Route as AuthenticatedFaqRouteImport } from './routes/_authenticated/faq'
 import { Route as AuthenticatedHelpRouteImport } from './routes/_authenticated/help'
 import { Route as AuthenticatedPlanRouteImport } from './routes/_authenticated/plan'
+import { Route as AuthenticatedReferralsRouteImport } from './routes/_authenticated/referrals'
+import { Route as AuthenticatedRenewRouteImport } from './routes/_authenticated/renew'
 import { Route as AuthenticatedSettingsRouteImport } from './routes/_authenticated/settings'
 import { Route as AuthCallbackRouteImport } from './routes/auth.callback'
 import { Route as DotlovableOauthConsentRouteImport } from './routes/[.]lovable.oauth.consent'
 import { Route as Char91DotmcpChar93InvokeToolToolRouteImport } from './routes/[.mcp]/invoke-tool/$tool'
+import { Route as ApiPublicBlogBrandIdRouteImport } from './routes/api/public/blog/$brandId'
+import { Route as ApiPublicHooksPlanRenewalsRouteImport } from './routes/api/public/hooks/plan-renewals'
 import { Route as ApiPublicHooksProcessVideoQueueRouteImport } from './routes/api/public/hooks/process-video-queue'
 import { Route as ApiPublicOauthChannelRouteImport } from './routes/api/public/oauth/$channel'
-import { Route as ApiPublicBlogBrandIdRouteImport } from './routes/api/public/blog/$brandId'
 import { Route as ApiPublicWebhooksRazorpayRouteImport } from './routes/api/public/webhooks/razorpay'
 
 const IndexRoute = IndexRouteImport.update({
@@ -92,6 +96,12 @@ const AuthenticatedAnalyticsRoute = AuthenticatedAnalyticsRouteImport.update({
   path: '/analytics',
   getParentRoute: () => AuthenticatedRouteRoute,
 } as any)
+const AuthenticatedBrandManagementRoute =
+  AuthenticatedBrandManagementRouteImport.update({
+    id: '/brand-management',
+    path: '/brand-management',
+    getParentRoute: () => AuthenticatedRouteRoute,
+  } as any)
 const AuthenticatedBrandProfileRoute =
   AuthenticatedBrandProfileRouteImport.update({
     id: '/brand-profile',
@@ -129,6 +139,16 @@ const AuthenticatedPlanRoute = AuthenticatedPlanRouteImport.update({
   path: '/plan',
   getParentRoute: () => AuthenticatedRouteRoute,
 } as any)
+const AuthenticatedReferralsRoute = AuthenticatedReferralsRouteImport.update({
+  id: '/referrals',
+  path: '/referrals',
+  getParentRoute: () => AuthenticatedRouteRoute,
+} as any)
+const AuthenticatedRenewRoute = AuthenticatedRenewRouteImport.update({
+  id: '/renew',
+  path: '/renew',
+  getParentRoute: () => AuthenticatedRouteRoute,
+} as any)
 const AuthenticatedSettingsRoute = AuthenticatedSettingsRouteImport.update({
   id: '/settings',
   path: '/settings',
@@ -150,17 +170,23 @@ const Char91DotmcpChar93InvokeToolToolRoute =
     path: '/.mcp/invoke-tool/$tool',
     getParentRoute: () => rootRouteImport,
   } as any)
+const ApiPublicBlogBrandIdRoute = ApiPublicBlogBrandIdRouteImport.update({
+  id: '/api/public/blog/$brandId',
+  path: '/api/public/blog/$brandId',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiPublicHooksPlanRenewalsRoute =
+  ApiPublicHooksPlanRenewalsRouteImport.update({
+    id: '/api/public/hooks/plan-renewals',
+    path: '/api/public/hooks/plan-renewals',
+    getParentRoute: () => rootRouteImport,
+  } as any)
 const ApiPublicHooksProcessVideoQueueRoute =
   ApiPublicHooksProcessVideoQueueRouteImport.update({
     id: '/api/public/hooks/process-video-queue',
     path: '/api/public/hooks/process-video-queue',
     getParentRoute: () => rootRouteImport,
   } as any)
-const ApiPublicBlogBrandIdRoute = ApiPublicBlogBrandIdRouteImport.update({
-  id: '/api/public/blog/$brandId',
-  path: '/api/public/blog/$brandId',
-  getParentRoute: () => rootRouteImport,
-} as any)
 const ApiPublicOauthChannelRoute = ApiPublicOauthChannelRouteImport.update({
   id: '/api/public/oauth/$channel',
   path: '/api/public/oauth/$channel',
@@ -184,6 +210,7 @@ export interface FileRoutesByFullPath {
   '/add-brand': typeof AuthenticatedAddBrandRoute
   '/admin': typeof AuthenticatedAdminRoute
   '/analytics': typeof AuthenticatedAnalyticsRoute
+  '/brand-management': typeof AuthenticatedBrandManagementRoute
   '/brand-profile': typeof AuthenticatedBrandProfileRoute
   '/calendar': typeof AuthenticatedCalendarRoute
   '/checkout': typeof AuthenticatedCheckoutRoute
@@ -191,13 +218,16 @@ export interface FileRoutesByFullPath {
   '/faq': typeof AuthenticatedFaqRoute
   '/help': typeof AuthenticatedHelpRoute
   '/plan': typeof AuthenticatedPlanRoute
+  '/referrals': typeof AuthenticatedReferralsRoute
+  '/renew': typeof AuthenticatedRenewRoute
   '/settings': typeof AuthenticatedSettingsRoute
   '/auth/callback': typeof AuthCallbackRoute
   '/.lovable/oauth/consent': typeof DotlovableOauthConsentRoute
   '/.mcp/invoke-tool/$tool': typeof Char91DotmcpChar93InvokeToolToolRoute
+  '/api/public/blog/$brandId': typeof ApiPublicBlogBrandIdRoute
+  '/api/public/hooks/plan-renewals': typeof ApiPublicHooksPlanRenewalsRoute
   '/api/public/hooks/process-video-queue': typeof ApiPublicHooksProcessVideoQueueRoute
   '/api/public/oauth/$channel': typeof ApiPublicOauthChannelRoute
-  '/api/public/blog/$brandId': typeof ApiPublicBlogBrandIdRoute
   '/api/public/webhooks/razorpay': typeof ApiPublicWebhooksRazorpayRoute
 }
 export interface FileRoutesByTo {
@@ -211,6 +241,7 @@ export interface FileRoutesByTo {
   '/add-brand': typeof AuthenticatedAddBrandRoute
   '/admin': typeof AuthenticatedAdminRoute
   '/analytics': typeof AuthenticatedAnalyticsRoute
+  '/brand-management': typeof AuthenticatedBrandManagementRoute
   '/brand-profile': typeof AuthenticatedBrandProfileRoute
   '/calendar': typeof AuthenticatedCalendarRoute
   '/checkout': typeof AuthenticatedCheckoutRoute
@@ -218,13 +249,16 @@ export interface FileRoutesByTo {
   '/faq': typeof AuthenticatedFaqRoute
   '/help': typeof AuthenticatedHelpRoute
   '/plan': typeof AuthenticatedPlanRoute
+  '/referrals': typeof AuthenticatedReferralsRoute
+  '/renew': typeof AuthenticatedRenewRoute
   '/settings': typeof AuthenticatedSettingsRoute
   '/auth/callback': typeof AuthCallbackRoute
   '/.lovable/oauth/consent': typeof DotlovableOauthConsentRoute
   '/.mcp/invoke-tool/$tool': typeof Char91DotmcpChar93InvokeToolToolRoute
+  '/api/public/blog/$brandId': typeof ApiPublicBlogBrandIdRoute
+  '/api/public/hooks/plan-renewals': typeof ApiPublicHooksPlanRenewalsRoute
   '/api/public/hooks/process-video-queue': typeof ApiPublicHooksProcessVideoQueueRoute
   '/api/public/oauth/$channel': typeof ApiPublicOauthChannelRoute
-  '/api/public/blog/$brandId': typeof ApiPublicBlogBrandIdRoute
   '/api/public/webhooks/razorpay': typeof ApiPublicWebhooksRazorpayRoute
 }
 export interface FileRoutesById {
@@ -240,6 +274,7 @@ export interface FileRoutesById {
   '/_authenticated/add-brand': typeof AuthenticatedAddBrandRoute
   '/_authenticated/admin': typeof AuthenticatedAdminRoute
   '/_authenticated/analytics': typeof AuthenticatedAnalyticsRoute
+  '/_authenticated/brand-management': typeof AuthenticatedBrandManagementRoute
   '/_authenticated/brand-profile': typeof AuthenticatedBrandProfileRoute
   '/_authenticated/calendar': typeof AuthenticatedCalendarRoute
   '/_authenticated/checkout': typeof AuthenticatedCheckoutRoute
@@ -247,13 +282,16 @@ export interface FileRoutesById {
   '/_authenticated/faq': typeof AuthenticatedFaqRoute
   '/_authenticated/help': typeof AuthenticatedHelpRoute
   '/_authenticated/plan': typeof AuthenticatedPlanRoute
+  '/_authenticated/referrals': typeof AuthenticatedReferralsRoute
+  '/_authenticated/renew': typeof AuthenticatedRenewRoute
   '/_authenticated/settings': typeof AuthenticatedSettingsRoute
   '/auth/callback': typeof AuthCallbackRoute
   '/.lovable/oauth/consent': typeof DotlovableOauthConsentRoute
   '/.mcp/invoke-tool/$tool': typeof Char91DotmcpChar93InvokeToolToolRoute
+  '/api/public/blog/$brandId': typeof ApiPublicBlogBrandIdRoute
+  '/api/public/hooks/plan-renewals': typeof ApiPublicHooksPlanRenewalsRoute
   '/api/public/hooks/process-video-queue': typeof ApiPublicHooksProcessVideoQueueRoute
   '/api/public/oauth/$channel': typeof ApiPublicOauthChannelRoute
-  '/api/public/blog/$brandId': typeof ApiPublicBlogBrandIdRoute
   '/api/public/webhooks/razorpay': typeof ApiPublicWebhooksRazorpayRoute
 }
 export interface FileRouteTypes {
@@ -269,6 +307,7 @@ export interface FileRouteTypes {
     | '/add-brand'
     | '/admin'
     | '/analytics'
+    | '/brand-management'
     | '/brand-profile'
     | '/calendar'
     | '/checkout'
@@ -276,13 +315,16 @@ export interface FileRouteTypes {
     | '/faq'
     | '/help'
     | '/plan'
+    | '/referrals'
+    | '/renew'
     | '/settings'
     | '/auth/callback'
     | '/.lovable/oauth/consent'
     | '/.mcp/invoke-tool/$tool'
+    | '/api/public/blog/$brandId'
+    | '/api/public/hooks/plan-renewals'
     | '/api/public/hooks/process-video-queue'
     | '/api/public/oauth/$channel'
-    | '/api/public/blog/$brandId'
     | '/api/public/webhooks/razorpay'
   fileRoutesByTo: FileRoutesByTo
   to:
@@ -296,6 +338,7 @@ export interface FileRouteTypes {
     | '/add-brand'
     | '/admin'
     | '/analytics'
+    | '/brand-management'
     | '/brand-profile'
     | '/calendar'
     | '/checkout'
@@ -303,13 +346,16 @@ export interface FileRouteTypes {
     | '/faq'
     | '/help'
     | '/plan'
+    | '/referrals'
+    | '/renew'
     | '/settings'
     | '/auth/callback'
     | '/.lovable/oauth/consent'
     | '/.mcp/invoke-tool/$tool'
+    | '/api/public/blog/$brandId'
+    | '/api/public/hooks/plan-renewals'
     | '/api/public/hooks/process-video-queue'
     | '/api/public/oauth/$channel'
-    | '/api/public/blog/$brandId'
     | '/api/public/webhooks/razorpay'
   id:
     | '__root__'
@@ -324,6 +370,7 @@ export interface FileRouteTypes {
     | '/_authenticated/add-brand'
     | '/_authenticated/admin'
     | '/_authenticated/analytics'
+    | '/_authenticated/brand-management'
     | '/_authenticated/brand-profile'
     | '/_authenticated/calendar'
     | '/_authenticated/checkout'
@@ -331,13 +378,16 @@ export interface FileRouteTypes {
     | '/_authenticated/faq'
     | '/_authenticated/help'
     | '/_authenticated/plan'
+    | '/_authenticated/referrals'
+    | '/_authenticated/renew'
     | '/_authenticated/settings'
     | '/auth/callback'
     | '/.lovable/oauth/consent'
     | '/.mcp/invoke-tool/$tool'
+    | '/api/public/blog/$brandId'
+    | '/api/public/hooks/plan-renewals'
     | '/api/public/hooks/process-video-queue'
     | '/api/public/oauth/$channel'
-    | '/api/public/blog/$brandId'
     | '/api/public/webhooks/razorpay'
   fileRoutesById: FileRoutesById
 }
@@ -352,9 +402,10 @@ export interface RootRouteChildren {
   Char91DotwellKnownChar93OauthProtectedResourceRoute: typeof Char91DotwellKnownChar93OauthProtectedResourceRoute
   DotlovableOauthConsentRoute: typeof DotlovableOauthConsentRoute
   Char91DotmcpChar93InvokeToolToolRoute: typeof Char91DotmcpChar93InvokeToolToolRoute
+  ApiPublicBlogBrandIdRoute: typeof ApiPublicBlogBrandIdRoute
+  ApiPublicHooksPlanRenewalsRoute: typeof ApiPublicHooksPlanRenewalsRoute
   ApiPublicHooksProcessVideoQueueRoute: typeof ApiPublicHooksProcessVideoQueueRoute
   ApiPublicOauthChannelRoute: typeof ApiPublicOauthChannelRoute
-  ApiPublicBlogBrandIdRoute: typeof ApiPublicBlogBrandIdRoute
   ApiPublicWebhooksRazorpayRoute: typeof ApiPublicWebhooksRazorpayRoute
 }
 
@@ -437,6 +488,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedAnalyticsRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
+    '/_authenticated/brand-management': {
+      id: '/_authenticated/brand-management'
+      path: '/brand-management'
+      fullPath: '/brand-management'
+      preLoaderRoute: typeof AuthenticatedBrandManagementRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
     '/_authenticated/brand-profile': {
       id: '/_authenticated/brand-profile'
       path: '/brand-profile'
@@ -486,6 +544,20 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedPlanRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
+    '/_authenticated/referrals': {
+      id: '/_authenticated/referrals'
+      path: '/referrals'
+      fullPath: '/referrals'
+      preLoaderRoute: typeof AuthenticatedReferralsRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
+    '/_authenticated/renew': {
+      id: '/_authenticated/renew'
+      path: '/renew'
+      fullPath: '/renew'
+      preLoaderRoute: typeof AuthenticatedRenewRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
     '/_authenticated/settings': {
       id: '/_authenticated/settings'
       path: '/settings'
@@ -514,18 +586,25 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof Char91DotmcpChar93InvokeToolToolRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/api/public/hooks/process-video-queue': {
-      id: '/api/public/hooks/process-video-queue'
-      path: '/api/public/hooks/process-video-queue'
-      fullPath: '/api/public/hooks/process-video-queue'
-      preLoaderRoute: typeof ApiPublicHooksProcessVideoQueueRouteImport
-      parentRoute: typeof rootRouteImport
-    }
     '/api/public/blog/$brandId': {
       id: '/api/public/blog/$brandId'
       path: '/api/public/blog/$brandId'
       fullPath: '/api/public/blog/$brandId'
       preLoaderRoute: typeof ApiPublicBlogBrandIdRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/public/hooks/plan-renewals': {
+      id: '/api/public/hooks/plan-renewals'
+      path: '/api/public/hooks/plan-renewals'
+      fullPath: '/api/public/hooks/plan-renewals'
+      preLoaderRoute: typeof ApiPublicHooksPlanRenewalsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/public/hooks/process-video-queue': {
+      id: '/api/public/hooks/process-video-queue'
+      path: '/api/public/hooks/process-video-queue'
+      fullPath: '/api/public/hooks/process-video-queue'
+      preLoaderRoute: typeof ApiPublicHooksProcessVideoQueueRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/api/public/oauth/$channel': {
@@ -549,6 +628,7 @@ interface AuthenticatedRouteRouteChildren {
   AuthenticatedAddBrandRoute: typeof AuthenticatedAddBrandRoute
   AuthenticatedAdminRoute: typeof AuthenticatedAdminRoute
   AuthenticatedAnalyticsRoute: typeof AuthenticatedAnalyticsRoute
+  AuthenticatedBrandManagementRoute: typeof AuthenticatedBrandManagementRoute
   AuthenticatedBrandProfileRoute: typeof AuthenticatedBrandProfileRoute
   AuthenticatedCalendarRoute: typeof AuthenticatedCalendarRoute
   AuthenticatedCheckoutRoute: typeof AuthenticatedCheckoutRoute
@@ -556,6 +636,8 @@ interface AuthenticatedRouteRouteChildren {
   AuthenticatedFaqRoute: typeof AuthenticatedFaqRoute
   AuthenticatedHelpRoute: typeof AuthenticatedHelpRoute
   AuthenticatedPlanRoute: typeof AuthenticatedPlanRoute
+  AuthenticatedReferralsRoute: typeof AuthenticatedReferralsRoute
+  AuthenticatedRenewRoute: typeof AuthenticatedRenewRoute
   AuthenticatedSettingsRoute: typeof AuthenticatedSettingsRoute
 }
 
@@ -563,6 +645,7 @@ const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
   AuthenticatedAddBrandRoute: AuthenticatedAddBrandRoute,
   AuthenticatedAdminRoute: AuthenticatedAdminRoute,
   AuthenticatedAnalyticsRoute: AuthenticatedAnalyticsRoute,
+  AuthenticatedBrandManagementRoute: AuthenticatedBrandManagementRoute,
   AuthenticatedBrandProfileRoute: AuthenticatedBrandProfileRoute,
   AuthenticatedCalendarRoute: AuthenticatedCalendarRoute,
   AuthenticatedCheckoutRoute: AuthenticatedCheckoutRoute,
@@ -570,6 +653,8 @@ const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
   AuthenticatedFaqRoute: AuthenticatedFaqRoute,
   AuthenticatedHelpRoute: AuthenticatedHelpRoute,
   AuthenticatedPlanRoute: AuthenticatedPlanRoute,
+  AuthenticatedReferralsRoute: AuthenticatedReferralsRoute,
+  AuthenticatedRenewRoute: AuthenticatedRenewRoute,
   AuthenticatedSettingsRoute: AuthenticatedSettingsRoute,
 }
 
@@ -598,9 +683,10 @@ const rootRouteChildren: RootRouteChildren = {
     Char91DotwellKnownChar93OauthProtectedResourceRoute,
   DotlovableOauthConsentRoute: DotlovableOauthConsentRoute,
   Char91DotmcpChar93InvokeToolToolRoute: Char91DotmcpChar93InvokeToolToolRoute,
+  ApiPublicBlogBrandIdRoute: ApiPublicBlogBrandIdRoute,
+  ApiPublicHooksPlanRenewalsRoute: ApiPublicHooksPlanRenewalsRoute,
   ApiPublicHooksProcessVideoQueueRoute: ApiPublicHooksProcessVideoQueueRoute,
   ApiPublicOauthChannelRoute: ApiPublicOauthChannelRoute,
-  ApiPublicBlogBrandIdRoute: ApiPublicBlogBrandIdRoute,
   ApiPublicWebhooksRazorpayRoute: ApiPublicWebhooksRazorpayRoute,
 }
 export const routeTree = rootRouteImport

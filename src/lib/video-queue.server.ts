@@ -64,6 +64,17 @@ async function templateNeedsNoPhoto(admin: AdminClient, itemId: string): Promise
   }
 }
 
+/** Records on the post whether its text design was applied, so a plain image is explained, not a mystery. Never throws. */
+async function noteDesign(admin: AdminClient, id: string, status: string): Promise<void> {
+  try {
+    const { data } = await admin.from("content_items").select("style_meta" as never).eq("id", id).maybeSingle();
+    const meta = ((data as unknown as { style_meta?: Record<string, unknown> | null } | null)?.style_meta ?? {}) as Record<string, unknown>;
+    await admin.from("content_items").update({ style_meta: { ...meta, design: status } } as never).eq("id", id);
+  } catch {
+    /* best effort */
+  }
+}
+
 /**
  * Turns the plain AI photo into a designed poster (headline, logo, brand colours).
  * Never throws: if composing fails the plain photo is used so generation keeps working.
@@ -76,6 +87,7 @@ async function designPoster(
   aspect: string,
 ): Promise<Uint8Array> {
   if (!posterComposerEnabled() || aspect === "16:9" || aspect === "1:1") {
+    await noteDesign(admin, item.id, !posterComposerEnabled() ? "plain: POSTER_COMPOSER is off" : `plain: ${aspect} has no text layout`);
     if (photo) return photo;
     throw new Error("a photo is required for this format");
   }
@@ -107,7 +119,7 @@ async function designPoster(
     } catch {
       template = null;
     }
-    return await composePoster({
+    const designed = await composePoster({
       photo,
       template,
       copy: posterCopyFor(item, { website: String(brand?.["website"] ?? "") }),
@@ -120,7 +132,10 @@ async function designPoster(
       aspect,
       seed: `${item.id}`,
     });
+    await noteDesign(admin, item.id, "designed");
+    return designed;
   } catch (error) {
+    await noteDesign(admin, item.id, `plain: compose failed (${error instanceof Error ? error.message : String(error)})`.slice(0, 200));
     if (!photo) throw error;
     console.error("[poster] composing failed, using the plain photo", error);
     return photo;

@@ -201,6 +201,48 @@ export async function chatJSON<T>(
 }
 
 /**
+ * Looks at one or more images and answers as JSON. Used by the Brand Brain to read product
+ * photos and brand assets. The images are passed as links (signed storage URLs), at most 4.
+ *   VISION_MODEL  default "meta-llama/llama-4-scout-17b-16e-instruct" on Groq. With
+ *                 TEXT_PROVIDER=openrouter, set VISION_MODEL to an OpenRouter vision model id.
+ * Throws on any failure; callers treat that as "could not read this image" and carry on.
+ */
+export async function visionJSON<T>(system: string, prompt: string, imageUrls: string[]): Promise<T> {
+  const openrouter = (process.env["TEXT_PROVIDER"] ?? "").trim().toLowerCase() === "openrouter";
+  const endpoint = openrouter ? "https://openrouter.ai/api/v1/chat/completions" : "https://api.groq.com/openai/v1/chat/completions";
+  const apiKey = openrouter ? openrouterKey() : groqKey();
+  const model = process.env["VISION_MODEL"]?.trim() || (openrouter ? "google/gemini-2.0-flash-001" : "meta-llama/llama-4-scout-17b-16e-instruct");
+  const images = imageUrls.slice(0, 4).map((url) => ({ type: "image_url", image_url: { url } }));
+  const res = await sendWithRetry(() =>
+    fetch(endpoint, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${apiKey}`,
+        "Content-Type": "application/json",
+        ...(openrouter ? { "HTTP-Referer": "https://loviza.click", "X-Title": "LOVIZA" } : {}),
+      },
+      body: JSON.stringify({
+        model,
+        messages: [
+          { role: "system", content: system },
+          { role: "user", content: [{ type: "text", text: prompt }, ...images] },
+        ],
+        response_format: { type: "json_object" },
+        temperature: 0.2,
+        ...(openrouter ? { max_tokens: 1200 } : { max_completion_tokens: 1200 }),
+      }),
+    }),
+  );
+  if (!res.ok) throw new Error(`Image reading failed [${res.status}]: ${(await res.text()).slice(0, 300)}`);
+  const json = (await res.json()) as { choices?: Array<{ message?: { content?: string } }> };
+  const content = (json.choices?.[0]?.message?.content ?? "").trim();
+  const start = content.indexOf("{");
+  const end = content.lastIndexOf("}");
+  if (start === -1 || end === -1) throw new Error("The image reader returned an unreadable answer.");
+  return JSON.parse(content.slice(start, end + 1)) as T;
+}
+
+/**
  * Image generation. Two providers, switched by the IMAGE_PROVIDER env var:
  * - "pollinations" (the default when unset): free, no API key. Used in
  *   staging — leave this env var unset there, or set it explicitly to

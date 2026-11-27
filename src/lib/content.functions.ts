@@ -117,7 +117,10 @@ export const generateWeek = createServerFn({
       slots: brainSlots,
       playbook,
     });
-    const brainContext = playbookContext(playbook) + varietyContext(playbook, brainPlan, brainSlots);
+    // What the brand uploaded (strategy documents, product photos) and the Brand Brain has read.
+    const { knowledgeContext } = await import("@/lib/brand-knowledge.server");
+    const knowledge = await knowledgeContext(supabaseAdmin, brand.id);
+    const brainContext = playbookContext(playbook) + knowledge + varietyContext(playbook, brainPlan, brainSlots);
 
     const result =
       await chatJSON<{

@@ -5,6 +5,7 @@ import { toast } from "sonner";
 import { Loader2, Trash2, Upload } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
+import { syncBrain } from "@/lib/brain-sync";
 import { listBrandAssets, removeBrandAsset, uploadBrandAsset } from "@/lib/brand-assets.functions";
 
 const MAX_BYTES = 3_000_000;
@@ -40,8 +41,9 @@ export function ProductPhotos({ brandId }: { brandId?: string | undefined }) {
       });
     },
     onSuccess: () => {
-      toast.success("Product photo saved");
+      toast.success("Product photo saved. The Brand Brain is studying it.");
       void qc.invalidateQueries({ queryKey: ["brand-products"] });
+      void syncBrain(brandId, qc);
     },
     onError: (e) => toast.error(e instanceof Error ? e.message : "Upload failed"),
   });
@@ -49,7 +51,10 @@ export function ProductPhotos({ brandId }: { brandId?: string | undefined }) {
   const del = useMutation({
     mutationFn: (path: string) =>
       remove({ data: { ...(brandId ? { brandId } : {}), kind: "products" as const, path } }),
-    onSuccess: () => void qc.invalidateQueries({ queryKey: ["brand-products"] }),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: ["brand-products"] });
+      void syncBrain(brandId, qc);
+    },
     onError: (e) => toast.error(e instanceof Error ? e.message : "Delete failed"),
   });
 

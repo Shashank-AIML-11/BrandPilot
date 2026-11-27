@@ -131,7 +131,10 @@ export async function processGenerationQueue(admin: AdminClient, userId?: string
       slots: brainSlots,
       playbook,
     });
-    const brainContext = playbookContext(playbook) + varietyContext(playbook, brainPlan, brainSlots);
+    // What the brand uploaded (strategy documents, product photos) and the Brand Brain has read.
+    const { knowledgeContext } = await import("@/lib/brand-knowledge.server");
+    const knowledge = await knowledgeContext(admin, brand.id);
+    const brainContext = playbookContext(playbook) + knowledge + varietyContext(playbook, brainPlan, brainSlots);
 
     let result: { days?: Array<Record<string, unknown>> } = {};
     for (let attempt = 1; ; attempt += 1) {

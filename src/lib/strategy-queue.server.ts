@@ -2,6 +2,7 @@ import { loadBrand } from "@/lib/brand.server";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Database } from "@/integrations/supabase/types";
 import { chatJSON, strategyChatOptions } from "@/lib/ai.server";
+import { knowledgeDigest } from "@/lib/brand-knowledge.server";
 import {
   brandContext,
   carouselsEnabled,
@@ -53,6 +54,8 @@ export interface Row {
   engagements: number | null;
   /** Set only once a real measurement has been rolled up; null = never measured. */
   metrics_updated_at?: string | null;
+  /** The pillar, hook style and poster template the Brand Brain chose for this piece. */
+  style_meta?: { pillar?: string; hook?: string; template?: string } | null;
 }
 
 function score(r: Row) {
@@ -72,6 +75,11 @@ function intEnv(name: string, fallback: number): number {
   return Number.isFinite(n) && n >= 0 ? n : fallback;
 }
 
+/** How much measured data a brand needs before the Brand Brain changes strategy on it. */
+export function learningThresholds() {
+  return { minPieces: intEnv("LEARN_MIN_PIECES", 6), minImpressions: intEnv("LEARN_MIN_IMPRESSIONS", 300) };
+}
+
 /** Early on, a brand has few posts and few views: too thin to change strategy on. */
 export function assessSignal(rows: Row[]): {
   enough: boolean;
@@ -79,8 +87,7 @@ export function assessSignal(rows: Row[]): {
   impressions: number;
   reason?: string;
 } {
-  const minPieces = intEnv("LEARN_MIN_PIECES", 6);
-  const minImpressions = intEnv("LEARN_MIN_IMPRESSIONS", 300);
+  const { minPieces, minImpressions } = learningThresholds();
   const measured = measuredRows(rows);
   const impressions = measured.reduce((sum, r) => sum + (r.impressions ?? 0), 0);
   if (measured.length < minPieces) {
@@ -127,7 +134,13 @@ async function strategyJSON(system: string, prompt: string) {
   }
 }
 
-function summarise(rows: Row[]) {
+type Totals = { pieces: number; impressions: number; clicks: number; engagements: number };
+const emptyTotals = (): Totals => ({ pieces: 0, impressions: 0, clicks: 0, engagements: 0 });
+
+/** Engagement rate (engagements per impression) as a fraction, 4 decimals. */
+const rateOf = (t: Pick<Totals, "impressions" | "engagements">) => (t.impressions ? +(t.engagements / t.impressions).toFixed(4) : 0);
+
+export function summarise(rows: Row[]) {
   const totals = rows.reduce(
     (a, r) => ({
       pieces: a.pieces + 1,
@@ -135,24 +148,32 @@ function summarise(rows: Row[]) {
       clicks: a.clicks + (r.clicks ?? 0),
       engagements: a.engagements + (r.engagements ?? 0),
     }),
-    { pieces: 0, impressions: 0, clicks: 0, engagements: 0 },
+    emptyTotals(),
   );
 
   const group = (keyOf: (r: Row) => string[]) => {
-    const map: Record<
-      string,
-      { pieces: number; impressions: number; clicks: number; engagements: number }
-    > = {};
+    const map: Record<string, Totals> = {};
     rows.forEach((r) =>
       keyOf(r).forEach((k) => {
-        map[k] ??= { pieces: 0, impressions: 0, clicks: 0, engagements: 0 };
-        map[k].pieces += 1;
-        map[k].impressions += r.impressions ?? 0;
-        map[k].clicks += r.clicks ?? 0;
-        map[k].engagements += r.engagements ?? 0;
+        const t = (map[k] ??= emptyTotals());
+        t.pieces += 1;
+        t.impressions += r.impressions ?? 0;
+        t.clicks += r.clicks ?? 0;
+        t.engagements += r.engagements ?? 0;
       }),
     );
-    return map;
+    // add the rate and the per-piece reach so the model compares like with like
+    return Object.fromEntries(
+      Object.entries(map).map(([k, t]) => [
+        k,
+        { ...t, engagement_rate: rateOf(t), avg_impressions: t.pieces ? Math.round(t.impressions / t.pieces) : 0 },
+      ]),
+    );
+  };
+
+  const styled = (pick: (m: NonNullable<Row["style_meta"]>) => string | undefined) => (r: Row) => {
+    const v = r.style_meta ? pick(r.style_meta) : undefined;
+    return v ? [v] : [];
   };
 
   const ranked = [...rows].sort((a, b) => score(b) - score(a));
@@ -160,6 +181,8 @@ function summarise(rows: Row[]) {
     title: r.title ?? "",
     type: r.type,
     time: r.scheduled_time,
+    pillar: r.style_meta?.pillar ?? "",
+    hook: r.style_meta?.hook ?? "",
     impressions: r.impressions ?? 0,
     clicks: r.clicks ?? 0,
     engagements: r.engagements ?? 0,
@@ -169,12 +192,35 @@ function summarise(rows: Row[]) {
     data_quality: { measured_posts: rows.length, enough_for_conclusions: rows.length >= 20 },
     totals,
     ctr: totals.impressions ? +(totals.clicks / totals.impressions).toFixed(4) : 0,
-    engagement_rate: totals.impressions ? +(totals.engagements / totals.impressions).toFixed(4) : 0,
+    engagement_rate: rateOf(totals),
     by_type: group((r) => [r.type]),
     by_platform: group((r) => r.platforms ?? []),
     by_hour: group((r) => [(r.scheduled_time ?? "00:00").slice(0, 2) + ":00"]),
+    by_pillar: group(styled((m) => m.pillar)),
+    by_hook: group(styled((m) => m.hook)),
+    by_template: group(styled((m) => m.template)),
     top_performers: ranked.slice(0, 5).map(brief),
     worst_performers: ranked.slice(-5).reverse().map(brief),
+  };
+}
+
+/** How reach and engagement moved against the period before, from measured posts only. */
+export function trendOf(current: Row[], previous: Row[]) {
+  const prev = measuredRows(previous);
+  if (!prev.length) return null;
+  const sum = (rows: Row[]): Totals =>
+    rows.reduce((a, r) => ({ pieces: a.pieces + 1, impressions: a.impressions + (r.impressions ?? 0), clicks: a.clicks + (r.clicks ?? 0), engagements: a.engagements + (r.engagements ?? 0) }), emptyTotals());
+  const now = sum(measuredRows(current));
+  const before = sum(prev);
+  const pct = (a: number, b: number) => (b ? Math.round(((a - b) / b) * 100) : null);
+  const avgNow = now.pieces ? now.impressions / now.pieces : 0;
+  const avgBefore = before.pieces ? before.impressions / before.pieces : 0;
+  return {
+    previous_period: { pieces: before.pieces, impressions: before.impressions, engagement_rate: rateOf(before) },
+    change_percent: {
+      avg_impressions_per_post: pct(avgNow, avgBefore),
+      engagement_rate: pct(rateOf(now), rateOf(before)),
+    },
   };
 }
 
@@ -191,7 +237,7 @@ export async function processStrategyQueue(admin: AdminClient) {
   const { data: rowsData, error } = await admin
     .from("content_items")
     .select(
-      "user_id, brand_id, scheduled_date, scheduled_time, type, title, status, platforms, impressions, clicks, engagements, metrics_updated_at",
+      "user_id, brand_id, scheduled_date, scheduled_time, type, title, status, platforms, impressions, clicks, engagements, metrics_updated_at, style_meta",
     )
     .gte("scheduled_date", iso(weekStart))
     .lte("scheduled_date", iso(weekEnd));
@@ -360,7 +406,7 @@ export async function learnForBrand(
   const { data } = await admin
     .from("content_items")
     .select(
-      "user_id, brand_id, scheduled_date, scheduled_time, type, title, caption, body, status, platforms, impressions, clicks, engagements, metrics_updated_at",
+      "user_id, brand_id, scheduled_date, scheduled_time, type, title, caption, body, status, platforms, impressions, clicks, engagements, metrics_updated_at, style_meta",
     )
     .eq("user_id", userId)
     .eq("brand_id", brandId)
@@ -379,6 +425,19 @@ export async function learnForBrand(
   if (!brand || !brand.business_name) return { learned: false, reason: "brand profile incomplete" };
 
   const metrics = summarise(rows);
+
+  // The period before this one, to show whether reach and engagement are rising or falling.
+  const { data: earlier } = await admin
+    .from("content_items")
+    .select("user_id, brand_id, scheduled_date, scheduled_time, type, title, status, platforms, impressions, clicks, engagements, metrics_updated_at")
+    .eq("user_id", userId)
+    .eq("brand_id", brandId)
+    .eq("status", "posted")
+    .gte("scheduled_date", iso(addDays(today, -28)))
+    .lt("scheduled_date", from);
+  const trend = trendOf(rows, (earlier ?? []) as unknown as Row[]);
+  const knowledge = await knowledgeDigest(admin, brandId);
+
   const ranked = [...rows].sort((a, b) => score(b) - score(a));
   const opening = (r: R) =>
     ({ type: r.type, opening: (r.caption || r.body || r.title || "").split("\n")[0]?.slice(0, 140) ?? "" });
@@ -397,13 +456,13 @@ export async function learnForBrand(
 
   const analysis = await strategyJSON(
     STRATEGY_SYSTEM,
-    `${brandContext(brand as never)}
+    `${brandContext(brand as never)}${knowledge}
 
 Measured performance of this brand's posted content from ${from} to ${to} (JSON):
-${JSON.stringify({ ...metrics, ...hooks })}${sampleNote(rows.length)}
+${JSON.stringify({ ...metrics, ...hooks, ...(trend ? { trend_vs_previous_period: trend } : {}) })}${sampleNote(rows.length)}
 ${previous?.directives ? `\nThe previous strategy told the generator: ${previous.directives}\nSay whether it worked and what to change.` : ""}
 
-Analyse reach (impressions), clicks and engagement. Decide how the NEXT 7 days of content must change to grow this brand's reach and virality.
+Analyse reach (impressions), clicks and engagement. Use by_pillar, by_hook and by_template to say which content pillars, hook styles and poster templates won or lost, and use trend_vs_previous_period (when present) to say whether reach and engagement are rising or falling. If brand knowledge is given above, keep the brief aligned with the brand's own strategy documents and priorities, and position against the competitor notes without ever naming them. Decide how the NEXT 7 days of content must change to grow this brand's reach and virality.
 
 Return JSON shaped exactly as:
 {

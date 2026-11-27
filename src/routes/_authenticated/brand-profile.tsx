@@ -16,6 +16,10 @@ import {
 import { supabase } from "@/integrations/supabase/client";
 import { ChannelConnections } from "@/components/channel-connections";
 import { ProductPhotos } from "@/components/product-photos";
+import { BrandDocuments } from "@/components/brand-documents";
+import { BrainStatus } from "@/components/brain-status";
+import { WebsiteScan, type ScanApproval } from "@/components/website-scan";
+import { syncBrain } from "@/lib/brain-sync";
 import { useMe } from "@/components/app-shell";
 import {
   agencyPlanFor,
@@ -165,13 +169,17 @@ function BrandAssets({
     onSuccess: () => {
       toast.success("Brand asset saved");
       void qc.invalidateQueries({ queryKey: ["brand-assets"] });
+      void syncBrain(brandId, qc);
     },
     onError: (e) => toast.error(e instanceof Error ? e.message : "Upload failed"),
   });
 
   const delAsset = useMutation({
     mutationFn: (path: string) => removeAsset({ data: { ...(brandId ? { brandId } : {}), path } }),
-    onSuccess: () => void qc.invalidateQueries({ queryKey: ["brand-assets"] }),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: ["brand-assets"] });
+      void syncBrain(brandId, qc);
+    },
     onError: (e) => toast.error(e instanceof Error ? e.message : "Delete failed"),
   });
 
@@ -247,7 +255,39 @@ function BrandAssets({
               )}
             </div>
           </div>
-          <div className="min-w-0 flex-1 space-y-2">
+        </div>
+        <p className="text-xs text-muted-foreground">
+          Logo: PNG, JPG or SVG, up to 1.5 MB (a transparent PNG looks best).
+        </p>
+      </div>
+      <div className="space-y-2">
+        <Label>Brand colours</Label>
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+          {COLOR_FIELDS.map((c) => (
+            <div key={c.key} className="space-y-1">
+              <div className="flex items-center gap-2">
+                <input
+                  type="color"
+                  aria-label={c.label}
+                  value={form.brand_colors[c.key]}
+                  onChange={(e) => setColor(c.key, e.target.value)}
+                  className="h-9 w-10 cursor-pointer rounded border border-border bg-transparent p-0.5"
+                />
+                <Input
+                  value={form.brand_colors[c.key]}
+                  maxLength={7}
+                  onChange={(e) => setColor(c.key, e.target.value)}
+                  className="h-9 px-2 text-xs"
+                />
+              </div>
+              <p className="text-[11px] text-muted-foreground">{c.label}</p>
+            </div>
+          ))}
+        </div>
+      </div>
+      <div className="grid gap-6 lg:col-span-2 lg:grid-cols-3">
+      <div className="min-w-0 space-y-2">
+        <Label>Brand assets</Label>
             <input
               ref={assetRef}
               type="file"
@@ -318,36 +358,12 @@ function BrandAssets({
                 ))}
               </div>
             )}
+            <p className="text-xs text-muted-foreground">
+              PNG, JPG, SVG, WebP or PDF, up to 3 MB each, 20 per brand. The Brand Brain studies them to learn your look and feel.
+            </p>
           </div>
-        </div>
-        <p className="text-xs text-muted-foreground">
-          Logo: PNG, JPG or SVG, up to 1.5 MB (a transparent PNG looks best). Brand assets: PNG, JPG, SVG, WebP or PDF, up to 3 MB each, 20 per brand.
-        </p>
-      </div>
-      <div className="space-y-2">
-        <Label>Brand colours</Label>
-        <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-          {COLOR_FIELDS.map((c) => (
-            <div key={c.key} className="space-y-1">
-              <div className="flex items-center gap-2">
-                <input
-                  type="color"
-                  aria-label={c.label}
-                  value={form.brand_colors[c.key]}
-                  onChange={(e) => setColor(c.key, e.target.value)}
-                  className="h-9 w-10 cursor-pointer rounded border border-border bg-transparent p-0.5"
-                />
-                <Input
-                  value={form.brand_colors[c.key]}
-                  maxLength={7}
-                  onChange={(e) => setColor(c.key, e.target.value)}
-                  className="h-9 px-2 text-xs"
-                />
-              </div>
-              <p className="text-[11px] text-muted-foreground">{c.label}</p>
-            </div>
-          ))}
-        </div>
+        <ProductPhotos brandId={brandId} />
+        <BrandDocuments brandId={brandId} />
       </div>
     </div>
   );
@@ -526,6 +542,28 @@ function BrandProfilePage() {
     [data, queryClient],
   );
 
+  // "Approve" on the website scan fills the form, then saves it once the new values are in state.
+  const [pendingSave, setPendingSave] = useState(false);
+  useEffect(() => {
+    if (!pendingSave) return;
+    setPendingSave(false);
+    save.mutate();
+  }, [pendingSave, save]);
+
+  const applyScan = (a: ScanApproval) => {
+    setForm((f) => ({
+      ...f,
+      ...a.fields,
+      social_handles: { ...f.social_handles, ...a.handles },
+      brand_colors: a.color ? { ...f.brand_colors, primary: a.color } : f.brand_colors,
+    }));
+    if (!(a.fields.business_name ?? form.business_name).trim()) {
+      toast.message("Filled in. Add your business name, then press Save profile.");
+      return;
+    }
+    setPendingSave(true);
+  };
+
   const set = (key: keyof FormState, value: string) => setForm((f) => ({ ...f, [key]: value }));
 
   if (meLoading || (isAgency && brandsLoading) || isLoading) {
@@ -590,6 +628,13 @@ function BrandProfilePage() {
             />
           </div>
         </div>
+        <WebsiteScan
+          website={form.website}
+          brandId={isAgency ? activeBrand?.id : data?.id}
+          current={form as unknown as Record<string, string>}
+          currentHandles={form.social_handles}
+          onApprove={applyScan}
+        />
         <BrandAssets
           brandId={isAgency ? activeBrand?.id : data?.id}
           form={form}
@@ -766,8 +811,9 @@ function BrandProfilePage() {
             onChange={(e) => set("compliance_notes", e.target.value)}
           />
         </div>
-        <ProductPhotos brandId={isAgency ? activeBrand?.id : data?.id} />
       </section>
+
+      <BrainStatus brandId={isAgency ? activeBrand?.id : data?.id} />
 
       <section className="surface space-y-3 p-6">
         <h2 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">

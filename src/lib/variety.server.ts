@@ -9,6 +9,7 @@
  * The choice is stored on each content item (style_meta) which is also what the next run
  * reads to know what was used lately. Fails soft: with no playbook it returns no plan.
  */
+import { SEED_PATTERNS, anglesFor, craftRules, hooksOf, industryGroupOf, type PatternRow } from "@/lib/pattern-library";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Database } from "@/integrations/supabase/types";
 import type { Playbook } from "@/lib/playbook.server";
@@ -49,59 +50,13 @@ export const REEL_RECIPES: Array<{ id: string; order: string; note: string }> = 
   { id: "myth_vs_fact_card", order: "hook > problem_solution > compare > checklist > statement > cta_end", note: "stamp the myth as wrong, then show the right way side by side and what to do now" },
 ];
 
-export const HOOK_STYLES: Array<{ id: string; how: string }> = [
-  { id: "question", how: "open with a direct question the audience is already asking" },
-  { id: "stat", how: "open with a specific number or fact from the brand's own context" },
-  { id: "bold_claim", how: "open with a confident, slightly provocative claim, then back it up" },
-  { id: "story", how: "open with a short real-feeling moment or scene, then the lesson" },
-  { id: "how_to", how: "promise a clear how-to and deliver concrete steps" },
-  { id: "myth_bust", how: "name a common myth, then correct it" },
-  { id: "list", how: "numbered list of quick, useful points" },
-  { id: "contrarian", how: "challenge a habit or belief in the industry, then give the better way" },
-  { id: "before_after", how: "contrast the problem state with the improved state" },
-  { id: "behind_scenes", how: "show how the work actually gets done, in a human voice" },
-  { id: "customer_voice", how: "speak in the audience's own words about their problem (no invented quotes or names)" },
-  { id: "offer", how: "lead with the offer or next step and why now" },
-  { id: "pov", how: "open with 'POV:' and put the viewer inside a relatable moment from their day" },
-  { id: "mistake", how: "name one common mistake people make with this product or service, then the fix (no fear tactics)" },
-  { id: "if_you", how: "open with 'If you are [specific person in a specific situation]...' so the right viewer feels called out" },
-  { id: "unpopular_opinion", how: "state an honest, mild opinion most in this industry would not say out loud, then explain it" },
-  { id: "one_thing", how: "promise one single thing to know or do, then deliver exactly that" },
-  { id: "whats_inside", how: "show what is inside or included, piece by piece, like unboxing" },
-  { id: "honest_truth", how: "say something plainly honest about price, effort or limits that builds trust" },
-  { id: "right_now", how: "tie the post to this season, week or moment and why it matters now" },
-];
+export const HOOK_STYLES: Array<{ id: string; how: string }> = hooksOf(SEED_PATTERNS);
 
 /**
  * Angles: the specific story a piece tells. A pillar says WHAT it is about; the angle says HOW.
  * One angle is assigned per piece, and none repeats within a day or among the last few used.
  */
-export const ANGLE_BANK: string[] = [
-  "answer the one question customers ask most before buying",
-  "one step of how the work is actually done, behind the scenes",
-  "three mistakes people make, and what to do instead",
-  "two choices compared honestly, and who each one suits",
-  "a day in the life of the owner or the team",
-  "before and after, described in words, without inventing a customer",
-  "a quick how-to a beginner can try today",
-  "a common myth, corrected kindly",
-  "what to check before you buy, a short checklist",
-  "who this is for and who it is not for",
-  "a close look at one detail of one product or service",
-  "the story of why the brand started, using only what the brand info says",
-  "what is included and what it costs in value terms, no made-up prices",
-  "a seasonal or festival moment and a practical idea for it",
-  "a simple care, usage or planning tip",
-  "a small win a customer can get in the first week",
-  "an honest limit or trade-off, and how the brand handles it",
-  "a question that invites the audience to reply with their own experience",
-  "a local touch: the neighbourhood, city or community the brand serves",
-  "a trend or change in this industry and what it means for the customer",
-  "a short story told in three beats: situation, turn, result",
-  "an offer or next step explained clearly, with why it is available now",
-  "the thing people assume costs more or takes longer, and the real picture",
-  "a mini guide: first, next, last",
-];
+export const ANGLE_BANK: string[] = anglesFor(SEED_PATTERNS, null);
 
 /** Block this many most recent uses before an option may repeat. */
 const BLOCK_PILLAR = 3;
@@ -194,6 +149,20 @@ async function recentHistory(admin: AdminClient, userId: string, brandId: string
  * Chooses a style for every slot. Returns null when there is no playbook, so the caller
  * simply generates as before.
  */
+/** The live library from the database, or the built-in seed when the table is missing or empty. Never throws. */
+export async function loadLibrary(admin: AdminClient): Promise<PatternRow[]> {
+  try {
+    const { data, error } = await admin
+      .from("pattern_library" as never)
+      .select("dimension,key,label,template,why,industries,source,weight,active" as never)
+      .eq("active" as never, true as never);
+    if (error || !Array.isArray(data) || data.length < 20) return SEED_PATTERNS;
+    return (data as unknown as PatternRow[]).map((r) => ({ ...r, industries: r.industries ?? [] }));
+  } catch {
+    return SEED_PATTERNS;
+  }
+}
+
 export async function planVariety(
   admin: AdminClient,
   opts: { userId: string; brandId: string; slots: Slot[]; playbook: Playbook | null },
@@ -203,7 +172,16 @@ export async function planVariety(
   try {
     const hist = await recentHistory(admin, opts.userId, opts.brandId);
     const pillars = playbook.pillars.map((p) => p.name);
-    const hooks = HOOK_STYLES.map((h) => h.id);
+    const library = await loadLibrary(admin);
+    let group: ReturnType<typeof industryGroupOf> = null;
+    try {
+      const { data: prof } = await admin.from("brand_profiles").select("industry").eq("id", opts.brandId).maybeSingle();
+      group = industryGroupOf((prof as { industry?: string } | null)?.industry);
+    } catch {
+      group = null;
+    }
+    const hooks = hooksOf(library).map((h) => h.id);
+    const angleBank = anglesFor(library, group);
     const preferred = playbook.preferred_templates.length >= 5 ? playbook.preferred_templates : POSTER_TEMPLATE_IDS;
 
     // history lists are newest first; picks made now go to the front so the next slot sees them
@@ -233,7 +211,7 @@ export async function planVariety(
       };
       const pillar = pickLeastRecent(fresh(pillars, day.pillars), usedPillars, BLOCK_PILLAR, `${seed}p`, pillarsByType[slot.type] ?? []);
       const hook = pickLeastRecent(fresh(hooks, day.hooks), usedHooks, BLOCK_HOOK, `${seed}h`, hooksByType[slot.type] ?? []);
-      const angle = pickLeastRecent(fresh(ANGLE_BANK, day.angles), usedAngles, BLOCK_ANGLE, `${seed}a`);
+      const angle = pickLeastRecent(fresh(angleBank, day.angles), usedAngles, BLOCK_ANGLE, `${seed}a`);
       day.pillars.add(pillar);
       day.hooks.add(hook);
       day.angles.add(angle);
@@ -320,6 +298,9 @@ export function varietyContext(
 === CONTENT PLAN (assigned by the brand brain; follow it exactly) ===
 Each piece below has its own content pillar, hook style and, for image posts, its own poster template. Write that piece on that pillar, in that hook style, telling that angle. Do NOT reuse the same opening, structure or angle across pieces. Write like a person who knows this business: concrete details, plain words, no stock phrases such as "unlock", "elevate", "game-changer" or "in today's fast-paced world".
 ${lines.join("\n")}${occasions}${photos}
+
+Craft rules for video scripts and captions (from the pattern library):
+${craftRules(SEED_PATTERNS, { india: true })}
 === END CONTENT PLAN ===`;
 }
 

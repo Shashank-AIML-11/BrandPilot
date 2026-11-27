@@ -62,3 +62,24 @@ describe("variety planner", () => {
     expect(HOOK_STYLES.length).toBeGreaterThanOrEqual(16);
   });
 });
+
+import { SEED_PATTERNS, anglesFor, industryGroupOf } from "@/lib/pattern-library";
+
+describe("pattern library", () => {
+  it("has unique keys per dimension and enough breadth", () => {
+    const seen = new Set<string>();
+    for (const r of SEED_PATTERNS) {
+      const k = `${r.dimension}|${r.key}`;
+      expect(seen.has(k), k).toBe(false);
+      seen.add(k);
+      expect(r.template.length).toBeGreaterThan(10);
+    }
+    expect(SEED_PATTERNS.filter((r) => r.dimension === "hook").length).toBeGreaterThanOrEqual(45);
+  });
+  it("maps industries and adds industry angles", () => {
+    expect(industryGroupOf("Dental clinic")).toBe("local_service");
+    expect(industryGroupOf("Brass handicrafts")).toBe("product_brand");
+    expect(industryGroupOf("Home bakery")).toBe("food");
+    expect(anglesFor(SEED_PATTERNS, "food").length).toBeGreaterThan(anglesFor(SEED_PATTERNS, null).length);
+  });
+});

@@ -43,6 +43,10 @@ export const REEL_RECIPES: Array<{ id: string; order: string; note: string }> = 
   { id: "phone_demo", order: "hook > phone_chat > phone_notify > statement > cta_end", note: "show it working on a phone, human and simple" },
   { id: "myth_truth", order: "question > statement > problem_solution > checklist > cta_end", note: "a common belief, then the truth" },
   { id: "offer_push", order: "hook > feature_cards > tags > offer_card > cta_end", note: "what is included, who it is for, the offer" },
+  { id: "settings_walkthrough", order: "hook > statement > steps > phone_post > checklist > cta_end", note: "one thing most people get wrong, the exact steps to fix it, what changes after; short punchy lines, one highlighted word per scene" },
+  { id: "ranked_picks", order: "hook > stat_grid > feature_cards > tags > statement > cta_end", note: "a numbered set of picks (top 5 or 9), each with a one-line reason; say how many in the first scene" },
+  { id: "doodle_story", order: "question > timeline > stat_hero > problem_solution > statement > cta_end", note: "tell one real moment as a story with a single number at the turning point; plain light scenes, no stock footage" },
+  { id: "myth_vs_fact_card", order: "hook > problem_solution > compare > checklist > statement > cta_end", note: "stamp the myth as wrong, then show the right way side by side and what to do now" },
 ];
 
 export const HOOK_STYLES: Array<{ id: string; how: string }> = [

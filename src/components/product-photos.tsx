@@ -64,8 +64,7 @@ export function ProductPhotos({ brandId }: { brandId?: string | undefined }) {
     <div className="space-y-2">
       <Label>Hero product photos</Label>
       <p className="text-xs text-muted-foreground">
-        Clear photos of your product, pack or storefront (PNG, JPG or WebP, up to 3 MB each, 8 per brand). Save your
-        profile once before uploading.
+        PNG, JPG or WebP, up to 3 MB each, 8 per brand
       </p>
       <input
         ref={fileRef}

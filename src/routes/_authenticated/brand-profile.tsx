@@ -18,7 +18,6 @@ import { ChannelConnections } from "@/components/channel-connections";
 import { ProductPhotos } from "@/components/product-photos";
 import { BrandDocuments } from "@/components/brand-documents";
 import { FilePreview, usePreview } from "@/components/file-preview";
-import { BrainStatus } from "@/components/brain-status";
 import { WebsiteScan, type ScanApproval } from "@/components/website-scan";
 import { syncBrain } from "@/lib/brain-sync";
 import { useMe } from "@/components/app-shell";
@@ -222,7 +221,7 @@ function BrandAssets({
     setForm((f) => ({ ...f, brand_colors: { ...f.brand_colors, [key]: value } }));
 
   return (
-    <div className="grid gap-4 lg:grid-cols-[minmax(0,3fr)_minmax(0,2fr)]">
+    <div className="space-y-6">
       <div className="grid gap-6 sm:grid-cols-[auto_minmax(0,1fr)]">
       <div className="space-y-2">
         <Label>Brand logo</Label>
@@ -269,11 +268,11 @@ function BrandAssets({
           Logo: PNG, JPG or SVG, up to 1.5 MB (a transparent PNG looks best).
         </p>
       </div>
-      <ProductPhotos brandId={brandId} />
+      <div className="min-w-0"><ProductPhotos brandId={brandId} /></div>
       </div>
       <div className="space-y-2">
         <Label>Brand colours</Label>
-        <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+        <div className="grid max-w-xl grid-cols-1 gap-3 sm:grid-cols-3">
           {COLOR_FIELDS.map((c) => (
             <div key={c.key} className="space-y-1">
               <div className="flex items-center gap-2">
@@ -296,7 +295,7 @@ function BrandAssets({
           ))}
         </div>
       </div>
-      <div className="grid gap-6 lg:col-span-2 lg:grid-cols-2">
+      <div className="grid gap-6 lg:grid-cols-2">
       <div className="min-w-0 space-y-2">
         <Label>Brand assets</Label>
             <input
@@ -323,10 +322,6 @@ function BrandAssets({
                 e.target.value = "";
               }}
             />
-            <Button type="button" size="sm" variant="secondary" onClick={() => assetRef.current?.click()} disabled={upAsset.isPending}>
-              {upAsset.isPending ? <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" /> : <Upload className="mr-1.5 h-3.5 w-3.5" />}
-              Upload Brand Assets
-            </Button>
             {assets.length > 0 && (
               <div className="flex flex-wrap gap-3">
                 {assets.map((a) => (
@@ -377,6 +372,10 @@ function BrandAssets({
             <p className="text-xs text-muted-foreground">
               PNG, JPG, SVG, WebP or PDF, up to 3 MB each, 20 per brand. The Brand Brain studies them to learn your look and feel.
             </p>
+            <Button type="button" size="sm" variant="secondary" onClick={() => assetRef.current?.click()} disabled={upAsset.isPending}>
+              {upAsset.isPending ? <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" /> : <Upload className="mr-1.5 h-3.5 w-3.5" />}
+              Upload Brand Assets
+            </Button>
           </div>
         <BrandDocuments brandId={brandId} />
       </div>
@@ -881,8 +880,6 @@ function BrandProfilePage() {
           />
         </div>
       </section>
-
-      <BrainStatus brandId={isAgency ? activeBrand?.id : data?.id} />
 
       <section className="surface space-y-3 p-6">
         <h2 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">

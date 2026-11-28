@@ -35,6 +35,7 @@ import { getPlanStatus } from "@/lib/payments.functions";
 import { publishAllContent, publishContentItem } from "@/lib/channels.functions";
 import { useServerFn } from "@tanstack/react-start";
 import { Checkbox } from "@/components/ui/checkbox";
+import { PlatformIcon } from "@/components/platform-icon";
 
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -1156,9 +1157,9 @@ function CalendarPage() {
                             </div>
                           </button>
 
-                          {/* Time on the left, action on the right */}
+                          {/* Network logo on the left (hover shows the posting time), action on the right */}
                           <div className="flex items-center justify-between px-1.5 pb-1.5">
-                            <span className="text-[11px] text-muted-foreground">{item.scheduled_time?.slice(0, 5) ?? ""}</span>
+                            <PlatformIcon type={item.type} time={item.scheduled_time?.slice(0, 5) ?? null} />
                             {reviewTab === "generated" && autopostOn && item.status === "posted" && (
                               <Badge className="bg-success text-[10px] text-success-foreground">Posted</Badge>
                             )}

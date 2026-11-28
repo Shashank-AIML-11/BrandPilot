@@ -460,6 +460,16 @@ describe.skipIf(!RUN)("five-brand scoring test (Phase 1 gate)", () => {
       fs.mkdirSync(dir, { recursive: true });
       fs.writeFileSync(path.join(dir, "report.md"), lines.join("\n"));
       fs.writeFileSync(path.join(dir, "report.json"), JSON.stringify(results.map((r) => ({ brand: r.mock.brand["business_name"], pieces: r.pieces })), null, 2));
+      // one line per run, so progress is visible over time (compare runs with the same judge model)
+      try {
+        const { execSync } = await import("node:child_process");
+        let commit = "unknown";
+        try { commit = execSync("git rev-parse --short HEAD", { stdio: ["ignore", "pipe", "ignore"] }).toString().trim(); } catch { /* not a git folder */ }
+        const per = results.map((r) => `${String(r.mock.key)}=${Math.round((r.pieces.filter((p) => p.usable).length / Math.max(1, expectedByBrand.get(r.mock.key as string) ?? r.pieces.length)) * 100)}%`).join(" ");
+        const histFile = path.join(dir, "history.csv");
+        if (!fs.existsSync(histFile)) fs.writeFileSync(histFile, "when,commit,judge_model,usable,planned,rate,per_brand\n");
+        fs.appendFileSync(histFile, `${new Date().toISOString()},${commit},${process.env["EVAL_JUDGE_MODEL"] || "openai/gpt-oss-120b"},${usableAll},${expectedAll},${expectedAll ? Math.round((usableAll / expectedAll) * 100) : 0}%,${per}\n`);
+      } catch { /* history is a convenience */ }
       console.log(lines.slice(0, 14).join("\n"));
       console.log(`Full report: ${path.join(dir, "report.md")}`);
       expect(all.length).toBeGreaterThan(0);

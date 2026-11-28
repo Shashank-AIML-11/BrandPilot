@@ -139,6 +139,7 @@ async function designPoster(
     } catch {
       template = null;
     }
+    let fellBack = "";
     const designed = await composePoster({
       photo,
       template,
@@ -151,8 +152,11 @@ async function designPoster(
       },
       aspect,
       seed: `${item.id}`,
+      onFallback: (e) => {
+        fellBack = `designed (basic layout; main layout failed: ${e instanceof Error ? e.message : String(e)})`.slice(0, 200);
+      },
     });
-    await noteDesign(admin, item.id, "designed");
+    await noteDesign(admin, item.id, fellBack || "designed");
     return designed;
   } catch (error) {
     await noteDesign(admin, item.id, `plain: compose failed (${error instanceof Error ? error.message : String(error)})`.slice(0, 200));

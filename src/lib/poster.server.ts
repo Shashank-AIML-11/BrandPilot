@@ -448,6 +448,8 @@ export async function composePoster(opts: {
   seed: string;
   /** Template id from the variety planner; unset keeps the classic hash-picked layout. */
   template?: string | null;
+  /** Called when the layout engine failed and the basic poster was drawn instead. */
+  onFallback?: (error: unknown) => void;
 }): Promise<Uint8Array> {
   const { w, h: hh } = sizeFor(opts.aspect);
   const font = (b64: string, weight: 400 | 600 | 800) => ({
@@ -465,7 +467,70 @@ export async function composePoster(opts: {
     opts.brand,
     opts.template,
   );
-  return renderPng(tree, w, hh, [font(POPPINS_400, 400), font(POPPINS_600, 600), font(POPPINS_800, 800)]);
+  try {
+    return await renderPng(tree, w, hh, [font(POPPINS_400, 400), font(POPPINS_600, 600), font(POPPINS_800, 800)]);
+  } catch (error) {
+    // The layout engine failed on this server. Draw a simpler poster with no layout engine at all
+    // (text as outlines), so a post is never left without its headline.
+    console.error("[poster] layout engine failed, drawing the basic poster", error);
+    opts.onFallback?.(error);
+    return composePosterBasic(opts);
+  }
+}
+
+/** Basic poster: photo, dark fade, logo and brand name, headline, supporting line and call to action. No layout engine. */
+export async function composePosterBasic(opts: { photo: Uint8Array | null; copy: PosterCopy; brand: PosterBrand; aspect: string }): Promise<Uint8Array> {
+  const { w, h: hh } = sizeFor(opts.aspect);
+  const { Resvg } = await import("@resvg/resvg-js");
+  const f = await loadTtfFonts();
+  const primary = cleanColor(opts.brand.colors?.primary, "#4f46e5");
+  const secondary = cleanColor(opts.brand.colors?.secondary, "#0f172a");
+  const accent = cleanColor(opts.brand.colors?.accent, "#f59e0b");
+  const pad = Math.round(w * 0.07);
+  const inner = w - pad * 2;
+  const tall = hh / w;
+  const hSize = Math.round(w * (tall > 1.5 ? 0.092 : 0.085));
+  const text = (font: OtFont, t: string, x: number, y: number, size: number, fill: string, opacity = 1) =>
+    `<path d="${font.getPath(t, x, y, size).toPathData(2)}" fill="${fill}" fill-opacity="${opacity}"/>`;
+  const clean = (t: string) => t.replace(/[#*_"]/g, "").replace(/[^\u0000-\u024F\u2010-\u2027\u20B9]/g, "").trim();
+  const head = wrapByWidth(f[800], clean(opts.copy.headline).toUpperCase() === clean(opts.copy.headline) ? clean(opts.copy.headline) : clean(opts.copy.headline), hSize, inner).slice(0, 4);
+  const supportSrc = (opts.copy.points.length ? opts.copy.points.slice(0, 3).map((p) => `• ${clean(p)}`) : [clean(opts.copy.subline)]).filter(Boolean);
+  const subSize = Math.round(w * 0.04);
+  const cta = clean(opts.copy.cta).slice(0, 28);
+  const ctaSize = Math.round(w * 0.04);
+  const ctaH = Math.round(ctaSize * 2.1);
+  const ctaW = cta ? Math.min(inner, Math.round(f[800].getAdvanceWidth(cta, ctaSize) + ctaSize * 2)) : 0;
+  const lineGap = hSize * 1.18;
+  const blockH = head.length * lineGap + (supportSrc.length ? 24 + supportSrc.length * subSize * 1.5 : 0) + (cta ? 36 + ctaH : 0);
+  const bottom = hh - pad;
+  let y = bottom - blockH + hSize;
+  const parts: string[] = [`<rect x="${pad}" y="${y - hSize - 30}" width="${Math.round(w * 0.12)}" height="10" rx="5" fill="${accent}"/>`];
+  head.forEach((l, i) => {
+    parts.push(text(f[800], l, pad, y, hSize, i >= head.length - 1 && head.length > 1 ? accent : "#ffffff"));
+    y += lineGap;
+  });
+  y += 24 - (lineGap - hSize);
+  supportSrc.forEach((l) => {
+    wrapByWidth(f[400], l, subSize, inner).slice(0, 2).forEach((ln) => {
+      parts.push(text(f[400], ln, pad, y, subSize, "#ffffff", 0.95));
+      y += subSize * 1.5;
+    });
+  });
+  if (cta) {
+    y += 12;
+    parts.push(`<rect x="${pad}" y="${y}" rx="${ctaH / 2}" width="${ctaW}" height="${ctaH}" fill="${accent}"/>${text(f[800], cta, pad + ctaSize, y + ctaH / 2 + ctaSize * 0.36, ctaSize, onColor(accent))}`);
+  }
+  let nameX = pad;
+  let logoSvg = "";
+  if (opts.brand.logo && opts.brand.logo.mime !== "image/svg+xml") {
+    logoSvg = `<image x="${pad}" y="${pad}" height="64" width="64" preserveAspectRatio="xMinYMid meet" href="${dataUri(opts.brand.logo.bytes, opts.brand.logo.mime)}"/>`;
+    nameX = pad + 80;
+  }
+  const bg = opts.photo
+    ? `<image x="0" y="0" width="${w}" height="${hh}" preserveAspectRatio="xMidYMid slice" href="${dataUri(opts.photo)}"/>`
+    : `<rect width="${w}" height="${hh}" fill="url(#bgd)"/>`;
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${w}" height="${hh}" viewBox="0 0 ${w} ${hh}"><defs><linearGradient id="bgd" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="${primary}"/><stop offset="1" stop-color="${secondary}"/></linearGradient><linearGradient id="fade" x1="0" y1="0" x2="0" y2="1"><stop offset="0.35" stop-color="#050816" stop-opacity="0"/><stop offset="1" stop-color="#050816" stop-opacity="0.88"/></linearGradient><linearGradient id="top" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#050816" stop-opacity="0.55"/><stop offset="0.18" stop-color="#050816" stop-opacity="0"/></linearGradient></defs>${bg}<rect width="${w}" height="${hh}" fill="url(#fade)"/><rect width="${w}" height="${hh}" fill="url(#top)"/>${logoSvg}${text(f[800], opts.brand.name.slice(0, 24), nameX, pad + 44, 36, "#ffffff")}${parts.join("")}</svg>`;
+  return new Resvg(svg, { fitTo: { mode: "width", value: w } }).render().asPng();
 }
 
 type SatoriFont = { name: string; data: Buffer; weight: 400 | 600 | 800; style: "normal" };

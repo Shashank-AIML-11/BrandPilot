@@ -846,8 +846,8 @@ function CalendarPage() {
       {/* HEADER */}
       {/* ====================================================== */}
 
-      {/* Stays pinned under the top bar while the calendar scrolls. */}
-      <div className="sticky top-16 z-20 -mx-4 -mt-4 flex flex-wrap items-center justify-between gap-x-4 gap-y-1 border-b border-border bg-background px-4 pb-2 pt-1 sm:-mx-8 sm:px-8">
+      {/* Stays pinned to the very top while the calendar scrolls (below the slim bar on small screens). */}
+      <div className="sticky top-12 z-20 -mx-4 -mt-3 flex flex-wrap items-center justify-between gap-x-4 gap-y-1 border-b border-border bg-background px-4 pb-1.5 pt-2 sm:-mx-6 sm:px-6 lg:top-0">
 
         <div>
           <h1 className="whitespace-nowrap text-lg font-bold">
@@ -1140,7 +1140,7 @@ function CalendarPage() {
                           }`}
                         >
                           <button type="button" onClick={() => setDetail(item)} className="block w-full text-left">
-                            <div className="relative h-[clamp(3.5rem,calc((100vh-21rem)/2),8.5rem)] w-full bg-muted/20">
+                            <div className="relative h-[clamp(3.5rem,calc((100vh-16.5rem)/2),12rem)] w-full bg-muted/20">
                               {thumb ? (
                                 <img src={thumb} alt={item.title} className="h-full w-full object-cover object-[50%_72%]" />
                               ) : (
@@ -1231,11 +1231,6 @@ function CalendarPage() {
                 "product_service_video",
               ];
 
-              const blogCount = list.filter(
-                (item) => item.type === "blog",
-              ).length;
-              const otherCount = list.length - blogCount;
-
               const failed =
                 list.some(
                   (item) =>
@@ -1293,17 +1288,30 @@ function CalendarPage() {
                   {list.length > 0 && (
                     <div className="mt-2 space-y-1">
 
-                      {blogCount > 0 && (
-                        <p className="truncate rounded bg-blog/15 px-1.5 py-0.5 text-[11px] text-blog">
-                          {blogCount} blog
-                        </p>
-                      )}
-
-                      {otherCount > 0 && (
-                        <p className="truncate rounded bg-muted px-1.5 py-0.5 text-[11px] text-muted-foreground">
-                          {otherCount} post{otherCount === 1 ? "" : "s"}
-                        </p>
-                      )}
+                      <div className="grid grid-cols-4 gap-1">
+                        {list.slice(0, 8).map((item) => {
+                          const raw = item.image_url ?? item.carousel_image_urls?.[0] ?? null;
+                          const thumb = cachedMediaUrl(raw) ?? raw;
+                          return (
+                            <div
+                              key={item.id}
+                              title={item.title}
+                              className="relative aspect-[4/5] overflow-hidden rounded-[5px] border border-border/70 bg-muted/20"
+                            >
+                              {thumb ? (
+                                <img src={thumb} alt="" loading="lazy" className="h-full w-full object-cover object-[50%_72%]" />
+                              ) : (
+                                <div className="flex h-full w-full items-center justify-center text-muted-foreground/40">
+                                  <ImageOff className="h-3 w-3" />
+                                </div>
+                              )}
+                              <span className="absolute bottom-px right-px">
+                                <PlatformIcon type={item.type} time={item.scheduled_time?.slice(0, 5) ?? null} size={12} />
+                              </span>
+                            </div>
+                          );
+                        })}
+                      </div>
 
                       {list.every(
                         (item) =>

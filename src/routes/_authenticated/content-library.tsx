@@ -13,6 +13,7 @@ import { cn } from "@/lib/utils";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
+import { PlatformIcon } from "@/components/platform-icon";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -476,6 +477,7 @@ function ContentLibraryPage() {
                           <span className="text-xs text-muted-foreground">
                             {format(new Date(item.scheduled_date), "d MMM yyyy")}
                           </span>
+                          <PlatformIcon type={item.type} time={item.scheduled_time?.slice(0, 5) ?? null} size={22} />
                         </div>
                       </div>
                     </button>

@@ -1,3 +1,4 @@
+import type { ReactNode } from "react";
 import { Link } from "@tanstack/react-router";
 import {
   BarChart3,
@@ -49,6 +50,8 @@ interface Props {
   plan: Plan;
   showAdmin: boolean;
   onSelectBrand: (id: string) => void;
+  /** Shown under the plan box (Autopost switch and account menu). */
+  footer?: ReactNode;
 }
 
 function BrandBadge({ name, index, active }: { name: string; index: number; active?: boolean }) {
@@ -65,7 +68,7 @@ function BrandBadge({ name, index, active }: { name: string; index: number; acti
 }
 
 /** Sidebar for Scale-plan (agency) users: brand dropdown + per-brand workspace. */
-export function AgencySidebar({ brands, activeBrandId, plan, showAdmin, onSelectBrand }: Props) {
+export function AgencySidebar({ brands, activeBrandId, plan, showAdmin, onSelectBrand, footer }: Props) {
   const used = brands.length;
   const limit = plan.brandProfileLimit;
   const atLimit = used >= limit;
@@ -79,15 +82,6 @@ export function AgencySidebar({ brands, activeBrandId, plan, showAdmin, onSelect
   return (
     <div className="flex min-h-full flex-col gap-3">
       <div className="space-y-2">
-        <div className="flex items-center justify-between px-1">
-          <span className="text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">
-            Brand
-          </span>
-          <span className="text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">
-            {used} / {limit}
-          </span>
-        </div>
-
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
             <button
@@ -216,6 +210,7 @@ export function AgencySidebar({ brands, activeBrandId, plan, showAdmin, onSelect
           <Link to="/plan">Manage plan</Link>
         </Button>
       </div>
+      {footer}
     </div>
   );
 }

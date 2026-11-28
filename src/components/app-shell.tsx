@@ -214,36 +214,21 @@ export function AppShell({ children }: { children: ReactNode }) {
     if (landingUrl) window.location.assign(landingUrl);
   }
 
-  return (
-    <div className="min-h-screen bg-background">
-      <header className="sticky top-0 z-30 flex h-16 items-center justify-between border-b border-border bg-background/85 px-4 backdrop-blur sm:px-6">
-        <div className="flex items-center gap-3">
-          <Button
-            variant="ghost"
-            size="icon"
-            className="lg:hidden"
-            onClick={() => setOpen((v) => !v)}
-            aria-label="Toggle navigation"
-          >
-            <Menu className="h-5 w-5" />
-          </Button>
-          <Link to="/calendar" className="font-display text-lg font-bold tracking-tight">
-            LOVIZA<span className="text-primary">.</span>
-          </Link>
-        </div>
-
-        <div className="flex items-center gap-3">
-        <label
-          className="flex cursor-pointer items-center gap-2 rounded-full border border-border px-3 py-1.5 text-sm"
-          title={
-            autopostOn
-              ? "Autopost is ON: content posts automatically at 7 AM daily, with no manual review"
-              : autopostPending
-                ? "Press Accept on the notice to turn Autopost on"
-                : "Autopost is OFF: review content, then use Post now"
-          }
-        >
-          <span className="hidden font-medium sm:inline">Autopost</span>
+  // Autopost switch and the account menu live at the foot of the sidebar, so the page can start at the very top.
+  const sidebarFooter = (
+    <div className="mt-3 space-y-2">
+      <label
+        className="flex cursor-pointer items-center justify-between gap-2 rounded-lg border border-sidebar-border px-3 py-1.5 text-sm"
+        title={
+          autopostOn
+            ? "Autopost is ON: content posts automatically at 7 AM daily, with no manual review"
+            : autopostPending
+              ? "Press Accept on the notice to turn Autopost on"
+              : "Autopost is OFF: review content, then use Post now"
+        }
+      >
+        <span className="font-medium">Autopost</span>
+        <span className="flex items-center gap-2">
           <Switch
             checked={autopostOn || autopostPending}
             disabled={!me || setAutopost.isPending}
@@ -252,68 +237,78 @@ export function AppShell({ children }: { children: ReactNode }) {
           />
           <span
             className={cn(
-              "min-w-[2rem] text-xs font-semibold",
-              autopostOn
-                ? "text-emerald-400"
-                : autopostPending
-                  ? "text-amber-400"
-                  : "text-muted-foreground",
+              "min-w-[2.25rem] text-xs font-semibold",
+              autopostOn ? "text-emerald-400" : autopostPending ? "text-amber-400" : "text-muted-foreground",
             )}
           >
             {autopostOn ? "ON" : autopostPending ? "Confirm" : "OFF"}
           </span>
-        </label>
+        </span>
+      </label>
 
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <button className="flex items-center gap-2 rounded-full border border-border p-1 pr-3 transition-colors hover:bg-accent">
-              <Avatar className="h-7 w-7">
-                <AvatarFallback className="bg-primary text-xs text-primary-foreground">
-                  {badge || "K"}
-                </AvatarFallback>
-              </Avatar>
-              <span className="hidden max-w-[10rem] truncate text-sm sm:block">{name}</span>
-            </button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="end" className="w-56">
-            <DropdownMenuLabel className="truncate">{me?.user.email}</DropdownMenuLabel>
-            <DropdownMenuSeparator />
-            <DropdownMenuItem asChild>
-              <Link to="/settings">
-                <Settings className="mr-2 h-4 w-4" /> Settings
-              </Link>
-            </DropdownMenuItem>
-            <DropdownMenuItem asChild>
-              <Link to="/plan">
-                <CreditCard className="mr-2 h-4 w-4" /> Plan
-              </Link>
-            </DropdownMenuItem>
-            <DropdownMenuItem asChild>
-              <Link to="/faq">
-                <HelpCircle className="mr-2 h-4 w-4" /> FAQ
-              </Link>
-            </DropdownMenuItem>
-	<DropdownMenuItem asChild>
-              <Link to="/help">
-                <LifeBuoy className="mr-2 h-4 w-4" /> Help
-              </Link>
-            </DropdownMenuItem>
-            <DropdownMenuSeparator />
-            <DropdownMenuItem onClick={signOut}>
-              <LogOut className="mr-2 h-4 w-4" /> Logout
-            </DropdownMenuItem>
-          </DropdownMenuContent>
-        </DropdownMenu>
-        </div>
+      <DropdownMenu>
+        <DropdownMenuTrigger asChild>
+          <button
+            type="button"
+            className="flex w-full items-center gap-2 rounded-lg px-1.5 py-1.5 text-left transition-colors hover:bg-sidebar-accent"
+            aria-label="Account menu"
+          >
+            <Avatar className="h-7 w-7 flex-none">
+              <AvatarFallback className="bg-primary text-xs text-primary-foreground">{badge || "K"}</AvatarFallback>
+            </Avatar>
+            <span className="min-w-0 flex-1 truncate text-xs text-muted-foreground">{me?.user.email ?? name}</span>
+          </button>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="start" side="top" className="w-56">
+          <DropdownMenuLabel className="truncate">{me?.user.email}</DropdownMenuLabel>
+          <DropdownMenuSeparator />
+          <DropdownMenuItem asChild>
+            <Link to="/settings">
+              <Settings className="mr-2 h-4 w-4" /> Settings
+            </Link>
+          </DropdownMenuItem>
+          <DropdownMenuItem asChild>
+            <Link to="/plan">
+              <CreditCard className="mr-2 h-4 w-4" /> Plan
+            </Link>
+          </DropdownMenuItem>
+          <DropdownMenuItem asChild>
+            <Link to="/faq">
+              <HelpCircle className="mr-2 h-4 w-4" /> FAQ
+            </Link>
+          </DropdownMenuItem>
+          <DropdownMenuItem asChild>
+            <Link to="/help">
+              <LifeBuoy className="mr-2 h-4 w-4" /> Help
+            </Link>
+          </DropdownMenuItem>
+          <DropdownMenuSeparator />
+          <DropdownMenuItem onClick={signOut}>
+            <LogOut className="mr-2 h-4 w-4" /> Logout
+          </DropdownMenuItem>
+        </DropdownMenuContent>
+      </DropdownMenu>
+    </div>
+  );
+
+  return (
+    <div className="min-h-screen bg-background lg:flex">
+      {/* Small screens only: a slim bar with the menu button. */}
+      <header className="sticky top-0 z-30 flex h-12 items-center gap-3 border-b border-border bg-background/90 px-3 backdrop-blur lg:hidden">
+        <Button variant="ghost" size="icon" onClick={() => setOpen((v) => !v)} aria-label="Toggle navigation">
+          <Menu className="h-5 w-5" />
+        </Button>
+        <Link to="/calendar" className="font-display text-lg font-bold tracking-tight">
+          LOVIZA<span className="text-primary">.</span>
+        </Link>
       </header>
 
-      {/* Consent notice: sits below the header (never over the Autopost switch or the
-          profile), and stays until the user presses Accept. */}
+      {/* Consent notice: stays until the user presses Accept. */}
       {autopostPending && !autopostOn && (
         <div
           role="status"
           aria-live="polite"
-          className="fixed right-4 top-20 z-50 w-[calc(100vw-2rem)] max-w-sm rounded-xl border border-emerald-500/40 bg-emerald-950/95 p-4 text-emerald-50 shadow-xl backdrop-blur"
+          className="fixed bottom-4 left-4 z-50 w-[calc(100vw-2rem)] max-w-sm rounded-xl border border-emerald-500/40 bg-emerald-950/95 p-4 text-emerald-50 shadow-xl backdrop-blur lg:left-[17rem]"
         >
           <div className="flex items-start gap-3">
             <Info className="mt-0.5 h-5 w-5 shrink-0 text-emerald-300" />
@@ -328,13 +323,16 @@ export function AppShell({ children }: { children: ReactNode }) {
         </div>
       )}
 
-      <div className="mx-auto flex max-w-[1600px]">
-        <aside
-          className={cn(
-            "fixed inset-y-16 left-0 z-20 w-64 shrink-0 overflow-y-auto border-r border-sidebar-border bg-sidebar p-3 transition-transform lg:sticky lg:top-16 lg:h-[calc(100vh-4rem)] lg:translate-x-0",
-            open ? "translate-x-0" : "-translate-x-full",
-          )}
-        >
+      <aside
+        className={cn(
+          "fixed inset-y-0 left-0 z-40 flex w-64 shrink-0 flex-col border-r border-sidebar-border bg-sidebar transition-transform lg:sticky lg:top-0 lg:h-screen lg:translate-x-0",
+          open ? "translate-x-0" : "-translate-x-full",
+        )}
+      >
+        <Link to="/calendar" className="flex h-11 flex-none items-center px-4 font-display text-lg font-bold tracking-tight">
+          LOVIZA<span className="text-primary">.</span>
+        </Link>
+        <div className="min-h-0 flex-1 overflow-y-auto px-3 pb-3">
           {agencyPlan ? (
             <AgencySidebar
               brands={agencyBrands}
@@ -342,60 +340,64 @@ export function AppShell({ children }: { children: ReactNode }) {
               plan={agencyPlan}
               showAdmin={!!me?.isAdmin}
               onSelectBrand={selectBrand}
+              footer={sidebarFooter}
             />
           ) : (
-          <>
-          <nav className="space-y-1">
-            {nav.map((item) => (
-              <Link
-                key={item.to}
-                to={item.to}
-                className="flex items-center gap-3 rounded-lg px-3 py-2 text-sm text-sidebar-foreground transition-colors hover:bg-sidebar-accent"
-                activeProps={{
-                  className:
-                    "bg-sidebar-accent text-sidebar-accent-foreground font-medium ring-1 ring-sidebar-border",
-                }}
-              >
-                <item.icon className="h-4 w-4" />
-                {item.label}
-              </Link>
-            ))}
-            {me?.isAdmin && (
-              <Link
-                to="/admin"
-                className="flex items-center gap-3 rounded-lg px-3 py-2 text-sm text-sidebar-foreground transition-colors hover:bg-sidebar-accent"
-                activeProps={{
-                  className:
-                    "bg-sidebar-accent text-sidebar-accent-foreground font-medium ring-1 ring-sidebar-border",
-                }}
-              >
-                <ShieldCheck className="h-4 w-4" />
-                Admin Portal
-              </Link>
-            )}
-          </nav>
+            <div className="flex min-h-full flex-col">
+              <nav className="space-y-1">
+                {nav.map((item) => (
+                  <Link
+                    key={item.to}
+                    to={item.to}
+                    className="flex items-center gap-3 rounded-lg px-3 py-2 text-sm text-sidebar-foreground transition-colors hover:bg-sidebar-accent"
+                    activeProps={{
+                      className:
+                        "bg-sidebar-accent text-sidebar-accent-foreground font-medium ring-1 ring-sidebar-border",
+                    }}
+                  >
+                    <item.icon className="h-4 w-4" />
+                    {item.label}
+                  </Link>
+                ))}
+                {me?.isAdmin && (
+                  <Link
+                    to="/admin"
+                    className="flex items-center gap-3 rounded-lg px-3 py-2 text-sm text-sidebar-foreground transition-colors hover:bg-sidebar-accent"
+                    activeProps={{
+                      className:
+                        "bg-sidebar-accent text-sidebar-accent-foreground font-medium ring-1 ring-sidebar-border",
+                    }}
+                  >
+                    <ShieldCheck className="h-4 w-4" />
+                    Admin Portal
+                  </Link>
+                )}
+              </nav>
 
-          <div className="mt-6 rounded-xl border border-sidebar-border bg-card p-4">
-            <p className="text-xs uppercase tracking-wide text-muted-foreground">
-              {activePlan ? "Your Active Plan" : "Current plan"}
-            </p>
-            <p className="mt-1 font-display text-lg font-semibold capitalize">
-              {activePlan ? activePlan.name : "No Active Plan"}
-            </p>
-            <Button size="sm" variant="outline" className="mt-3 w-full" asChild>
-              <Link to="/pricing">{activePlan ? "Upgrade" : "Choose a plan"}</Link>
-            </Button>
-            {!activePlan && <SidebarOneTimeButton />}
-          </div>
-          <Button size="sm" variant="outline" className="mt-3 w-full" asChild>
-            <Link to="/referrals">Refer &amp; EARN 20%</Link>
-          </Button>
-          </>
+              <div className="mt-auto pt-6">
+                <div className="rounded-xl border border-sidebar-border bg-card p-4">
+                  <p className="text-xs uppercase tracking-wide text-muted-foreground">
+                    {activePlan ? "Your Active Plan" : "Current plan"}
+                  </p>
+                  <p className="mt-1 font-display text-lg font-semibold capitalize">
+                    {activePlan ? activePlan.name : "No Active Plan"}
+                  </p>
+                  <Button size="sm" variant="outline" className="mt-3 w-full" asChild>
+                    <Link to="/pricing">{activePlan ? "Upgrade" : "Choose a plan"}</Link>
+                  </Button>
+                  {!activePlan && <SidebarOneTimeButton />}
+                </div>
+                <Button size="sm" variant="outline" className="mt-3 w-full" asChild>
+                  <Link to="/referrals">Refer &amp; EARN 20%</Link>
+                </Button>
+                {sidebarFooter}
+              </div>
+            </div>
           )}
-        </aside>
+        </div>
+      </aside>
 
-        <main className="min-w-0 flex-1 px-4 py-6 sm:px-8">{children}</main>
-      </div>
+      <main className="min-w-0 flex-1 px-4 py-3 sm:px-6">{children}</main>
     </div>
   );
 }

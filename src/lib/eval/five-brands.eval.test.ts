@@ -200,6 +200,8 @@ function stubAdmin(): never {
 const FESTIVALS = /diwali|dhanteras|holi\b|christmas|new year|raksha|rakhi|eid\b|navratri|dussehra|ganesh|valentine|black friday|pongal|sankranti|onam|janmashtami|karwa/i;
 const GENERIC_HEADLINE = /^(how it works|why choose us|our services|quality you can trust|about us|welcome)/i;
 
+const expectedByBrand = new Map<string, number>();
+
 interface Piece {
   type: string;
   date: string;
@@ -252,6 +254,7 @@ async function runBrand(mock: Mock, dates: string[]): Promise<Judged[]> {
   const { polishRows, clichesIn, numbersAllowed } = await import("@/lib/content-quality.server");
   const { chatJSON } = await import("@/lib/ai.server");
   const { occasionLine } = await import("@/lib/occasions");
+  const { posterCopyFor } = await import("@/lib/poster.server");
   const admin = stubAdmin();
 
   const brand = { id: `eval-${mock.key}`, user_id: "eval-user", updated_at: new Date().toISOString(), ...mock.brand };
@@ -283,10 +286,42 @@ async function runBrand(mock: Mock, dates: string[]): Promise<Judged[]> {
       }
     }
     const days = (result.days ?? []) as Array<{ date?: string }>;
+    const built: Array<Record<string, unknown>> = [];
     batch.dates.forEach((date, index) => {
       const day = days.find((d) => d.date === date) ?? days[index] ?? {};
-      rows.push(...content.rowsForDay(day as never, { userId: "eval-user", brandId: brand.id, date, platforms, autopost: false, styles: plan }, batch.quotas[date]!));
+      built.push(...content.rowsForDay(day as never, { userId: "eval-user", brandId: brand.id, date, platforms, autopost: false, styles: plan }, batch.quotas[date]!));
     });
+    // the real queue asks once more for pieces the model left out; do the same here
+    const have = (d: string, t: string) => built.filter((r) => r["scheduled_date"] === d && r["type"] === t).length;
+    const missingQuotas: typeof batch.quotas = {};
+    const missingTypes = new Set<string>();
+    for (const date of batch.dates) {
+      for (const type of content.CONTENT_TYPES) {
+        const lack = (batch.quotas[date]?.[type] ?? 0) - have(date, type);
+        if (lack > 0) {
+          missingQuotas[date] ??= content.emptyQuota();
+          missingQuotas[date]![type] = lack;
+          missingTypes.add(type);
+        }
+      }
+    }
+    if (Object.keys(missingQuotas).length) {
+      try {
+        const again = await chatJSON<{ days?: Array<Record<string, unknown>> }>(
+          content.SYSTEM_PROMPT,
+          content.weekPrompt(brand as never, Object.keys(missingQuotas), null, missingQuotas, [...missingTypes] as never, brainContext),
+          content.buildWeekResponseSchema([...missingTypes] as never),
+        );
+        const d2 = (again.days ?? []) as Array<{ date?: string }>;
+        Object.keys(missingQuotas).forEach((date, index) => {
+          const day = d2.find((d) => d.date === date) ?? d2[index] ?? {};
+          built.push(...content.rowsForDay(day as never, { userId: "eval-user", brandId: brand.id, date, platforms, autopost: false, styles: plan }, missingQuotas[date]!));
+        });
+      } catch (error) {
+        console.warn(`[eval] ${mock.key}: second ask for missing pieces failed: ${error instanceof Error ? error.message : error}`);
+      }
+    }
+    rows.push(...built);
     remaining = Object.fromEntries(
       Object.entries(remaining).map(([d, q]) => [d, Object.fromEntries(Object.entries(q).map(([t, n]) => [t, Math.max(0, (n as number) - ((batch.quotas[d] as Record<string, number> | undefined)?.[t] ?? 0))]))]),
     ) as typeof quotas;
@@ -303,7 +338,7 @@ async function runBrand(mock: Mock, dates: string[]): Promise<Judged[]> {
       title: String(r["title"] ?? ""),
       caption: String(r["caption"] ?? ""),
       script: String(r["video_script"] ?? ""),
-      headline: String(r["image_prompt"] ?? "").split("||")[0]!.trim(),
+      headline: posterCopyFor({ title: String(r["title"] ?? ""), summary: String(r["summary"] ?? ""), image_prompt: String(r["image_prompt"] ?? "") }, { website: "" }).headline,
       meta: (r["style_meta"] ?? {}) as Record<string, unknown>,
     }));
 
@@ -326,6 +361,24 @@ async function runBrand(mock: Mock, dates: string[]): Promise<Judged[]> {
     for (const it of res.items ?? []) judged.set(from + it.i, it);
   }
 
+  // the judge sometimes skips a piece; ask again for those, one by one
+  for (let i = 0; i < pieces.length; i += 1) {
+    if (judged.has(i)) continue;
+    const one = listing.split("\n\n")[i]!.replace(/^#\d+/, "#0");
+    try {
+      const res = await chatJSON<{ items?: Array<{ i: number; usable: boolean; score: number; issues: string[] }> }>(
+        JUDGE_SYSTEM,
+        `BRAND INFORMATION AND PLAYBOOK:\n${brandText.slice(0, 6500)}\n\nPIECES:\n\n${one}\n\nReturn one item per piece with the same id.`,
+        JUDGE_SCHEMA as never,
+        { reasoningEffort: "low", maxTokens: 1500 },
+      );
+      if (res.items?.[0]) judged.set(i, res.items[0]);
+    } catch {
+      /* stays "not judged" and counts as not usable */
+    }
+  }
+
+  expectedByBrand.set(mock.key, dates.reduce((n, d) => n + Object.values(quotas[d] ?? {}).reduce((a, b) => a + (b as number), 0), 0));
   return pieces.map((p, i) => {
     const j = judged.get(i) ?? { usable: false, score: 0, issues: ["not judged"] };
     const text = `${p.title} ${p.caption} ${p.script}`;
@@ -376,13 +429,15 @@ describe.skipIf(!RUN)("five-brand scoring test (Phase 1 gate)", () => {
       const lines: string[] = [`# Five-brand scoring test`, ``, `Week ${dates[0]} to ${dates[6]}. A piece is usable when the independent judge says so and no mechanical check fails.`, ``];
       const all = results.flatMap((r) => r.pieces);
       const usableAll = all.filter((p) => p.usable).length;
-      lines.push(`**Overall: ${usableAll} of ${all.length} usable (${all.length ? Math.round((usableAll / all.length) * 100) : 0}%). Gate: 80%.**`, ``);
-      lines.push(`| Brand | Pieces | Usable | Rate | Avg judge score | Avg editor score |`, `|---|---|---|---|---|---|`);
+      const expectedAll = results.reduce((n, r) => n + (expectedByBrand.get(r.mock.key as string) ?? r.pieces.length), 0);
+      lines.push(`**Overall: ${usableAll} of ${expectedAll} pieces planned were written AND usable (${expectedAll ? Math.round((usableAll / expectedAll) * 100) : 0}%). Gate: 80%. ${expectedAll - all.length} planned piece(s) were never written.**`, ``);
+      lines.push(`| Brand | Planned | Written | Usable | Rate (of planned) | Avg judge score | Avg editor score |`, `|---|---|---|---|---|---|---|`);
       for (const r of results) {
         const u = r.pieces.filter((p) => p.usable).length;
         const avg = (xs: number[]) => (xs.length ? (xs.reduce((a, b) => a + b, 0) / xs.length).toFixed(1) : "n/a");
         const ed = r.pieces.map((p) => Number((p.meta["q"] as { score?: number } | undefined)?.score)).filter((n) => Number.isFinite(n) && n > 0);
-        lines.push(`| ${r.mock.brand["business_name"]} | ${r.pieces.length} | ${u} | ${r.pieces.length ? Math.round((u / r.pieces.length) * 100) : 0}% | ${avg(r.pieces.map((p) => p.score))} | ${avg(ed)} |`);
+        const planned = expectedByBrand.get(r.mock.key as string) ?? r.pieces.length;
+        lines.push(`| ${r.mock.brand["business_name"]} | ${planned} | ${r.pieces.length} | ${u} | ${planned ? Math.round((u / planned) * 100) : 0}% | ${avg(r.pieces.map((p) => p.score))} | ${avg(ed)} |`);
       }
       lines.push(``);
       for (const r of results) {

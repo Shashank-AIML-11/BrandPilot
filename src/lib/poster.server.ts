@@ -74,7 +74,9 @@ export function posterCopyFor(
     .replace(/^www\./i, "")
     .replace(/\/.*$/, "");
   const clip = (t: string, words: number) => t.replace(/[#*_"]/g, "").trim().split(/\s+/).slice(0, words).join(" ");
-  const parts = String(item.image_prompt ?? "").split("||").map((p) => p.trim()).filter(Boolean);
+  const rawCopy = String(item.image_prompt ?? "");
+  // The writer sometimes separates the parts with a single "|" instead of "||".
+  const parts = rawCopy.split(rawCopy.includes("||") ? "||" : /\s\|\s/).map((p) => p.trim()).filter(Boolean);
   if (parts.length >= 3) {
     const cta = parts.length >= 5 ? parts[parts.length - 1]! : "";
     const points = parts.slice(1, parts.length >= 5 ? -1 : undefined).slice(0, 3).map((f) => clip(f, 6));

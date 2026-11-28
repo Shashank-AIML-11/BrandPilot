@@ -366,7 +366,7 @@ NON-NEGOTIABLE GROUNDING RULES:
 5. Use at least one focus keyword naturally in the title and again in the body/caption.
 6. Match the stated tone of voice exactly — vocabulary, formality, sentence length, humour level.
 7. Mention the website URL in blog CTAs and in captions where it reads naturally.
-8. Never invent prices, statistics, awards, customer names or claims that are not in the brand profile.
+8. Never invent prices, statistics, awards, customer names or claims that are not in the brand profile. Every number you write must appear in the brand profile (the only exception is a count of items you actually list, such as "3 tips"). No percentages, savings amounts, user or customer counts, batch or order counts, "100%" claims, customer stories, named people, before-and-after results or testimonials unless the brand profile supplies them. Do not write "Meet [name]" or "Real stories" pieces without a supplied testimonial. A festival or season may be mentioned only when the content plan lists it for that piece's date.
 9. If information is missing, stay concrete about the customer's problem rather than inventing brand facts.
 
 QUALITY BAR (this is what separates amazing from average):

@@ -17,6 +17,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Database } from "@/integrations/supabase/types";
 import { chatJSON } from "@/lib/ai.server";
+import { occasionLine } from "@/lib/occasions";
 
 type AdminClient = SupabaseClient<Database>;
 type Row = Record<string, unknown>;
@@ -108,10 +109,30 @@ export interface RuleFinding {
   index: number;
   cliches: string[];
   similarTo: string;
+  /** Claims the brand information does not support (invented numbers, customer stories, off-season festivals). */
+  claims: string[];
+}
+
+const STORY = /\b(meet [A-Z][a-z]+|went from \d|real stories?|success stor(?:y|ies)|a customer (?:said|told)|one of our (?:customers|clients|students|patients|parents))\b/;
+const FESTIVAL_RE = /diwali|dhanteras|holi\b|christmas|new year|raksha bandhan|rakhi|eid\b|navratri|dussehra|ganesh chaturthi|valentine|black friday|pongal|sankranti|onam|janmashtami|karwa chauth/i;
+
+/** What a piece says that the brand information does not back up. Empty when the piece is clean. */
+export function unsupportedClaims(r: Row, brandText: string): string[] {
+  const t = `${text(r["title"])} ${text(r["caption"])} ${text(r["video_script"])} ${text(r["body"]).slice(0, 1500)}`;
+  const date = text(r["scheduled_date"]);
+  const near = date ? occasionLine(date) : "";
+  const allowed = `${brandText} ${near} ${date}`;
+  const out: string[] = [];
+  const nums = [...new Set((t.match(/\d+(?:\.\d+)?/g) ?? []).filter((n) => !numbersAllowed(n, allowed)))];
+  if (nums.length) out.push(`numbers that are not in the brand information (${nums.join(", ")})`);
+  if (!/real customer testimonials supplied/i.test(brandText) && STORY.test(t)) out.push("an invented customer story or result (the brand supplied no testimonials)");
+  const fest = t.match(FESTIVAL_RE)?.[0];
+  if (fest && date && !near.toLowerCase().includes(fest.toLowerCase().split(/\s+/)[0]!)) out.push(`mentions "${fest}" but no such occasion is near ${date}`);
+  return out;
 }
 
 /** Plain checks over the batch and the recently posted pieces. */
-export function ruleFindings(rows: Row[], recent: string[]): RuleFinding[] {
+export function ruleFindings(rows: Row[], recent: string[], brandText?: string): RuleFinding[] {
   const out: RuleFinding[] = [];
   rows.forEach((r, index) => {
     const all = `${text(r["title"])} ${text(r["caption"])} ${text(r["video_script"])} ${text(r["body"]).slice(0, 1500)}`;
@@ -125,7 +146,8 @@ export function ruleFindings(rows: Row[], recent: string[]): RuleFinding[] {
         break;
       }
     }
-    if (cliches.length || similarTo) out.push({ index, cliches, similarTo });
+    const claims = brandText ? unsupportedClaims(r, brandText) : [];
+    if (cliches.length || similarTo || claims.length) out.push({ index, cliches, similarTo, claims });
   });
   return out;
 }
@@ -239,7 +261,7 @@ export async function polishRows(
   }
   try {
     const recent = await recentFingerprints(admin, opts.userId, opts.brandId).catch(() => []);
-    const findings = ruleFindings(rows, recent);
+    const findings = ruleFindings(rows, recent, opts.brandText);
     const found = new Map(findings.map((f) => [f.index, f]));
     const pass = minScore();
 
@@ -250,6 +272,7 @@ export async function polishRows(
         const flags = [
           f?.cliches.length ? `uses stock phrases: ${f.cliches.join(", ")}` : "",
           f?.similarTo ? `too close to an earlier post: "${f.similarTo}"` : "",
+          f?.claims.length ? `remove these unsupported claims: ${f.claims.join("; ")}` : "",
         ].filter(Boolean);
         return [
           `#${i} ${text(r["type"])} on ${text(r["scheduled_date"])}${meta.pillar ? ` | pillar: ${meta.pillar}` : ""}${meta.hook ? ` | hook: ${meta.hook}` : ""}${meta.angle ? ` | angle: ${meta.angle}` : ""}`,
@@ -289,9 +312,12 @@ export async function polishRows(
           script: plainDashes(it.script.trim()),
         };
         const candidate = `${next.title} ${next.caption} ${next.script}`;
+        const claimFlagged = (found.get(it.id)?.claims.length ?? 0) > 0;
         const usable =
           (next.title || next.caption || next.script) &&
-          numbersAllowed(candidate, allowed) &&
+          (claimFlagged
+            ? unsupportedClaims({ title: next.title || r["title"], caption: next.caption || r["caption"], video_script: next.script || r["video_script"], scheduled_date: r["scheduled_date"] }, opts.brandText).length === 0
+            : numbersAllowed(candidate, allowed)) &&
           clichesIn(candidate).length === 0 &&
           (!next.caption || next.caption.length >= 20);
         if (usable) {
@@ -305,9 +331,95 @@ export async function polishRows(
       const meta = (r["style_meta"] && typeof r["style_meta"] === "object" ? r["style_meta"] : { v: 1, pillar: "", hook: "" }) as Record<string, unknown>;
       r["style_meta"] = { ...meta, q: { score: it.score, fixed, note: it.issues.slice(0, 140) } };
     }
+    // Last line of defence: anything still claiming something the brand never said is fixed or cut.
+    const fixedClaims = await removeUnsupportedClaims(rows, opts.brandText);
     const avg = scored ? (total / scored).toFixed(1) : "n/a";
-    return { rows, note: `edited ${scored} piece(s), rewrote ${rewritten}, average score ${avg}, flagged by plain checks ${findings.length}` };
+    return { rows, note: `edited ${scored} piece(s), rewrote ${rewritten}, average score ${avg}, flagged by plain checks ${findings.length}, claims removed ${fixedClaims}` };
   } catch (error) {
     return { rows, note: `editor pass skipped: ${error instanceof Error ? error.message : String(error)}` };
   }
+}
+
+
+const CLAIM_FIX_SCHEMA = {
+  type: "object",
+  properties: {
+    items: {
+      type: "array",
+      items: {
+        type: "object",
+        properties: { id: { type: "integer" }, title: { type: "string" }, caption: { type: "string" }, script: { type: "string" } },
+        required: ["id", "title", "caption", "script"],
+        additionalProperties: false,
+      },
+    },
+  },
+  required: ["items"],
+  additionalProperties: false,
+};
+
+const CLAIM_FIX_SYSTEM = `You fix social media posts that claim things the business never said. For each piece, rewrite its title, caption and (video only) script so that EVERY number, statistic, saving, user count, percentage, customer story, testimonial, result and festival mention is either taken from the brand information or removed. Keep the same idea, voice and single language; keep a video script's [HOOK]/[BODY]/[CTA] markers. Never invent anything to replace what you remove: say it in general words instead ("many freelancers" is NOT allowed either if the brand did not say it; say what the product does). Return the fixed title, caption and script for every piece.`;
+
+/** Sentences that contain one of the unsupported numbers or a story, removed as a last resort. */
+function stripSentences(value: string, offenders: RegExp): string {
+  return value
+    .split("\n")
+    .map((line) => {
+      if (/^\s*\[(HOOK|BODY|CTA)\]\s*$/i.test(line)) return line;
+      const marker = /^(\s*\[(?:HOOK|BODY|CTA)\]\s*)/i.exec(line)?.[1] ?? "";
+      const rest = line.slice(marker.length);
+      const kept = rest.split(/(?<=[.!?])\s+/).filter((sentence) => !offenders.test(sentence));
+      return kept.length ? `${marker}${kept.join(" ")}` : marker.trim() ? marker : "";
+    })
+    .join("\n")
+    .trim();
+}
+
+async function removeUnsupportedClaims(rows: Row[], brandText: string): Promise<number> {
+  const bad = rows
+    .map((r, i) => ({ r, i, claims: unsupportedClaims(r, brandText) }))
+    .filter((x) => x.claims.length);
+  if (!bad.length) return 0;
+  let fixed = 0;
+  try {
+    const list = bad
+      .map((x, k) => `#${k} ${text(x.r["type"])} | claims to remove: ${x.claims.join("; ")}\nTITLE: ${text(x.r["title"])}\nCAPTION: ${text(x.r["caption"]).slice(0, 900)}${text(x.r["video_script"]) ? `\nSCRIPT: ${text(x.r["video_script"]).slice(0, 900)}` : ""}`)
+      .join("\n\n");
+    const res = await withTimeout(
+      chatJSON<{ items?: Array<{ id: number; title: string; caption: string; script: string }> }>(
+        CLAIM_FIX_SYSTEM,
+        `BRAND INFORMATION:\n${brandText.slice(0, 5500)}\n\nPIECES:\n\n${list}\n\nReturn one item per piece with the same id.`,
+        CLAIM_FIX_SCHEMA as never,
+        { reasoningEffort: "low", maxTokens: 3500 },
+      ),
+      Number(process.env["CONTENT_QUALITY_TIMEOUT_MS"] ?? 25000) || 25000,
+    );
+    for (const it of res.items ?? []) {
+      const x = bad[it.id];
+      if (!x) continue;
+      const next = { title: plainDashes((it.title ?? "").trim()), caption: plainDashes((it.caption ?? "").trim()), script: plainDashes((it.script ?? "").trim()) };
+      const candidate = { ...x.r, title: next.title || x.r["title"], caption: next.caption || x.r["caption"], video_script: next.script && text(x.r["video_script"]) ? next.script : x.r["video_script"] };
+      if (unsupportedClaims(candidate, brandText).length === 0 && clichesIn(`${next.title} ${next.caption} ${next.script}`).length === 0) {
+        x.r["title"] = candidate.title;
+        x.r["caption"] = candidate.caption;
+        x.r["video_script"] = candidate.video_script;
+        fixed += 1;
+      }
+    }
+  } catch {
+    /* fall through to the plain cut below */
+  }
+  // Anything still unsupported: cut the sentences that carry the claim (captions and scripts only).
+  for (const x of bad) {
+    const remaining = unsupportedClaims(x.r, brandText);
+    if (!remaining.length) continue;
+    const nums = (remaining.join(" ").match(/\(([^)]*)\)/)?.[1] ?? "").split(/,\s*/).filter(Boolean);
+    const offenders = new RegExp([...nums.map((n) => n.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")), STORY.source, FESTIVAL_RE.source].filter(Boolean).join("|"), "i");
+    for (const k of ["caption", "video_script"] as const) if (text(x.r[k])) x.r[k] = stripSentences(text(x.r[k]), offenders);
+    const meta = (x.r["style_meta"] && typeof x.r["style_meta"] === "object" ? x.r["style_meta"] : {}) as Record<string, unknown>;
+    const left = unsupportedClaims(x.r, brandText);
+    x.r["style_meta"] = { ...meta, claims_left: left.length ? left.join("; ").slice(0, 200) : null };
+    if (!left.length) fixed += 1;
+  }
+  return fixed;
 }

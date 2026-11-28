@@ -152,3 +152,29 @@ describe("occasion calendar", () => {
     expect(a).not.toBe(b);
   });
 });
+
+import { unsupportedClaims } from "@/lib/content-quality.server";
+import { posterCopyFor } from "@/lib/poster.server";
+
+describe("claims the brand never made", () => {
+  const brand = "Brew Cafe. Offer: buy 2 weekday coffees get a pastry free before 11 AM. Beans roasted weekly.";
+  it("flags invented numbers, stories and off-season festivals", () => {
+    const bad = { title: "21 cups a week", caption: "Meet Arjun, he went from 50% to 80%. Happy Diwali!", scheduled_date: "2026-12-08" };
+    const found = unsupportedClaims(bad, brand).join(" | ");
+    expect(found).toContain("numbers");
+    expect(found).toContain("customer story");
+    expect(found).toContain("Diwali");
+  });
+  it("accepts numbers from the brand text and Christmas near 21 Dec", () => {
+    const ok = { title: "Buy 2, get a pastry free before 11 AM", caption: "Christmas gifting is close.", scheduled_date: "2026-12-21" };
+    expect(unsupportedClaims(ok, brand)).toEqual([]);
+  });
+});
+
+describe("poster copy separators", () => {
+  it("accepts a single pipe between the parts", () => {
+    const c = posterCopyFor({ image_prompt: "Weekly tests keep parents informed | Weekly test | Parent report | Free demo | Book a demo" }, { website: "" });
+    expect(c.headline).toBe("Weekly tests keep parents informed");
+    expect(c.points.length).toBe(3);
+  });
+});

@@ -350,20 +350,19 @@ async function runBrand(mock: Mock, dates: string[]): Promise<Judged[]> {
     }));
 
   // independent judge (a separate call with its own rubric)
-  const listing = pieces
-    .map((p, i) => `#${i} ${p.type} scheduled ${p.date} | occasions close to that date: ${occasionLine(p.date)}\nTITLE: ${p.title}\nCAPTION: ${p.caption.slice(0, 700)}${p.script ? `\nSCRIPT: ${p.script.slice(0, 600)}` : ""}${p.headline && /post|pinterest|carousel/.test(p.type) ? `\nPOSTER HEADLINE: ${p.headline}` : ""}`)
-    .join("\n\n");
+  const items = pieces
+    .map((p, i) => `#${i} ${p.type} scheduled ${p.date} | occasions close to that date: ${occasionLine(p.date)}\nTITLE: ${p.title}\nCAPTION: ${p.caption.slice(0, 700)}${p.script ? `\nSCRIPT: ${p.script.slice(0, 600)}` : ""}${p.headline && /post|pinterest|carousel/.test(p.type) ? `\nPOSTER HEADLINE: ${p.headline}` : ""}`);
   const judged = new Map<number, { usable: boolean; score: number; issues: string[] }>();
   for (let from = 0; from < pieces.length; from += 8) {
     const chunk = pieces.slice(from, from + 8);
     const chunkListing = chunk
-      .map((p, k) => listing.split("\n\n")[from + k]!.replace(/^#\d+/, `#${k}`))
+      .map((_p, k) => items[from + k]!.replace(/^#\d+/, `#${k}`))
       .join("\n\n");
     const res = await chatJSON<{ items?: Array<{ i: number; usable: boolean; score: number; issues: string[] }> }>(
       JUDGE_SYSTEM,
       `BRAND INFORMATION AND PLAYBOOK:\n${brandText.slice(0, 6500)}\n\nPIECES:\n\n${chunkListing}\n\nReturn one item per piece with the same id.`,
       JUDGE_SCHEMA as never,
-      { reasoningEffort: "medium", maxTokens: 6000, modelOverride: judgeModel },
+      { reasoningEffort: "medium", maxTokens: 6000, modelOverride: judgeModel, temperature: 0 },
     );
     for (const it of res.items ?? []) judged.set(from + it.i, it);
   }
@@ -371,13 +370,13 @@ async function runBrand(mock: Mock, dates: string[]): Promise<Judged[]> {
   // the judge sometimes skips a piece; ask again for those, one by one
   for (let i = 0; i < pieces.length; i += 1) {
     if (judged.has(i)) continue;
-    const one = listing.split("\n\n")[i]!.replace(/^#\d+/, "#0");
+    const one = items[i]!.replace(/^#\d+/, "#0");
     try {
       const res = await chatJSON<{ items?: Array<{ i: number; usable: boolean; score: number; issues: string[] }> }>(
         JUDGE_SYSTEM,
         `BRAND INFORMATION AND PLAYBOOK:\n${brandText.slice(0, 6500)}\n\nPIECES:\n\n${one}\n\nReturn one item per piece with the same id.`,
         JUDGE_SCHEMA as never,
-        { reasoningEffort: "medium", maxTokens: 4000, modelOverride: judgeModel },
+        { reasoningEffort: "medium", maxTokens: 4000, modelOverride: judgeModel, temperature: 0 },
       );
       if (res.items?.[0]) judged.set(i, res.items[0]);
     } catch {
@@ -469,8 +468,15 @@ describe.skipIf(!RUN)("five-brand scoring test (Phase 1 gate)", () => {
         const histFile = path.join(dir, "history.csv");
         if (!fs.existsSync(histFile)) fs.writeFileSync(histFile, "when,commit,judge_model,usable,planned,rate,per_brand\n");
         fs.appendFileSync(histFile, `${new Date().toISOString()},${commit},${process.env["EVAL_JUDGE_MODEL"] || "openai/gpt-oss-120b"},${usableAll},${expectedAll},${expectedAll ? Math.round((usableAll / expectedAll) * 100) : 0}%,${per}\n`);
+        // One run is noisy, so the headline for the gate is the average of the last three runs with the same judge.
+        const rows = fs.readFileSync(histFile, "utf8").trim().split("\n").slice(1).map((l) => l.split(","));
+        const sameJudge = rows.filter((c) => c[2] === (process.env["EVAL_JUDGE_MODEL"] || "openai/gpt-oss-120b")).slice(-3);
+        const avgRate = Math.round(sameJudge.reduce((n, c) => n + Number(String(c[5]).replace("%", "")), 0) / Math.max(1, sameJudge.length));
+        const avgLine = `**Average of the last ${sameJudge.length} run(s) with this judge: ${avgRate}%. The gate counts this average, not one run (runs: ${sameJudge.map((c) => c[5]).join(", ")}).**`;
+        lines.splice(4, 0, avgLine, ``);
+        fs.writeFileSync(path.join(dir, "report.md"), lines.join("\n"));
       } catch { /* history is a convenience */ }
-      console.log(lines.slice(0, 14).join("\n"));
+      console.log(lines.slice(0, 16).join("\n"));
       console.log(`Full report: ${path.join(dir, "report.md")}`);
       expect(all.length).toBeGreaterThan(0);
       const missing = results.filter((r) => !r.pieces.length).map((r) => r.mock.key);

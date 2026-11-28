@@ -668,6 +668,7 @@ For any of these types with a requested quantity of zero (or not listed above), 
 Each type's piece object must include exactly the fields listed for it above — no more, no fewer. Do not add image_prompt, script, body, or slides to a piece unless that type's field list above includes it.
 
 Rules:
+- Offers: when a post mentions an offer, copy the wording from "Current offers" exactly (every part, such as "for new patients" or "and X-ray"). Never paraphrase, shorten, extend or invent an offer, discount, free item or deadline.
 - Titles reference the brand's actual product/service/audience/keyword — no generic titles or buzzwords.
 - summary: which product/service + value prop + who it's for.
 - hashtags: one space-separated string, 4-6 tags from the brand's keywords/niche/name.

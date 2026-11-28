@@ -120,7 +120,7 @@ export interface RuleFinding {
   claims: string[];
 }
 
-const STORY = /\b([Mm]eet [A-Z][a-z]+|went from \d|real stories?|success stor(?:y|ies)|a customer (?:said|told)|one of our (?:customers|clients|students|patients|parents))\b/;
+const STORY = /\b([Mm]eet [A-Z][a-z]+|[A-Z][a-z]+['’]s (?:story|journey|win|result)|went from \d|real stories?|success stor(?:y|ies)|a customer (?:said|told)|one of our (?:customers|clients|students|patients|parents))\b/;
 const PLACEHOLDER_RE = /\[(?!(?:HOOK|BODY|CTA)\])[A-Za-z][^\]\n]{0,30}\]/i;
 const RISK_RE = /\b(guarantee[ds]?|risk[- ]free|100% (?:safe|natural|effective|secure))\b/i;
 // Health and speed promises are never allowed on the brand's say-so: a compliance note that says

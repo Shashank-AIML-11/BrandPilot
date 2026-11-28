@@ -31,6 +31,8 @@ export interface ChatOptions {
   /** Use exactly this model id on whichever provider is active (used by the scoring test's judge). */
   modelOverride?: string;
   reasoningEffort?: "low" | "medium" | "high";
+  /** Sampling temperature. Unset keeps the provider default; the scoring judge uses 0 for steady marks. */
+  temperature?: number;
   /** Output cap (reasoning tokens count towards it). */
   maxTokens?: number;
 }
@@ -145,6 +147,7 @@ async function chatJSONOnce<T>(
         { role: "user", content: prompt },
       ],
       response_format: responseFormat,
+      ...(typeof options.temperature === "number" ? { temperature: options.temperature } : {}),
       ...(openrouter
         ? { reasoning: { effort: options.reasoningEffort ?? "low" } }
         : { reasoning_effort: options.reasoningEffort ?? "low" }),

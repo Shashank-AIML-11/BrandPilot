@@ -235,6 +235,21 @@ async function photoFor(
 }
 
 /**
+ * A photo already stored for this piece (style_meta.photo_src, set when a post is sent back to be
+ * redrawn). Re-drawing the text over it costs nothing: no image is generated or restyled again.
+ */
+async function savedPhoto(admin: AdminClient, item: { style_meta?: Record<string, unknown> | null }): Promise<Uint8Array | null> {
+  const src = String(item.style_meta?.["photo_src"] ?? "");
+  if (!src) return null;
+  try {
+    const { data } = await admin.storage.from("content-media").download(src);
+    return data ? new Uint8Array(await data.arrayBuffer()) : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
  * One carousel slide, drawn by the app (exact text, brand colours, one consistent look per
  * carousel). Only the cover may carry a photo, taken from the media library first and
  * generated only if nothing fits; every other slide is type-only, so it costs nothing.
@@ -641,7 +656,7 @@ export async function processVideoQueue(admin: AdminClient, userId?: string) {
   const imageResults: PromiseSettledResult<string>[] = [];
   // One failing post must never block the rest of the queue: it is retried, then drawn without a
   // photo (type-only design), and after 5 failed tries it is skipped and shown in Admin > Brain.
-  type ImgItem = { id: string; user_id: string; brand_id: string | null; type: string; scheduled_date: string; title: string | null; summary: string | null; image_prompt: string | null; style_meta?: { image_tries?: number } | null };
+  type ImgItem = { id: string; user_id: string; brand_id: string | null; type: string; scheduled_date: string; title: string | null; summary: string | null; image_prompt: string | null; style_meta?: { image_tries?: number; photo_src?: string } | null };
   const triesOf = (it: ImgItem) => Number(it.style_meta?.image_tries ?? 0) || 0;
   const imageQueue = ((pendingImages ?? []) as unknown as ImgItem[]).filter((it) => triesOf(it) < 5).slice(0, IMAGE_BATCH_LIMIT);
   for (const item of imageQueue) {
@@ -681,7 +696,7 @@ export async function processVideoQueue(admin: AdminClient, userId?: string) {
         const brand = await loadBrand(admin, item.user_id, item.brand_id);
         const photo = (forcePlain || (await templateNeedsNoPhoto(admin, item.id)))
           ? null
-          : await photoFor(
+          : (await savedPhoto(admin, item as never)) ?? await photoFor(
               admin,
               item as never,
               imagePromptFor(item as never, brand as never),
@@ -720,7 +735,7 @@ export async function processVideoQueue(admin: AdminClient, userId?: string) {
           .maybeSingle();
         if (!coverSibling) {
           const coverBrand = await loadBrand(admin, item.user_id, item.brand_id);
-          const coverPhoto = forcePlain ? null : await photoFor(
+          const coverPhoto = forcePlain ? null : (await savedPhoto(admin, item as never)) ?? await photoFor(
             admin,
             item as never,
             imagePromptFor(item as never, coverBrand as never),
@@ -749,7 +764,7 @@ export async function processVideoQueue(admin: AdminClient, userId?: string) {
       const brand = await loadBrand(admin, item.user_id, item.brand_id);
       const photo = (forcePlain || (await templateNeedsNoPhoto(admin, item.id)))
         ? null
-        : await photoFor(
+        : (await savedPhoto(admin, item as never)) ?? await photoFor(
             admin,
             item as never,
             imagePromptFor(item as never, brand as never),

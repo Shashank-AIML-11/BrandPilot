@@ -450,8 +450,6 @@ export async function composePoster(opts: {
   template?: string | null;
 }): Promise<Uint8Array> {
   const { w, h: hh } = sizeFor(opts.aspect);
-  const satori = (await import("satori")).default;
-  const { Resvg } = await import("@resvg/resvg-js");
   const font = (b64: string, weight: 400 | 600 | 800) => ({
     name: "Poppins",
     data: Buffer.from(b64, "base64"),
@@ -467,12 +465,29 @@ export async function composePoster(opts: {
     opts.brand,
     opts.template,
   );
-  const svg = await satori(tree as never, {
-    width: w,
-    height: hh,
-    fonts: [font(POPPINS_400, 400), font(POPPINS_600, 600), font(POPPINS_800, 800)],
-  });
-  return new Resvg(svg, { fitTo: { mode: "width", value: w } }).render().asPng();
+  return renderPng(tree, w, hh, [font(POPPINS_400, 400), font(POPPINS_600, 600), font(POPPINS_800, 800)]);
+}
+
+type SatoriFont = { name: string; data: Buffer; weight: 400 | 600 | 800; style: "normal" };
+let renderChain: Promise<unknown> = Promise.resolve();
+
+/**
+ * Draws a layout tree to PNG. The stock satori entry uses a wasm layout engine that aborts with
+ * "Aborted()" on Vercel's servers, so every render gets a fresh pure-JS engine (the same fix the
+ * carousel slides use) and renders run one at a time.
+ */
+function renderPng(tree: Node, w: number, hgt: number, fonts: SatoriFont[]): Promise<Uint8Array> {
+  const run = async () => {
+    const satoriMod = await import("satori/wasm");
+    const initYoga = (await import("yoga-wasm-web/asm")).default;
+    satoriMod.init(initYoga() as never);
+    const svg = await satoriMod.default(tree as never, { width: w, height: hgt, fonts });
+    const { Resvg } = await import("@resvg/resvg-js");
+    return new Resvg(svg, { fitTo: { mode: "width", value: w } }).render().asPng();
+  };
+  const next = renderChain.then(run, run);
+  renderChain = next.catch(() => undefined);
+  return next;
 }
 
 
@@ -516,12 +531,7 @@ export async function composeVideoOverlays(opts: {
     { name: "Poppins", data: Buffer.from(POPPINS_600, "base64"), weight: 600 as const, style: "normal" as const },
     { name: "Poppins", data: Buffer.from(POPPINS_800, "base64"), weight: 800 as const, style: "normal" as const },
   ];
-  const satori = (await import("satori")).default;
-  const { Resvg } = await import("@resvg/resvg-js");
-  const render = async (tree: Node) =>
-    new Resvg(await satori(tree as never, { width: W, height: H, fonts }), { fitTo: { mode: "width", value: W } })
-      .render()
-      .asPng();
+  const render = (tree: Node) => renderPng(tree, W, H, fonts);
   return { hook: await render(hook), card: await render(card), width: W, height: H };
 }
 

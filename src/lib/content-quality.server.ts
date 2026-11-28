@@ -125,8 +125,51 @@ const PLACEHOLDER_RE = /\[(?!(?:HOOK|BODY|CTA)\])[A-Za-z][^\]\n]{0,30}\]/i;
 const RISK_RE = /\b(guarantee[ds]?|risk[- ]free|100% (?:safe|natural|effective|secure))\b/i;
 // Health and speed promises are never allowed on the brand's say-so: a compliance note that says
 // "never promise pain-free" mentions the word too, so the brand text cannot clear them.
-const HARD_RISK_RE = /\b(pain[- ]?free|painless(?:ly)?|no pain|zero pain|cures?|instant(?:ly)?|same[- ]day (?:cash|payment|results?)|overnight results?)\b/i;
+const HARD_RISK_RE = /\b(pain[- ]?free|painless|no pain|zero pain|cures?|instant(?:ly)?|same[- ]day (?:cash|payment|results?)|overnight results?)/i;
 const FESTIVAL_RE = /diwali|dhanteras|holi\b|christmas|new year|raksha bandhan|rakhi|eid\b|navratri|dussehra|ganesh chaturthi|valentine|black friday|pongal|sankranti|onam|janmashtami|karwa chauth/i;
+
+
+const UNIT_SYNONYMS: Array<[RegExp, string]> = [
+  [/^(?:%|percent|per cent)$/i, "%|percent|per cent"],
+  [/^(?:kg|kilos?)$/i, "kg|kilos?|kilograms?"],
+  [/^(?:grams?)$/i, "grams?|g"],
+  [/^(?:ml)$/i, "ml|millilit(?:re|er)s?"],
+  [/^(?:litres?|liters?)$/i, "litres?|liters?|l"],
+  [/^(?:minutes?|mins?)$/i, "minutes?|mins?"],
+  [/^(?:hours?|hrs?)$/i, "hours?|hrs?"],
+  [/^days?$/i, "days?"],
+  [/^weeks?$/i, "weeks?"],
+  [/^months?$/i, "months?"],
+  [/^years?$/i, "years?"],
+];
+const CURRENCY_RE = /(?:₹|\brs\.?\s?|\binr\s?)\s?(\d[\d,]*(?:\.\d+)?)/gi;
+const UNIT_NUM_RE = /(\d+(?:\.\d+)?)\s?[-‑–]?\s?(%|percent|per cent|kg|kilos?|grams?|ml|litres?|liters?|minutes?|mins?|hours?|hrs?|days?|weeks?|months?|years?)(?![A-Za-z])/gi;
+
+/** Money, percentages and measurements must appear in the brand information WITH their unit; a bare "3" elsewhere is not enough. */
+export function unitClaims(t: string, allowed: string): string[] {
+  const a = allowed.replace(/(\d),(?=\d{3}\b)/g, "$1");
+  const bad: string[] = [];
+  for (const m of t.matchAll(CURRENCY_RE)) {
+    const n = (m[1] ?? "").replace(/,/g, "");
+    if (!new RegExp(`(?:₹|\\brs\\.?\\s?|\\binr\\s?)\\s?${n}\\b|\\b${n}\\s?(?:rupees|rs\\b|inr\\b)`, "i").test(a)) bad.push(m[0].trim());
+  }
+  for (const m of t.matchAll(UNIT_NUM_RE)) {
+    const n = m[1] ?? "";
+    const unit = m[2] ?? "";
+    const alt = UNIT_SYNONYMS.find(([re]) => re.test(unit))?.[1];
+    if (!alt) continue;
+    const pre = unit === "%" || /percent|per cent/i.test(unit) ? "" : "\\b";
+    if (!new RegExp(`${pre}${n.replace(".", "\\.")}\\s?[-‑–]?\\s?(?:${alt})(?![A-Za-z])`, "i").test(a)) bad.push(m[0].trim());
+  }
+  return [...new Set(bad)];
+}
+
+const NON_ENGLISH_RE = /\b(ghar|hai|hain|kya|kaise|aap|apna|apni|nahi|mein|karo|karein|sabse|bahut|paisa|dukaan|jaldi|accha|achha)\b|[\u0900-\u097F]/i;
+
+function brandLine(brandText: string, label: RegExp): string {
+  return label.exec(brandText)?.[1]?.trim() ?? "";
+}
+const squash = (s: string) => s.toLowerCase().replace(/[^a-z0-9%₹]+/g, " ").replace(/\s+/g, " ").trim();
 
 /** What a piece says that the brand information does not back up. Empty when the piece is clean. */
 export function unsupportedClaims(r: Row, brandText: string): string[] {
@@ -138,6 +181,26 @@ export function unsupportedClaims(r: Row, brandText: string): string[] {
   const nums = [...new Set((withoutListCounts(t).match(/\d+(?:\.\d+)?/g) ?? []).filter((n) => !numbersAllowed(n, allowed)))];
   if (nums.length) out.push(`numbers that are not in the brand information (${nums.join(", ")})`);
   if (!/real customer testimonials supplied/i.test(brandText) && STORY.test(t)) out.push("an invented customer story or result (the brand supplied no testimonials)");
+  const units = unitClaims(t, allowed);
+  if (units.length) out.push(`amounts or measurements that are not in the brand information (${units.join(", ")})`);
+  const nonEnglish = t.match(NON_ENGLISH_RE)?.[0];
+  if (nonEnglish) out.push(`a non-English word (${nonEnglish}); write English only`);
+  // An offer must be quoted exactly. A piece that clearly talks about an offer but words it differently is flagged.
+  const offers = brandLine(brandText, /Current offers[^\n:]*:\s*([^\n]+)/i).split(/[;]|\.\s/).map((x) => x.trim()).filter((x) => x.length > 8);
+  const flat = squash(t);
+  for (const offer of offers) {
+    const words = squash(offer).split(" ").filter((w) => w && !STOP.has(w));
+    const hit = words.filter((w) => flat.includes(w)).length;
+    if (words.length >= 3 && hit / words.length >= 0.5 && !flat.includes(squash(offer))) {
+      out.push(`the offer is not quoted exactly as the brand wrote it: "${offer}"`);
+      break;
+    }
+  }
+  // At least one focus keyword (all its words) must be in the piece.
+  const kws = brandLine(brandText, /Focus keywords[^\n:]*:\s*([^\n]+)/i).split(",").map((x) => x.trim()).filter((x) => x && !HARD_RISK_RE.test(x));
+  if (kws.length && !kws.some((k) => squash(k).split(" ").every((w) => flat.includes(w)))) {
+    out.push(`none of the focus keywords is used; include one exactly: ${kws.slice(0, 3).join(" / ")}`);
+  }
   const ph = t.match(PLACEHOLDER_RE)?.[0];
   if (ph) out.push(`a leftover placeholder (${ph})`);
   const risk = t.match(RISK_RE)?.[1];
@@ -407,7 +470,7 @@ const CLAIM_FIX_SCHEMA = {
   additionalProperties: false,
 };
 
-const CLAIM_FIX_SYSTEM = `You fix social media posts that claim things the business never said. For each piece, rewrite its title, caption and (video only) script so that EVERY number, statistic, saving, user count, percentage, customer story, testimonial, result and festival mention is either taken from the brand information or removed. Keep the same idea, voice and single language; keep a video script's [HOOK]/[BODY]/[CTA] markers. Never invent anything to replace what you remove: say it in general words instead ("many freelancers" is NOT allowed either if the brand did not say it; say what the product does). Return the fixed title, caption and script for every piece.`;
+const CLAIM_FIX_SYSTEM = `You fix social media posts that claim things the business never said. If a piece mentions an offer, quote the brand\'s offer wording exactly, word for word. Include one focus keyword phrase exactly when asked. Write English only. For each piece, rewrite its title, caption and (video only) script so that EVERY number, statistic, saving, user count, percentage, customer story, testimonial, result and festival mention is either taken from the brand information or removed. Keep the same idea, voice and single language; keep a video script's [HOOK]/[BODY]/[CTA] markers. Never invent anything to replace what you remove: say it in general words instead ("many freelancers" is NOT allowed either if the brand did not say it; say what the product does). Return the fixed title, caption and script for every piece.`;
 
 /** Sentences that contain one of the unsupported numbers or a story, removed as a last resort. */
 function stripSentences(value: string, offenders: RegExp): string {

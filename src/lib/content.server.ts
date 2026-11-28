@@ -668,6 +668,8 @@ For any of these types with a requested quantity of zero (or not listed above), 
 Each type's piece object must include exactly the fields listed for it above — no more, no fewer. Do not add image_prompt, script, body, or slides to a piece unless that type's field list above includes it.
 
 Rules:
+- Focus keywords: every title+caption must contain at least one focus keyword phrase exactly as written in the profile (no hashtag-only use), in the first two sentences where it fits.
+- Money, percentages, durations and weights (₹, %, kg, minutes, days...) may only be used if the exact figure is in the brand information. Otherwise do not give a figure at all.
 - Offers: when a post mentions an offer, copy the wording from "Current offers" exactly (every part, such as "for new patients" or "and X-ray"). Never paraphrase, shorten, extend or invent an offer, discount, free item or deadline.
 - Titles reference the brand's actual product/service/audience/keyword — no generic titles or buzzwords.
 - summary: which product/service + value prop + who it's for.

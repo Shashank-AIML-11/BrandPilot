@@ -85,8 +85,10 @@ export function posterCopyFor(
     // a label such as "Checklist" or "How it works" says nothing: the post's own title is the headline then
     const first = clip(parts[0]!, 8);
     const weak = first.split(/\s+/).filter(Boolean).length < 2 || WEAK_HEADLINE.test(first);
+    // "How it works: Free plan for freelancers" keeps only the part after the label
+    const unlabel = (h: string) => (WEAK_HEADLINE.test(h) && /[:–-]\s+\S/.test(h) ? h.replace(/^[^:–-]*[:–-]\s+/, "") : h);
     return {
-      headline: weak && String(item.title ?? "").trim() ? clip(String(item.title), 9) : first,
+      headline: unlabel(weak && String(item.title ?? "").trim() ? clip(String(item.title), 9) : first),
       points,
       subline: "",
       cta: clip(cta, 4) || (host ? `Visit ${host}` : "Learn more"),

@@ -247,3 +247,24 @@ describe("hard promises and poster numbers", () => {
     expect(unsupportedClaims(r, "Smile Studio fixed prices").join(" ")).toMatch(/20/);
   });
 });
+
+describe("amounts, offers, keywords and language", () => {
+  const brandTxt = "Business name: Cafe\nCurrent offers (promote only these): Buy 2 weekday coffees, get a pastry free before 11 AM\nFocus keywords (must appear naturally): specialty coffee Indiranagar, brunch Bengaluru\nOpen 3 days a week from 8 AM";
+  const row = (caption: string) => ({ title: "Coffee", caption, scheduled_date: "2026-12-10" }) as never;
+  it("flags money, percent and weights that are not in the brand text", () => {
+    expect(unsupportedClaims(row("Only ₹2,500 today, specialty coffee Indiranagar"), brandTxt).join(" ")).toMatch(/2,500/);
+    expect(unsupportedClaims(row("A 3% rise, specialty coffee Indiranagar"), brandTxt).join(" ")).toMatch(/3%/);
+    expect(unsupportedClaims(row("8-kg beans, specialty coffee Indiranagar"), brandTxt).join(" ")).toMatch(/8-kg/);
+  });
+  it("accepts units that the brand text states", () => {
+    expect(unsupportedClaims(row("Open 3 days a week, specialty coffee Indiranagar"), brandTxt)).toEqual([]);
+  });
+  it("flags an offer that is reworded but accepts it quoted exactly", () => {
+    expect(unsupportedClaims(row("A free pastry with every weekday coffee bundle before 11 AM, specialty coffee Indiranagar"), brandTxt).join(" ")).toMatch(/offer is not quoted exactly/);
+    expect(unsupportedClaims(row("Buy 2 weekday coffees, get a pastry free before 11 AM at our specialty coffee Indiranagar cafe"), brandTxt)).toEqual([]);
+  });
+  it("needs a focus keyword and English only", () => {
+    expect(unsupportedClaims(row("Fresh roasts every week"), brandTxt).join(" ")).toMatch(/focus keywords/);
+    expect(unsupportedClaims(row("Aapka ghar jaisa cafe, specialty coffee Indiranagar"), brandTxt).join(" ")).toMatch(/non-English/);
+  });
+});

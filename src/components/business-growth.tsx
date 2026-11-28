@@ -60,12 +60,6 @@ export function BusinessGrowth() {
 
   return (
     <section className="space-y-3">
-      <div>
-        <h2 className="text-xl font-bold">Business growth</h2>
-        <p className="text-sm text-muted-foreground">
-          Last 12 months, month by month. Visible to admins only.
-        </p>
-      </div>
       <div className="grid gap-4 lg:grid-cols-2">
         <Card title="Subscribers" note="All sign-ups to date (area) and new sign-ups each month (bars).">
           <ComposedChart data={data} margin={margin}>

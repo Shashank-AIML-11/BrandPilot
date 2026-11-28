@@ -304,11 +304,6 @@ function Analytics() {
     <div className="w-full space-y-8">
       <div>
         <h1 className="text-2xl font-bold">Content Intelligence</h1>
-        <p className="mt-1 text-sm text-muted-foreground">
-          Understand what works. Learn why. Generate what performs next. Every number is a real result from posts LOVIZA
-          published to your connected channels, pulled from each platform about 24 hours after posting and refreshed
-          daily for a week.
-        </p>
       </div>
 
       {me?.isAdmin && <BusinessGrowth />}

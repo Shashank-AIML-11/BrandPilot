@@ -19,7 +19,8 @@ import {
 } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { planById } from "@/lib/plans";
-import { AUTOPOST_CONSENT_TEXT, isAutopostOn } from "@/lib/autopost";
+import { AUTOPOST_CONSENT_TEXT, isAutoGenerateOn, isAutopostOn } from "@/lib/autopost";
+import { getAutomationStatus } from "@/lib/automation-status.functions";
 import { recordAutopostConsent } from "@/lib/autopost-consent.functions";
 import { AgencySidebar } from "@/components/agency-sidebar";
 import { SidebarOneTimeButton } from "@/components/one-time-generate";
@@ -113,7 +114,42 @@ export function AppShell({ children }: { children: ReactNode }) {
 
   // Account-wide Autopost switch. It is ON only after the user presses "Accept" on the
   // notice below; until then the request is "pending" and nothing is saved.
-  const autopostOn = isAutopostOn(me);
+  const { data: automation } = useQuery({
+    queryKey: ["automation-status"],
+    queryFn: () => getAutomationStatus(),
+    staleTime: 60_000,
+  });
+  // The Admin Portal switches override these two: when admin has one OFF, it shows OFF and is locked.
+  const adminAutoGenerate = automation?.autoGenerate !== false;
+  const autoGenerateOn = isAutoGenerateOn(me) && adminAutoGenerate;
+  const setAutoGenerate = useMutation({
+    mutationFn: async (next: boolean) => {
+      if (!me?.user) throw new Error("Not signed in");
+      const { data, error } = await supabase
+        .from("profiles")
+        .update({ auto_generate_enabled: next } as never)
+        .eq("id", me.user.id)
+        .select("id");
+      if (error) {
+        throw new Error(
+          /auto_generate_enabled/i.test(error.message)
+            ? "The Auto-Generate column is missing in the database. Run the auto-generate SQL migration first."
+            : error.message,
+        );
+      }
+      if (!data || data.length === 0) throw new Error("Could not save Auto-Generate.");
+      return next;
+    },
+    onSuccess: (next) => {
+      queryClient.setQueryData(["me"], (o: { profile?: object } | undefined) =>
+        o ? { ...o, profile: { ...(o.profile ?? {}), auto_generate_enabled: next } } : o,
+      );
+      void queryClient.invalidateQueries({ queryKey: ["me"] });
+      toast.success(next ? "Auto-Generate is ON" : "Auto-Generate is OFF");
+    },
+    onError: (e) => toast.error(e instanceof Error ? e.message : "Could not change Auto-Generate."),
+  });
+  const autopostOn = isAutopostOn(me) && automation?.autopost !== false;
   const [autopostPending, setAutopostPending] = useState(false);
   const setAutopost = useMutation({
     mutationFn: async (next: boolean) => {
@@ -220,6 +256,35 @@ export function AppShell({ children }: { children: ReactNode }) {
       <label
         className="flex cursor-pointer items-center justify-between gap-2 rounded-lg border border-sidebar-border px-3 py-1 text-sm"
         title={
+          adminAutoGenerate
+            ? autoGenerateOn
+              ? "Auto-Generate is ON: new weekly content is created for you automatically"
+              : "Auto-Generate is OFF: you press Generate Content yourself"
+            : "Auto-Generate is switched off by the admin"
+        }
+      >
+        <span className="font-medium">Auto-Generate</span>
+        <span className="flex items-center gap-2">
+          <Switch
+            checked={autoGenerateOn}
+            disabled={!me || !adminAutoGenerate || setAutoGenerate.isPending}
+            onCheckedChange={(v) => setAutoGenerate.mutate(v)}
+            aria-label="Auto-Generate on or off"
+          />
+          <span
+            className={cn(
+              "min-w-[2.25rem] text-xs font-semibold",
+              autoGenerateOn ? "text-emerald-400" : "text-muted-foreground",
+            )}
+          >
+            {autoGenerateOn ? "ON" : "OFF"}
+          </span>
+        </span>
+      </label>
+
+      <label
+        className="flex cursor-pointer items-center justify-between gap-2 rounded-lg border border-sidebar-border px-3 py-1 text-sm"
+        title={
           autopostOn
             ? "Autopost is ON: content posts automatically at 7 AM daily, with no manual review"
             : autopostPending
@@ -231,7 +296,7 @@ export function AppShell({ children }: { children: ReactNode }) {
         <span className="flex items-center gap-2">
           <Switch
             checked={autopostOn || autopostPending}
-            disabled={!me || setAutopost.isPending}
+            disabled={!me || automation?.autopost === false || setAutopost.isPending}
             onCheckedChange={toggleAutopost}
             aria-label="Autopost on or off"
           />

@@ -240,7 +240,7 @@ export function AffiliateDashboard() {
       : `Request ${formatPaise(data.availablePaise)} to your ${data.payoutDetails.method === "upi" ? "UPI ID" : "bank account"}.`;
 
   return (
-    <div className="space-y-6">
+    <div className="grid gap-4 md:grid-cols-2 md:items-stretch">
       {/* 1. The link */}
       {!data.code ? (
         <section className="surface p-6">
@@ -343,7 +343,7 @@ export function AffiliateDashboard() {
 
       {/* 5. History */}
       {data.recentCommissions.length > 0 && (
-        <section className="surface space-y-3 p-6">
+        <section className="surface space-y-3 p-6 md:col-span-2">
           <h2 className="font-semibold">Recent earnings</h2>
           <Table>
             <TableHeader>

@@ -173,29 +173,21 @@ function AdminPage() {
   }
 
   return (
-    <div className="space-y-6">
-      <div className="flex flex-wrap items-center gap-3">
-        <div>
-          <h1 className="text-2xl font-bold">Admin Portal</h1>
-          <p className="mt-1 text-sm text-muted-foreground">Signed in as Admin</p>
-        </div>
-        <Badge variant={data.isRoot ? "default" : "secondary"} className="capitalize">
-          <ShieldCheck className="mr-1 h-3.5 w-3.5" />
-          {data.isRoot ? "Root access" : "Admin access"}
-        </Badge>
-      </div>
-
+    <div className="space-y-4">
       <Tabs defaultValue="dashboard">
-        <TabsList>
-          <TabsTrigger value="dashboard">Dashboard</TabsTrigger>
-          <TabsTrigger value="subscribers">Subscribers</TabsTrigger>
-          <TabsTrigger value="access">User Access</TabsTrigger>
-          {data.isRoot && <TabsTrigger value="referrals">Referrals</TabsTrigger>}
-          {data.isRoot && <TabsTrigger value="affiliates">Affiliates</TabsTrigger>}
-          <TabsTrigger value="automation">Automation</TabsTrigger>
-          <TabsTrigger value="brain">Brain</TabsTrigger>
-          <TabsTrigger value="readiness">Readiness</TabsTrigger>
-        </TabsList>
+        <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
+          <h1 className="text-lg font-bold">Admin Portal</h1>
+          <TabsList className="h-auto flex-wrap">
+            <TabsTrigger value="dashboard">Dashboard</TabsTrigger>
+            <TabsTrigger value="subscribers">Subscribers</TabsTrigger>
+            <TabsTrigger value="access">User Access</TabsTrigger>
+            {data.isRoot && <TabsTrigger value="referrals">Referrals</TabsTrigger>}
+            {data.isRoot && <TabsTrigger value="affiliates">Affiliates</TabsTrigger>}
+            <TabsTrigger value="automation">Automation</TabsTrigger>
+            <TabsTrigger value="brain">Brain</TabsTrigger>
+            <TabsTrigger value="readiness">Readiness</TabsTrigger>
+          </TabsList>
+        </div>
 
         {/* ===================== DASHBOARD ===================== */}
         <TabsContent value="dashboard" className="space-y-6 pt-4">

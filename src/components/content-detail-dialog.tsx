@@ -198,11 +198,12 @@ export function ContentDetailDialog({
 
   if (!item) return null;
 
+  const hasMedia = VIDEO_TYPES.includes(item.type) || IMAGE_TYPES.includes(item.type) || item.type === "carousel";
   const canPost = !isFailedItem(item) && (item.status === "posted" || Boolean(item.reviewed_at));
 
   return (
     <Dialog open={Boolean(item)} onOpenChange={onOpenChange}>
-      <DialogContent className="flex max-h-[88vh] max-w-3xl flex-col gap-0 overflow-hidden p-0">
+      <DialogContent className="flex max-h-[94vh] max-w-6xl flex-col gap-0 overflow-hidden p-0">
         {/* Frozen header: stays in place while the content below scrolls. */}
         <DialogHeader className="shrink-0 space-y-0 border-b border-border bg-background p-6 pr-12">
           <div className="flex items-start justify-between gap-3">
@@ -235,7 +236,7 @@ export function ContentDetailDialog({
           {item.summary && <DialogDescription className="pt-1.5">{item.summary}</DialogDescription>}
         </DialogHeader>
 
-        <div className="min-h-0 flex-1 space-y-4 overflow-y-auto p-6">
+        <div className="min-h-0 flex-1 space-y-4 overflow-y-auto p-4 sm:p-5">
         {isFailedItem(item) && (
           <div className="flex items-start gap-3 rounded-lg border border-destructive/40 bg-destructive/10 p-3 text-sm">
             <TriangleAlert className="mt-0.5 h-4 w-4 shrink-0 text-destructive" />
@@ -251,6 +252,8 @@ export function ContentDetailDialog({
           </div>
         )}
 
+        <div className={hasMedia ? "grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)] lg:items-start" : "space-y-4"}>
+        <div className="min-w-0 space-y-4">
         {VIDEO_TYPES.includes(item.type) && (
           <div className="space-y-3">
             {videoUrl ? (
@@ -259,7 +262,7 @@ export function ContentDetailDialog({
                 poster={imageUrl ?? undefined}
                 controls
                 playsInline
-                className="mx-auto max-h-[70vh] w-auto max-w-full rounded-xl border border-border bg-black"
+                className="mx-auto max-h-[62vh] w-auto max-w-full rounded-xl border border-border bg-black"
               />
             ) : (
               <div className="relative overflow-hidden rounded-xl border border-border bg-black">
@@ -292,7 +295,7 @@ export function ContentDetailDialog({
               <img
                 src={imageUrl}
                 alt={item.title}
-                className="w-full rounded-xl border border-border"
+                className="mx-auto max-h-[62vh] w-auto max-w-full rounded-xl border border-border object-contain"
               />
             ) : (
               <div className="flex flex-col items-center gap-3 rounded-xl border border-dashed border-border p-8 text-center">
@@ -314,8 +317,10 @@ export function ContentDetailDialog({
           />
         )}
 
+        </div>
+        <div className="min-w-0 space-y-4">
         {item.body && (
-          <article className="whitespace-pre-wrap rounded-xl border border-border bg-card p-5 text-sm leading-relaxed">
+          <article className="whitespace-pre-wrap rounded-xl border border-border bg-card p-4 text-sm leading-relaxed">
             {item.body}
           </article>
         )}
@@ -333,6 +338,9 @@ export function ContentDetailDialog({
             {item.hashtags && <p className="mt-2 text-sm text-primary">{item.hashtags}</p>}
           </div>
         )}
+
+        </div>
+        </div>
 
         {onFinishReview && item.status !== "posted" && !item.reviewed_at && !isFailedItem(item) ? (
           <div className="flex flex-wrap justify-end gap-2 pt-2">

@@ -11,6 +11,16 @@ import {
 } from "@/lib/channels.functions";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { BlogPublishing } from "@/components/blog-publishing";
 
 export function ChannelConnections({
@@ -87,6 +97,7 @@ export function ChannelConnections({
     },
   });
 
+  const [confirmDisconnect, setConfirmDisconnect] = useState<string | null>(null);
   const remove = useMutation({
     mutationFn: async (channel: string) =>
       disconnect({ data: { channel, ...(brandId ? { brandId } : {}) } }),
@@ -162,8 +173,10 @@ export function ChannelConnections({
                   <Button
                     size="sm"
                     variant="ghost"
-                    onClick={() => remove.mutate(channel.key)}
+                    onClick={() => setConfirmDisconnect(channel.key)}
                     disabled={remove.isPending}
+                    aria-label={`Disconnect ${channel.label}`}
+                    title={`Disconnect ${channel.label}`}
                   >
                     <Unlink className="h-4 w-4" />
                   </Button>
@@ -202,6 +215,29 @@ export function ChannelConnections({
       )}
 
     </section>
+    <AlertDialog open={confirmDisconnect !== null} onOpenChange={(o) => !o && setConfirmDisconnect(null)}>
+      <AlertDialogContent>
+        <AlertDialogHeader>
+          <AlertDialogTitle>
+            Disconnect {CHANNELS.find((c) => c.key === confirmDisconnect)?.label ?? "this channel"}?
+          </AlertDialogTitle>
+          <AlertDialogDescription>
+            LOVIZA will stop posting to this account. You can connect it again at any time.
+          </AlertDialogDescription>
+        </AlertDialogHeader>
+        <AlertDialogFooter>
+          <AlertDialogCancel>Cancel</AlertDialogCancel>
+          <AlertDialogAction
+            onClick={() => {
+              if (confirmDisconnect) remove.mutate(confirmDisconnect);
+              setConfirmDisconnect(null);
+            }}
+          >
+            Disconnect
+          </AlertDialogAction>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
     <BlogPublishing brandId={brandId} />
     </>
   );

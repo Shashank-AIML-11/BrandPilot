@@ -16,3 +16,9 @@ export const AUTOPOST_CONSENT_TEXT =
 
 export const AUTOPOST_SCHEDULE_NOTE =
   "All generated Content will be posted Automatically at 7 AM daily.";
+
+/** Auto-Generate (sidebar switch): OFF unless the account turned it on. */
+export function isAutoGenerateOn(me: { profile?: unknown } | null | undefined): boolean {
+  const profile = me?.profile as { auto_generate_enabled?: boolean | null } | null | undefined;
+  return profile?.auto_generate_enabled === true;
+}

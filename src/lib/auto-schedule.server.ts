@@ -88,6 +88,12 @@ export async function runAutoGeneration(admin: Admin, now = new Date()) {
     : { data: null };
   if (root?.id) userIds.add(root.id);
 
+  // Each account must also have its own Auto-Generate switch ON (sidebar, OFF by default).
+  // The Admin Portal switch checked above overrides it.
+  const { data: optedIn } = await admin.from("profiles").select("id").eq("auto_generate_enabled", true);
+  const optedInIds = new Set<string>((optedIn ?? []).map((r: { id: string }) => r.id));
+  for (const id of [...userIds]) if (!optedInIds.has(id)) userIds.delete(id);
+
   const result = { checked: 0, queued: 0, learned: 0, skipped: 0, errors: 0 };
 
   for (const userId of userIds) {

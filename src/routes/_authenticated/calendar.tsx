@@ -1092,9 +1092,9 @@ function CalendarPage() {
       {/* CALENDAR */}
       {/* ====================================================== */}
 
-      <div className={`surface mt-2 overflow-hidden ${view === "month" ? "flex h-[calc(100vh-5.5rem)] flex-col" : ""}`}>
+      <div className={`surface mt-2 overflow-x-auto overflow-y-hidden ${view === "month" ? "flex h-[calc(100vh-5.5rem)] flex-col" : ""}`}>
 
-        <div className="grid grid-cols-7 border-b border-border bg-card">
+        <div className="grid min-w-[44rem] grid-cols-7 border-b border-border bg-card">
 
           {DOW.map((day, i) => (
             <div
@@ -1115,7 +1115,7 @@ function CalendarPage() {
             <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
           </div>
         ) : view === "week" ? (
-          <div className="grid grid-cols-7">
+          <div className="grid min-w-[44rem] grid-cols-7">
             {weekDays.map((day) => {
               const key = format(day, "yyyy-MM-dd");
               const list = (byDate.get(key) ?? []).filter((i) => tabOf(i) === reviewTab);
@@ -1206,7 +1206,7 @@ function CalendarPage() {
           </div>
         ) : (
           <div
-            className="grid min-h-0 flex-1 grid-cols-7"
+            className="grid min-h-0 min-w-[44rem] flex-1 grid-cols-7"
             style={{ gridTemplateRows: `repeat(${Math.max(1, Math.ceil(days.length / 7))}, minmax(0, 1fr))` }}
           >
             {days.map((day) => {

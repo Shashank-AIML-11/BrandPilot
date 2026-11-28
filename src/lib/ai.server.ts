@@ -80,7 +80,32 @@ async function sendWithRetry(send: () => Promise<Response>): Promise<Response> {
   }
 }
 
+/**
+ * Asks the model for JSON. A model now and then returns slightly broken JSON (a missing comma, a cut-off
+ * object) or an empty reply, which is random, so a bad reply is asked for again, up to 3 tries in all.
+ */
 export async function chatJSON<T>(
+  system: string,
+  prompt: string,
+  schema?: Record<string, unknown>,
+  options: ChatOptions = {},
+): Promise<T> {
+  let last: unknown;
+  for (let attempt = 1; attempt <= 3; attempt += 1) {
+    try {
+      return await chatJSONOnce<T>(system, prompt, schema, options);
+    } catch (error) {
+      last = error;
+      const message = error instanceof Error ? error.message : String(error);
+      const retryable = error instanceof SyntaxError || /unreadable response|empty response/i.test(message);
+      if (!retryable || attempt === 3) throw error;
+      console.warn(`[ai] bad JSON reply, asking again (${attempt}/3): ${message.slice(0, 120)}`);
+    }
+  }
+  throw last;
+}
+
+async function chatJSONOnce<T>(
   system: string,
   prompt: string,
   schema?: Record<string, unknown>,

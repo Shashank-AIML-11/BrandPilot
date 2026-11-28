@@ -24,7 +24,6 @@ import {
   Loader2,
   RefreshCw,
   Send,
-  Sparkles,
   ImageOff,
   CheckCircle2,
 } from "lucide-react";
@@ -847,15 +846,15 @@ function CalendarPage() {
       {/* ====================================================== */}
 
       {/* Stays pinned under the top bar while the calendar scrolls. */}
-      <div className="sticky top-16 z-20 -mx-4 flex flex-wrap items-end justify-between gap-4 border-b border-border bg-background px-4 pb-2 pt-1 sm:-mx-8 sm:px-8">
+      <div className="sticky top-16 z-20 -mx-4 -mt-4 flex flex-wrap items-center justify-between gap-x-4 gap-y-1 border-b border-border bg-background px-4 pb-2 pt-1 sm:-mx-8 sm:px-8">
 
         <div>
-          <h1 className="text-xl font-bold">
+          <h1 className="whitespace-nowrap text-lg font-bold">
             Content Calendar
           </h1>
         </div>
 
-        <div className="flex flex-wrap items-center gap-2">
+        <div className="flex flex-wrap items-center gap-1.5">
 
           {/* Month / Week toggle */}
           <div className="inline-flex rounded-md border border-border p-0.5">
@@ -865,7 +864,7 @@ function CalendarPage() {
                 type="button"
                 size="sm"
                 variant={view === v ? "default" : "ghost"}
-                className="h-8 px-3 capitalize"
+                className="h-7 px-2.5 text-xs capitalize"
                 onClick={() => {
                   if (v === "week" && view !== "week") {
                     // Show the week containing today when it is in the visible month, else the month's first week.
@@ -888,6 +887,7 @@ function CalendarPage() {
           <Button
             variant="outline"
             size="icon"
+            className="h-8 w-8"
             onClick={() => {
               if (view === "week") {
                 const next = addDays(weekStart, -7);
@@ -900,7 +900,7 @@ function CalendarPage() {
           </Button>
 
           {/* Current period */}
-          <span className="min-w-[13rem] whitespace-nowrap text-center font-display text-lg font-semibold">
+          <span className="min-w-[9.5rem] whitespace-nowrap text-center font-display text-sm font-semibold">
             {view === "week" ? weekLabel : format(cursor, "MMMM yyyy")}
           </span>
 
@@ -908,6 +908,7 @@ function CalendarPage() {
           <Button
             variant="outline"
             size="icon"
+            className="h-8 w-8"
             onClick={() => {
               if (view === "week") {
                 const next = addDays(weekStart, 7);
@@ -920,12 +921,14 @@ function CalendarPage() {
           </Button>
 
           {/* Back to the current week / month */}
-          <Button type="button" variant="outline" size="sm" className="h-9" onClick={goToToday}>
+          <Button type="button" variant="outline" size="sm" className="h-8 text-xs" onClick={goToToday}>
             Today
           </Button>
 
           {/* Generate */}
           <Button
+            size="sm"
+            className="h-8 text-xs"
             onClick={generateMonth}
             // Disabled once this week has content (hover shows why); Refresh Calendar re-enables it.
             title={
@@ -943,11 +946,7 @@ function CalendarPage() {
               weekGenerated
             }
           >
-            {queueing ? (
-              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-            ) : (
-              <Sparkles className="mr-2 h-4 w-4" />
-            )}
+            {queueing ? <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" /> : null}
 
             {queueing
               ? "Queueing…"
@@ -960,6 +959,8 @@ function CalendarPage() {
 
           {/* POST CONTENT */}
           <Button
+            size="sm"
+            className="h-8 text-xs"
             variant="secondary"
             onClick={postContent}
             disabled={
@@ -967,11 +968,7 @@ function CalendarPage() {
               refreshing
             }
           >
-            {posting ? (
-              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-            ) : (
-              <Send className="mr-2 h-4 w-4" />
-            )}
+            {posting ? <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" /> : null}
 
             {posting
               ? "Posting…"
@@ -981,6 +978,8 @@ function CalendarPage() {
           {/* REFRESH CALENDAR — testing tool, not shown in Production */}
           {!IS_PRODUCTION_APP && view === "week" && (
           <Button
+            size="sm"
+            className="h-8 text-xs"
             variant="outline"
             onClick={refreshCalendar}
             disabled={
@@ -989,11 +988,7 @@ function CalendarPage() {
               Boolean(activeJob)
             }
           >
-            {refreshing ? (
-              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-            ) : (
-              <RefreshCw className="mr-2 h-4 w-4" />
-            )}
+            {refreshing ? <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" /> : null}
 
             {refreshing
               ? "Refreshing…"
@@ -1144,7 +1139,7 @@ function CalendarPage() {
                           }`}
                         >
                           <button type="button" onClick={() => setDetail(item)} className="block w-full text-left">
-                            <div className="relative aspect-[4/3] w-full bg-muted/20">
+                            <div className="relative h-[clamp(3.5rem,calc((100vh-21rem)/2),8.5rem)] w-full bg-muted/20">
                               {thumb ? (
                                 <img src={thumb} alt={item.title} className="h-full w-full object-cover object-[50%_72%]" />
                               ) : (

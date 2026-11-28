@@ -41,6 +41,7 @@ async function explainerInputFor(
     website: String(brand?.["website"] ?? ""),
     colors: (brand?.["brand_colors"] as Record<string, string> | null) ?? null,
     logoUrl,
+    language: (await import("@/lib/languages")).pickVideoLanguage(String(brand?.["languages"] ?? ""), item.id),
     photoPrompt: imagePromptFor(
       { type: item.type, title: item.title, summary: item.summary ?? "", image_prompt: "" },
       brand as never,

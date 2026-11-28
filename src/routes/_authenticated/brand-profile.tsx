@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState, type Dispatch, type SetStateA
 import { createFileRoute, useBlocker } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { ChevronRight, FileText, Loader2, RotateCcw, Save, Trash2, Upload } from "lucide-react";
+import { FileText, Loader2, RotateCcw, Save, Trash2, Upload } from "lucide-react";
 import { useServerFn } from "@tanstack/react-start";
 import { refreshBrandPlaybook } from "@/lib/brand-brain.functions";
 import {
@@ -403,43 +403,19 @@ const COMPLETION_FIELDS: Array<{ key: keyof FormState; label: string }> = [
   { key: "compliance_notes", label: "Compliance notes" },
 ];
 
-/** Live completion bar: counts what is typed in the form (saved or not) and lists what is still empty. */
+/** Live "% complete" next to the heading: counts what is typed in the form (saved or not). Hover lists what is empty. */
 function ProfileCompletion({ form }: { form: FormState }) {
   const missing = COMPLETION_FIELDS.filter((f) => !String(form[f.key] ?? "").trim());
-  const done = COMPLETION_FIELDS.length - missing.length;
-  const pct = Math.round((done / COMPLETION_FIELDS.length) * 100);
-  const tone = pct >= 100 ? "bg-emerald-500" : pct >= 70 ? "bg-amber-500" : "bg-rose-500";
+  const pct = Math.round(((COMPLETION_FIELDS.length - missing.length) / COMPLETION_FIELDS.length) * 100);
+  const color = pct >= 100 ? "text-emerald-500" : pct >= 70 ? "text-amber-500" : "text-rose-500";
   return (
-    <div className="mt-3 rounded-lg border border-border/60 p-3" data-testid="profile-completion">
-      <div className="flex items-center justify-between text-sm">
-        <span className="font-medium">Profile {pct}% complete</span>
-        <span className="text-xs text-muted-foreground">
-          {pct >= 100 ? "Great: the Brain has everything it needs" : "More detail means sharper, more on-brand content"}
-        </span>
-      </div>
-      <div className="mt-2 h-2 w-full overflow-hidden rounded-full bg-muted">
-        <div className={`h-full transition-all ${tone}`} style={{ width: `${pct}%` }} />
-      </div>
-      {missing.length > 0 && (
-        <div className="mt-2 flex flex-wrap items-center gap-1.5 text-xs">
-          <span className="text-muted-foreground">Still empty:</span>
-          {missing.map((f) => (
-            <button
-              key={f.key}
-              type="button"
-              className="rounded-full border border-border px-2 py-0.5 hover:bg-muted"
-              onClick={() => {
-                const el = document.getElementById(String(f.key));
-                el?.scrollIntoView({ behavior: "smooth", block: "center" });
-                (el as HTMLElement | null)?.focus?.();
-              }}
-            >
-              {f.label}
-            </button>
-          ))}
-        </div>
-      )}
-    </div>
+    <span
+      className={`text-sm font-semibold ${color}`}
+      data-testid="profile-completion"
+      title={missing.length ? `Still empty: ${missing.map((f) => f.label).join(", ")}` : "Everything is filled in"}
+    >
+      {pct}% complete
+    </span>
   );
 }
 
@@ -684,20 +660,13 @@ function BrandProfilePage() {
   }
 
   return (
-    <div className="w-full space-y-6">
-      <div className="sticky top-16 z-10 border-b border-border bg-background/95 py-4 backdrop-blur">
-        {isAgency && (
-          <nav
-            aria-label="Breadcrumb"
-            className="mb-2 flex items-center gap-1.5 text-xs text-muted-foreground"
-          >
-            <span>Brands</span>
-            <ChevronRight className="h-3.5 w-3.5" />
-            <span className="text-foreground">{activeBrand?.name ?? "Your brand"}</span>
-          </nav>
-        )}
+    <div className="w-full space-y-4">
+      <div className="sticky top-16 z-10 border-b border-border bg-background/95 py-2 backdrop-blur">
         <div className="flex items-center justify-between gap-4">
-          <h1 className="text-2xl font-bold">Brand Profile</h1>
+          <div className="flex items-baseline gap-3">
+            <h1 className="text-lg font-bold">Brand Profile</h1>
+            <ProfileCompletion form={form} />
+          </div>
           {editing ? (
             <div className={`flex items-center gap-2 rounded-lg p-1 ${nudge ? "nudge-attention" : ""}`}>
               <span className="hidden text-xs text-amber-500 sm:inline">Unsaved changes</span>
@@ -725,10 +694,6 @@ function BrandProfilePage() {
             </Button>
           )}
         </div>
-        <p className="mt-1 text-sm text-muted-foreground">
-          Everything here feeds the generator. The richer this page, the sharper the content. Only Business name is required; every other field is optional.
-        </p>
-        <ProfileCompletion form={form} />
       </div>
 
       <section className="surface space-y-4 p-6">

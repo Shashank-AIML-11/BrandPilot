@@ -110,3 +110,23 @@ describe("brand profile coverage", () => {
     for (const d of dates) expect(Object.values(plan[d]!).some((n) => n > 0), d).toBe(true);
   });
 });
+
+import { pickVideoLanguage, spokenLanguagesOf, voiceSpecFor, HINDI_KEEP_ENGLISH } from "@/lib/languages";
+
+describe("spoken languages", () => {
+  it("detects Hindi and English in the profile field", () => {
+    expect(spokenLanguagesOf("English, Hindi")).toEqual(["hi", "en"]);
+    expect(spokenLanguagesOf("Tamil")).toEqual([]);
+  });
+  it("stays English unless the audience speaks Hindi", () => {
+    expect(pickVideoLanguage("English", "a")).toBe("en");
+    expect(pickVideoLanguage("", "a")).toBe("en");
+    expect(pickVideoLanguage("Hindi", "a")).toBe("hi");
+    const picks = new Set(["a", "b", "c", "d", "e", "f"].map((x) => pickVideoLanguage("English, Hindi", x)));
+    expect(picks.size).toBe(2);
+  });
+  it("uses a native Hindi voice by default and keeps common English words", () => {
+    expect(voiceSpecFor("hi")).toMatchObject({ model: "polly-neural", voice: "Kajal", language: "hi-IN" });
+    expect(HINDI_KEEP_ENGLISH).toEqual(expect.arrayContaining(["table", "chair", "phone"]));
+  });
+});

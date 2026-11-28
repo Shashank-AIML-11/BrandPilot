@@ -7,7 +7,8 @@
  * Switch on with VIDEO_PROVIDER=shotstack. Env:
  *   SHOTSTACK_API_KEY   (required)  key of the matching environment
  *   SHOTSTACK_ENV       stage (free sandbox, watermarked) | v1 (production)   default: stage
- *   SHOTSTACK_VOICE     voice name, e.g. Rachel (see Shotstack "AI speech generation" docs)
+ *   SHOTSTACK_VOICE     English voice name, e.g. Rachel (see Shotstack "AI speech generation" docs)
+ *   SHOTSTACK_VOICE_HI  Hindi voice as "model:voice[:language]" (default polly-neural:Kajal:hi-IN), see languages.ts
  *   EXPLAINER_ASPECT    9:16 (720x1280, default) | 4:5 (720x900)
  *   EXPLAINER_MAX_SECONDS  hard length target, default 30. The script is fitted to this many seconds of
  *                       speech (about 2.2 words per second) so no voice line is ever cut off
@@ -35,10 +36,12 @@ import {
   type Theme,
 } from "@/lib/explainer-layouts.server";
 import { FONT_CSS } from "@/lib/explainer-font.server";
+import { HINDI_VOICE_RULES, pickVideoLanguage, voiceSpecFor, type SpokenLang } from "@/lib/languages";
 
 export type ExplainerScene = SceneFields & {
   imageUrl?: string | null; // picture for photo / illustration layouts
   videoUrl?: string | null; // stock clip for the broll layout
+  lang?: SpokenLang; // language the voice line is spoken in (English when unset)
 };
 
 export interface ExplainerInput {
@@ -52,7 +55,7 @@ export interface ExplainerInput {
   scenes?: ExplainerScene[]; // written + illustrated by prepareScenes()
   photoPrompt?: string | null;
   /** Spoken language of the video. English unless set; picks SHOTSTACK_VOICE_<CODE> (e.g. _HI, _MR, _TA) when that env var exists. */
-  language?: string | null;
+  language?: SpokenLang | null;
 }
 
 const H = (process.env["EXPLAINER_ASPECT"] ?? "9:16").trim() === "4:5" ? 900 : 1280;
@@ -157,11 +160,17 @@ const clean = (t: unknown): string =>
     .replace(/\s{2,}/g, " ")
     .trim();
 
+/** Hindi voice lines keep Devanagari; every other text field is Latin only (the embedded font). */
+const cleanVoice = (t: unknown, lang: SpokenLang): string =>
+  lang === "hi"
+    ? String(t ?? "").replace(/[^\u0000-\u024F\u0900-\u097F\u2010-\u2027\u20AC\u20B9]/g, "").replace(/\s{2,}/g, " ").trim()
+    : clean(t);
+
 const strList = (x: unknown): string[] => (Array.isArray(x) ? x.map((v) => String(v ?? "").trim()).filter(Boolean) : []);
 
 /** Cleans one scene returned by the AI so every layout always gets safe, complete fields. */
-function normaliseScene(raw: Record<string, unknown>): ExplainerScene | null {
-  const voice = clean(raw["voice"]).replace(/\*+/g, "").replace(/\s{2,}/g, " ").trim(); // plain words only: it is spoken and captioned
+function normaliseScene(raw: Record<string, unknown>, lang: SpokenLang = "en"): ExplainerScene | null {
+  const voice = cleanVoice(raw["voice"], lang).replace(/\*+/g, "").replace(/\s{2,}/g, " ").trim(); // plain words only: it is spoken and captioned
   if (!voice) return null;
   const layoutId = LAYOUT_BY_ID.has(String(raw["layout"])) ? String(raw["layout"]) : "hook";
   const arr = (v: unknown) => (Array.isArray(v) ? (v as Record<string, unknown>[]) : []);
@@ -179,6 +188,7 @@ function normaliseScene(raw: Record<string, unknown>): ExplainerScene | null {
     a: strList(raw["a"]).map(clean).filter(Boolean),
     b: strList(raw["b"]).map(clean).filter(Boolean),
     img: clean(raw["img"]),
+    ...(lang === "hi" ? { lang } : {}),
   };
 }
 
@@ -306,6 +316,7 @@ export async function prepareScenes(
   videoScript: string,
 ): Promise<ExplainerScene[]> {
   const fallback = fallbackScenes(input);
+  const lang: SpokenLang = input.language === "hi" ? "hi" : "en";
   let scenes: ExplainerScene[] = fallback;
   const maxImages = Math.max(0, Number.parseInt(process.env["EXPLAINER_MAX_IMAGES"] ?? "2", 10) || 0);
   const count = Math.min(6, Math.max(4, Number.parseInt(process.env["EXPLAINER_SCENES"] ?? "5", 10) || 5));
@@ -319,10 +330,10 @@ export async function prepareScenes(
     const [{ chatJSON }, { brandContext }] = await Promise.all([import("@/lib/ai.server"), import("@/lib/content.server")]);
     const plan = explainerPlan(input);
     const out = await chatJSON<{ scenes?: Record<string, unknown>[] }>(
-      "You direct short vertical explainer videos that sell one specific brand, in the style of polished social-media motion graphics. Plain, human, specific. Never invent prices, numbers, awards, statistics, customers, testimonials or ratings that are not in the brand information. Write every word, spoken lines and on-screen text, in plain English only. Never mix in Hindi or any other language, not even one word.",
+      `You direct short vertical explainer videos that sell one specific brand, in the style of polished social-media motion graphics. Plain, human, specific. Never invent prices, numbers, awards, statistics, customers, testimonials or ratings that are not in the brand information. ${lang === "hi" ? "Spoken voice lines are in Hindi; all on-screen text is plain English." : "Write every word, spoken lines and on-screen text, in plain English only. Never mix in Hindi or any other language, not even one word."}`,
       `${brandContext(brand as never)}
 
-Topic of this video: ${input.item.title ?? ""}
+${lang === "hi" ? HINDI_VOICE_RULES + "\n\n" : ""}Topic of this video: ${input.item.title ?? ""}
 Summary: ${input.item.summary ?? ""}
 Draft script: ${videoScript}
 Selling points to use: ${plan.points.join(" | ")}
@@ -355,12 +366,12 @@ Return JSON: {"scenes":[...]}`,
     const numbersOk = (text: string) =>
       (text.match(/\d+(?:\.\d+)?/g) ?? []).every((n) => facts.includes(n));
     const good = (out.scenes ?? [])
-      .map(normaliseScene)
+      .map((r) => normaliseScene(r, lang))
       .filter((x): x is ExplainerScene => Boolean(x))
       .map((sc) => ({ ...sc, stats: sc.stats.filter((st) => numbersOk(st.v)) }))
       .filter((sc) => !/\d\s?%/.test(`${sc.voice} ${sc.title} ${sc.sub}`) || numbersOk(`${sc.voice} ${sc.title} ${sc.sub}`))
       .slice(0, 7);
-    if (good.length >= 4) scenes = fitToBudget(ensureBroll(arrange(good, maxImages, maxBroll), maxBroll, input));
+    if (good.length >= 4) scenes = fitToBudget(lang === "hi" ? arrange(good, maxImages, maxBroll) : ensureBroll(arrange(good, maxImages, maxBroll), maxBroll, input));
   } catch (error) {
     console.error("[explainer] scene writer failed, using plain script:", error);
   }
@@ -472,9 +483,10 @@ export function buildTimeline(input: ExplainerInput, embedFont = true) {
   };
   const scenes = input.scenes && input.scenes.length >= 3 ? input.scenes : fallbackScenes(input);
   const last = scenes.length - 1;
-  const langCode = String(input.language ?? "").trim().slice(0, 2).toUpperCase();
-  const voice = (langCode && langCode !== "EN" ? process.env[`SHOTSTACK_VOICE_${langCode}`]?.trim() : "") || process.env["SHOTSTACK_VOICE"]?.trim();
-  const synced = Boolean(voice); // with a voice, every scene lasts exactly as long as its voice line
+  const spoken: SpokenLang = scenes[0]?.lang === "hi" ? "hi" : "en";
+  const spec = voiceSpecFor(spoken);
+  // English needs SHOTSTACK_VOICE to be set (silent otherwise); Hindi always has a default native voice
+  const synced = spoken === "hi" || Boolean(spec.voice); // with a voice, every scene lasts exactly as long as its voice line
   const FIXED = Math.min(5, Math.floor((maxSeconds() / scenes.length) * 10) / 10); // silent mode: still within the limit
   const timing = (i: number) => (synced ? { start: `alias://v${i}`, length: `alias://v${i}` } : { start: i * FIXED, length: FIXED });
 
@@ -538,7 +550,7 @@ export function buildTimeline(input: ExplainerInput, embedFont = true) {
   // Optional captions: the spoken line shown as a clean English subtitle near the bottom
   // (EXPLAINER_CAPTIONS=on), for people watching with the sound off.
   const captionClips: unknown[] = [];
-  if ((process.env["EXPLAINER_CAPTIONS"] ?? "").trim().toLowerCase() === "on") {
+  if (spoken === "en" && (process.env["EXPLAINER_CAPTIONS"] ?? "").trim().toLowerCase() === "on") {
     const capH = 230;
     scenes.forEach((sc, i) => {
       const line = String(sc.voice ?? "").replace(/\*+/g, "").trim();
@@ -563,7 +575,7 @@ export function buildTimeline(input: ExplainerInput, embedFont = true) {
   if (synced) {
     tracks.push({
       clips: scenes.map((sc, i) => ({
-        asset: { type: "audio", prompt: sc.voice, model: "elevenlabs-multilingual-v2", options: { voice } },
+        asset: { type: "audio", prompt: sc.voice, model: spec.model, options: { ...(spec.voice ? { voice: spec.voice } : {}), ...(spec.language ? { language: spec.language } : {}) } },
         start: "auto",
         length: "auto",
         alias: `v${i}`,

@@ -359,7 +359,8 @@ export const SIGNALS: PatternRow[] = [
 const ina = (key: string, label: string, template: string, why: string, source = S.refs) => row("india", key, label, template, why, source);
 
 export const INDIA: PatternRow[] = [
-  ina("one_language", "One language per piece", "write each piece in ONE language only (voice-over, captions and on-screen text all the same); never mix two languages inside a single piece", "Mixed languages sound jarring and the voice accent cannot match."),
+  ina("one_language", "One spoken language per reel", "an English reel is entirely English (voice, captions, on-screen text); a Hindi reel is spoken in natural Hindi where everyday English words (table, phone, order, delivery, discount, online) stay English, and its on-screen text can stay English", "Mixed-up languages sound jarring and the voice accent cannot match."),
+  ina("hindi_voice_tone", "Hindi voice: friendly North Indian tone", "write Hindi voice lines like a warm North Indian friend: simple everyday Hindi, 'aap' address, short sentences, an energetic hook, calm explaining lines, a confident call to action; never textbook Hindi", "Native-sounding delivery is what makes Hindi reels feel real."),
   ina("rupee_prices", "Prices in rupees", "state prices and savings in rupees (Rs or ₹), with real numbers", "Concrete and local."),
   ina("festival_calendar", "Festival timing", "tie content to Diwali, Dhanteras, Raksha Bandhan, Eid, Holi, Navratri, Ganesh Chaturthi, wedding season and exam season, 2-3 weeks ahead", "Demand spikes before festivals."),
   ina("whatsapp_trust", "WhatsApp as the close", "give a WhatsApp number or 'DM to order' as the next step; show response time honestly", "How many Indian small businesses sell."),

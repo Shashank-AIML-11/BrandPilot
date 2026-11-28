@@ -113,7 +113,7 @@ export interface RuleFinding {
   claims: string[];
 }
 
-const STORY = /\b(meet [A-Z][a-z]+|went from \d|real stories?|success stor(?:y|ies)|a customer (?:said|told)|one of our (?:customers|clients|students|patients|parents))\b/;
+const STORY = /\b([Mm]eet [A-Z][a-z]+|went from \d|real stories?|success stor(?:y|ies)|a customer (?:said|told)|one of our (?:customers|clients|students|patients|parents))\b/;
 const FESTIVAL_RE = /diwali|dhanteras|holi\b|christmas|new year|raksha bandhan|rakhi|eid\b|navratri|dussehra|ganesh chaturthi|valentine|black friday|pongal|sankranti|onam|janmashtami|karwa chauth/i;
 
 /** What a piece says that the brand information does not back up. Empty when the piece is clean. */

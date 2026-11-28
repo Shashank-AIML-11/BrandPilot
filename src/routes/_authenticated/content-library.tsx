@@ -462,12 +462,6 @@ function ContentLibraryPage() {
                             <ImageOff className="h-6 w-6" />
                           </div>
                         )}
-                        <Badge
-                          variant="outline"
-                          className={`absolute left-2 top-2 ${typeStyles[item.type] ?? ""}`}
-                        >
-                          {item.type}
-                        </Badge>
                       </div>
                       <div className="space-y-1.5 p-3">
                         <p className="line-clamp-2 text-sm font-medium leading-snug">

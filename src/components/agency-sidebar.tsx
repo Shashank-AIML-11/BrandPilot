@@ -40,7 +40,7 @@ const SWATCHES = [
 ];
 
 const rowBase =
-  "flex min-h-10 w-full items-center gap-2.5 rounded-[10px] px-2.5 py-1.5 text-left text-sm text-sidebar-foreground transition-colors hover:bg-sidebar-accent";
+  "flex min-h-8 w-full items-center gap-2.5 rounded-[10px] px-2.5 py-1 text-left text-sm text-sidebar-foreground transition-colors hover:bg-sidebar-accent";
 const rowActive =
   "bg-sidebar-accent font-medium text-sidebar-accent-foreground ring-1 ring-inset ring-sidebar-border";
 
@@ -80,8 +80,8 @@ export function AgencySidebar({ brands, activeBrandId, plan, showAdmin, onSelect
   const pct = limit > 0 ? Math.min(100, (used / limit) * 100) : 0;
 
   return (
-    <div className="flex min-h-full flex-col gap-3">
-      <div className="space-y-2">
+    <div className="flex min-h-full flex-col gap-2">
+      <div className="space-y-1.5">
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
             <button
@@ -159,7 +159,7 @@ export function AgencySidebar({ brands, activeBrandId, plan, showAdmin, onSelect
 
       {activeBrand && (
         <nav aria-label={`${activeBrand.name} workspace`} className="space-y-0.5">
-          <div className="px-1 pb-1">
+          <div className="px-1 pb-0.5">
             <span className="block truncate text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">
               {activeBrand.name}
             </span>
@@ -188,7 +188,7 @@ export function AgencySidebar({ brands, activeBrandId, plan, showAdmin, onSelect
         </nav>
       )}
 
-      <div className="mt-auto rounded-xl border border-sidebar-border bg-card p-3">
+      <div className="mt-auto rounded-xl border border-sidebar-border bg-card p-2.5">
         <p className="text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">
           Your active plan
         </p>
@@ -197,7 +197,7 @@ export function AgencySidebar({ brands, activeBrandId, plan, showAdmin, onSelect
           {used} of {limit} brands used
         </p>
         <div
-          className="mt-2 h-1.5 rounded-full bg-border"
+          className="mt-1.5 h-1.5 rounded-full bg-border"
           role="progressbar"
           aria-valuemin={0}
           aria-valuemax={limit}
@@ -206,7 +206,7 @@ export function AgencySidebar({ brands, activeBrandId, plan, showAdmin, onSelect
         >
           <div className="h-1.5 rounded-full bg-primary" style={{ width: `${pct}%` }} />
         </div>
-        <Button size="sm" variant="outline" className="mt-2.5 w-full" asChild>
+        <Button size="sm" variant="outline" className="mt-2 h-8 w-full" asChild>
           <Link to="/plan">Manage plan</Link>
         </Button>
       </div>

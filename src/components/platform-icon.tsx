@@ -1,8 +1,8 @@
-import { Globe, Linkedin } from "lucide-react";
+import { Globe } from "lucide-react";
 
 /** Which network a content type is published on. Round logos live in /public/platforms. */
 const BY_TYPE: Record<string, { name: string; img?: string }> = {
-  linkedin_post: { name: "LinkedIn" },
+  linkedin_post: { name: "LinkedIn", img: "linkedin" },
   instagram_post: { name: "Instagram", img: "instagram" },
   instagram_reel: { name: "Instagram Reel", img: "instagram" },
   facebook_post: { name: "Facebook", img: "facebook" },
@@ -24,10 +24,6 @@ export function PlatformIcon({ type, time, size = 20 }: { type: string; time?: s
     <span title={label} aria-label={label} role="img" className="inline-flex flex-none items-center">
       {p.img ? (
         <img src={`/platforms/${p.img}.png`} alt="" width={size} height={size} className="rounded-full" style={{ width: size, height: size }} />
-      ) : type === "linkedin_post" ? (
-        <span className="inline-flex items-center justify-center rounded-full bg-[#0A66C2]" style={{ width: size, height: size }}>
-          <Linkedin className="text-white" style={{ width: size * 0.6, height: size * 0.6 }} />
-        </span>
       ) : (
         <span className="inline-flex items-center justify-center rounded-full bg-slate-500" style={{ width: size, height: size }}>
           <Globe className="text-white" style={{ width: size * 0.62, height: size * 0.62 }} />

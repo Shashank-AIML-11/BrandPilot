@@ -216,9 +216,9 @@ export function AppShell({ children }: { children: ReactNode }) {
 
   // Autopost switch and the account menu live at the foot of the sidebar, so the page can start at the very top.
   const sidebarFooter = (
-    <div className="mt-3 space-y-2">
+    <div className="mt-2 space-y-1">
       <label
-        className="flex cursor-pointer items-center justify-between gap-2 rounded-lg border border-sidebar-border px-3 py-1.5 text-sm"
+        className="flex cursor-pointer items-center justify-between gap-2 rounded-lg border border-sidebar-border px-3 py-1 text-sm"
         title={
           autopostOn
             ? "Autopost is ON: content posts automatically at 7 AM daily, with no manual review"
@@ -250,7 +250,7 @@ export function AppShell({ children }: { children: ReactNode }) {
         <DropdownMenuTrigger asChild>
           <button
             type="button"
-            className="flex w-full items-center gap-2 rounded-lg px-1.5 py-1.5 text-left transition-colors hover:bg-sidebar-accent"
+            className="flex w-full items-center gap-2 rounded-lg px-1.5 py-1 text-left transition-colors hover:bg-sidebar-accent"
             aria-label="Account menu"
           >
             <Avatar className="h-7 w-7 flex-none">
@@ -329,10 +329,10 @@ export function AppShell({ children }: { children: ReactNode }) {
           open ? "translate-x-0" : "-translate-x-full",
         )}
       >
-        <Link to="/calendar" className="flex h-11 flex-none items-center px-4 font-display text-lg font-bold tracking-tight">
+        <Link to="/calendar" className="flex h-10 flex-none items-center px-4 font-display text-lg font-bold tracking-tight">
           LOVIZA<span className="text-primary">.</span>
         </Link>
-        <div className="min-h-0 flex-1 overflow-y-auto px-3 pb-3">
+        <div className="min-h-0 flex-1 overflow-y-auto px-3 pb-2 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
           {agencyPlan ? (
             <AgencySidebar
               brands={agencyBrands}

@@ -1092,7 +1092,7 @@ function CalendarPage() {
       {/* CALENDAR */}
       {/* ====================================================== */}
 
-      <div className="surface overflow-hidden">
+      <div className={`surface mt-2 overflow-hidden ${view === "month" ? "flex h-[calc(100vh-5.5rem)] flex-col" : ""}`}>
 
         <div className="grid grid-cols-7 border-b border-border bg-card">
 
@@ -1148,9 +1148,6 @@ function CalendarPage() {
                                   {rendering ? <Loader2 className="h-5 w-5 animate-spin" /> : <ImageOff className="h-5 w-5" />}
                                 </div>
                               )}
-                              <Badge variant="outline" className={`absolute left-1.5 top-1.5 text-[10px] ${typeStyles[item.type] ?? ""}`}>
-                                {item.type}
-                              </Badge>
                             </div>
                             <div className="px-1.5 pb-0.5 pt-1">
                               <p className="line-clamp-1 text-[11px] font-medium leading-snug" title={item.title}>{item.title}</p>
@@ -1208,145 +1205,69 @@ function CalendarPage() {
             })}
           </div>
         ) : (
-          <div className="grid grid-cols-7">
-
+          <div
+            className="grid min-h-0 flex-1 grid-cols-7"
+            style={{ gridTemplateRows: `repeat(${Math.max(1, Math.ceil(days.length / 7))}, minmax(0, 1fr))` }}
+          >
             {days.map((day) => {
-
-              const key =
-                format(day, "yyyy-MM-dd");
-
-              const list =
-                byDate.get(key) ?? [];
-
-              const outside =
-                !isSameMonth(
-                  day,
-                  cursor,
-                );
-
-              const VIDEO_TYPES = [
-                "instagram_reel",
-                "youtube_short",
-                "tiktok_video",
-                "product_service_video",
-              ];
-
-              const failed =
-                list.some(
-                  (item) =>
-                    VIDEO_TYPES.includes(item.type) &&
-                    item.video_status ===
-                      "failed",
-                );
-
-              const videoPaused =
-                list.some(
-                  (item) =>
-                    VIDEO_TYPES.includes(item.type) &&
-                    !item.video_url &&
-                    item.video_status !==
-                      "failed",
-                );
-
-              const ready =
-                list.length > 0 &&
-                list.every((item) => {
-                  if (item.type === "blog") return true;
-                  if (item.type === "carousel") {
-                    const slideCount = item.carousel_slides?.length ?? 0;
-                    const imageCount = (item.carousel_image_urls ?? []).filter(
-                      Boolean,
-                    ).length;
-                    return slideCount > 0 && imageCount >= slideCount;
-                  }
-                  return Boolean(item.image_url);
-                });
+              const key = format(day, "yyyy-MM-dd");
+              const list = byDate.get(key) ?? [];
+              const outside = !isSameMonth(day, cursor);
+              const VIDEO_TYPES = ["instagram_reel", "youtube_short", "tiktok_video", "product_service_video"];
+              const failed = list.some((item) => VIDEO_TYPES.includes(item.type) && item.video_status === "failed");
+              const shown = list.slice(0, 6);
+              // cards share the whole square: one card fills it, two sit side by side, more form a grid
+              const cols = shown.length <= 2 ? Math.max(1, shown.length) : shown.length <= 4 ? 2 : 3;
 
               return (
                 <button
                   key={key}
-                  onClick={() =>
-                    setOpenDay(key)
-                  }
-                  className={`min-h-28 border-b border-r border-border p-2 text-left transition-colors hover:bg-accent ${
-                    outside
-                      ? "opacity-40"
-                      : ""
-                  }`}
+                  type="button"
+                  onClick={() => setOpenDay(key)}
+                  className={`relative min-h-0 min-w-0 border-b border-r border-border p-1 pt-4 text-left transition-colors hover:bg-accent ${
+                    outside ? "opacity-40" : ""
+                  } ${failed ? "ring-1 ring-inset ring-destructive/60" : ""}`}
                 >
-
                   <span
-                    className={`inline-flex h-6 w-6 items-center justify-center rounded-full text-xs ${
-                      isToday(day)
-                        ? "bg-primary font-semibold text-primary-foreground"
-                        : ""
+                    className={`absolute left-1 top-0.5 inline-flex h-4 min-w-4 items-center justify-center rounded-full px-1 text-[11px] leading-none ${
+                      isToday(day) ? "bg-primary font-semibold text-primary-foreground" : "text-muted-foreground"
                     }`}
                   >
                     {format(day, "d")}
                   </span>
 
-                  {list.length > 0 && (
-                    <div className="mt-2 space-y-1">
-
-                      <div className="grid grid-cols-4 gap-1">
-                        {list.slice(0, 8).map((item) => {
-                          const raw = item.image_url ?? item.carousel_image_urls?.[0] ?? null;
-                          const thumb = cachedMediaUrl(raw) ?? raw;
-                          return (
-                            <div
-                              key={item.id}
-                              title={item.title}
-                              className="relative aspect-[4/5] overflow-hidden rounded-[5px] border border-border/70 bg-muted/20"
-                            >
-                              {thumb ? (
-                                <img src={thumb} alt="" loading="lazy" className="h-full w-full object-cover object-[50%_72%]" />
-                              ) : (
-                                <div className="flex h-full w-full items-center justify-center text-muted-foreground/40">
-                                  <ImageOff className="h-3 w-3" />
-                                </div>
-                              )}
-                              <span className="absolute bottom-px right-px">
-                                <PlatformIcon type={item.type} time={item.scheduled_time?.slice(0, 5) ?? null} size={12} />
-                              </span>
-                            </div>
-                          );
-                        })}
-                      </div>
-
-                      {list.every(
-                        (item) =>
-                          !item.enabled,
-                      ) && (
-                        <p className="text-[11px] text-muted-foreground">
-                          disabled
-                        </p>
-                      )}
-
-                      <p
-                        className={`text-[11px] font-medium ${
-                          failed
-                            ? "text-destructive"
-                            : ready
-                              ? "text-success"
-                              : "text-primary"
-                        }`}
-                      >
-                        {failed
-                          ? "Rendering issue"
-                          : !ready
-                            ? "Rendering"
-                            : videoPaused
-                              ? "Ready · video paused"
-                              : "Ready"}
-                      </p>
-
+                  {shown.length > 0 && (
+                    <div
+                      className="grid h-full w-full gap-1"
+                      style={{ gridTemplateColumns: `repeat(${cols}, minmax(0, 1fr))`, gridAutoRows: "minmax(0, 1fr)" }}
+                    >
+                      {shown.map((item) => {
+                        const raw = item.image_url ?? item.carousel_image_urls?.[0] ?? null;
+                        const thumb = cachedMediaUrl(raw) ?? raw;
+                        return (
+                          <div
+                            key={item.id}
+                            title={item.title}
+                            className={`relative min-h-0 overflow-hidden rounded-md border border-border/70 bg-muted/20 ${item.enabled ? "" : "opacity-50"}`}
+                          >
+                            {thumb ? (
+                              <img src={thumb} alt="" loading="lazy" className="h-full w-full object-cover object-[50%_72%]" />
+                            ) : (
+                              <div className="flex h-full w-full items-center justify-center text-muted-foreground/40">
+                                {item.status === "draft" ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <ImageOff className="h-3.5 w-3.5" />}
+                              </div>
+                            )}
+                            <span className="absolute bottom-0.5 right-0.5">
+                              <PlatformIcon type={item.type} time={item.scheduled_time?.slice(0, 5) ?? null} size={16} />
+                            </span>
+                          </div>
+                        );
+                      })}
                     </div>
                   )}
-
                 </button>
               );
             })}
-
           </div>
         )}
 

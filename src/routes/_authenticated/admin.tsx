@@ -290,6 +290,7 @@ function AdminPage() {
               <TableHeader>
                 <TableRow>
                   <TableHead>Subscriber</TableHead>
+                  <TableHead>User ID</TableHead>
                   <TableHead>Plan</TableHead>
                   <TableHead>Cycle</TableHead>
                   <TableHead>Start date</TableHead>
@@ -304,6 +305,9 @@ function AdminPage() {
                     <TableCell>
                       <div className="font-medium">{s.fullName || s.email}</div>
                       <div className="text-xs text-muted-foreground">{s.email}</div>
+                    </TableCell>
+                    <TableCell className="font-mono text-xs text-muted-foreground" title={s.id}>
+                      {s.id}
                     </TableCell>
                     <TableCell className="capitalize">{s.plan}</TableCell>
                     <TableCell className="capitalize">{s.billingPeriod}</TableCell>
@@ -327,7 +331,7 @@ function AdminPage() {
                 ))}
                 {data.subscriberRows.length === 0 && (
                   <TableRow>
-                    <TableCell colSpan={7} className="text-center text-muted-foreground">
+                    <TableCell colSpan={8} className="text-center text-muted-foreground">
                       No subscribers yet.
                     </TableCell>
                   </TableRow>

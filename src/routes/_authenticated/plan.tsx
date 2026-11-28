@@ -75,8 +75,8 @@ function PlanPage() {
     : null;
 
   return (
-    <div className="mx-auto max-w-3xl space-y-6">
-      <div>
+    <div className="mx-auto grid max-w-6xl gap-4 lg:grid-cols-[minmax(0,3fr)_minmax(0,2fr)] lg:items-start">
+      <div className="lg:col-span-2">
         <h1 className="text-2xl font-bold">Your plan</h1>
         <p className="mt-1 text-sm text-muted-foreground">
           Manage your subscription and see past checkout submissions.
@@ -84,7 +84,7 @@ function PlanPage() {
       </div>
 
       {current ? (
-        <div className="surface p-6">
+        <div className="surface p-5">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div>
               <p className="text-xs uppercase tracking-wide text-muted-foreground">
@@ -101,7 +101,7 @@ function PlanPage() {
               </span>
             </p>
           </div>
-          <ul className="mt-5 grid gap-2 sm:grid-cols-2">
+          <ul className="mt-3 grid gap-1.5 sm:grid-cols-2">
             {current.features.map((f) => (
               <li key={f} className="flex gap-2 text-sm text-muted-foreground">
                 <Check className="mt-0.5 h-4 w-4 shrink-0 text-primary" />
@@ -110,7 +110,7 @@ function PlanPage() {
             ))}
           </ul>
           {activeSub?.current_period_end && (
-            <div className="mt-5 rounded-xl border border-border bg-muted/40 p-4 text-sm">
+            <div className="mt-3 rounded-xl border border-border bg-muted/40 p-3 text-sm">
               <p>
                 Active until <strong>{formatIstDateTime(activeSub.current_period_end)}</strong>
                 {daysLeft !== null && (
@@ -129,7 +129,7 @@ function PlanPage() {
               </p>
             </div>
           )}
-          <div className="mt-6 flex flex-wrap gap-3">
+          <div className="mt-4 flex flex-wrap gap-3">
             <Button asChild>
               <Link to="/renew">Renew plan</Link>
             </Button>
@@ -140,9 +140,10 @@ function PlanPage() {
               <Link to="/referrals">Refer &amp; earn 20%</Link>
             </Button>
           </div>
+          <OneTimeGenerate />
         </div>
       ) : lapsedPlan ? (
-        <div className="surface p-6">
+        <div className="surface p-5">
           <p className="text-xs uppercase tracking-wide text-muted-foreground">Your Plan</p>
           <h2 className="mt-1 font-display text-2xl font-bold">{lapsedPlan.name} (expired)</h2>
           <p className="mt-2 text-sm text-muted-foreground">
@@ -151,7 +152,7 @@ function PlanPage() {
               : ""}
             Content generation and posting are paused. Your brand profile and content are safe.
           </p>
-          <div className="mt-6 flex flex-wrap gap-3">
+          <div className="mt-4 flex flex-wrap gap-3">
             <Button asChild>
               <Link to="/renew">Renew plan</Link>
             </Button>
@@ -162,7 +163,7 @@ function PlanPage() {
           <OneTimeGenerate />
         </div>
       ) : (
-        <div className="surface p-6">
+        <div className="surface p-5">
           <p className="text-xs uppercase tracking-wide text-muted-foreground">Your Active Plan</p>
           <h2 className="mt-1 font-display text-2xl font-bold">No Active Plan</h2>
           <p className="mt-2 text-sm text-muted-foreground">
@@ -176,11 +177,11 @@ function PlanPage() {
         </div>
       )}
 
-      <div className="surface p-6">
+      <div className="surface p-5">
         <h2 className="text-sm font-semibold">Subscription history</h2>
-        <ul className="mt-4 divide-y divide-border text-sm">
+        <ul className="mt-2 max-h-[calc(100vh-12rem)] divide-y divide-border overflow-y-auto text-sm">
           {data?.subs.map((s) => (
-            <li key={s.id} className="flex items-center justify-between py-3">
+            <li key={s.id} className="flex items-center justify-between py-2">
               <div>
                 <p className="capitalize">
                   {s.plan} · {s.payment_method}

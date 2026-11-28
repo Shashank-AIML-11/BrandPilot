@@ -3,6 +3,7 @@ import { createFileRoute } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { useMe } from "@/components/app-shell";
+import { BusinessGrowth } from "@/components/business-growth";
 import { agencyPlanFor, resolveActiveBrand, useAgencyBrands, useStoredBrandId } from "@/lib/agency";
 
 /**
@@ -309,6 +310,8 @@ function Analytics() {
           daily for a week.
         </p>
       </div>
+
+      {me?.isAdmin && <BusinessGrowth />}
 
       <div className="surface flex flex-wrap items-end gap-4 p-4">
         <label className="space-y-1 text-xs uppercase tracking-wide text-muted-foreground">

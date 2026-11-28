@@ -660,8 +660,8 @@ function BrandProfilePage() {
   }
 
   return (
-    <div className="w-full space-y-4">
-      <div className="sticky top-16 z-10 border-b border-border bg-background/95 py-2 backdrop-blur">
+    <div className="w-full space-y-5 pb-8">
+      <div className="sticky top-12 z-20 -mx-4 -mt-3 border-b border-border bg-background/95 px-4 py-2.5 backdrop-blur sm:-mx-6 sm:px-6 lg:top-0">
         <div className="flex items-center justify-between gap-4">
           <div className="flex items-baseline gap-3">
             <h1 className="text-lg font-bold">Brand Profile</h1>
@@ -696,22 +696,20 @@ function BrandProfilePage() {
         </div>
       </div>
 
-      <section className="surface space-y-4 p-6">
-        <h2 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">
-          Business
-        </h2>
-        <div className="grid gap-4 sm:grid-cols-2">
-          <div className="space-y-2">
-            <Label htmlFor="business_name">Business name *</Label>
+      <ProfileSection
+        title="Your business"
+        hint="Start with your website. LOVIZA reads it and fills in what it can."
+      >
+        <div className="grid gap-4 md:grid-cols-2">
+          <Field id="business_name" label="Business name *">
             <Input
               id="business_name"
               maxLength={120}
               value={form.business_name}
               onChange={(e) => set("business_name", e.target.value)}
             />
-          </div>
-          <div className="space-y-2">
-            <Label htmlFor="website">Website</Label>
+          </Field>
+          <Field id="website" label="Website">
             <Input
               id="website"
               maxLength={200}
@@ -719,7 +717,7 @@ function BrandProfilePage() {
               value={form.website}
               onChange={(e) => set("website", e.target.value)}
             />
-          </div>
+          </Field>
         </div>
         <WebsiteScan
           website={form.website}
@@ -728,139 +726,148 @@ function BrandProfilePage() {
           currentHandles={form.social_handles}
           onApprove={applyScan}
         />
+      </ProfileSection>
+
+      <ProfileSection title="Logo and photos" hint="Used on your posters and videos.">
         <BrandAssets
           brandId={isAgency ? activeBrand?.id : data?.id}
           form={form}
           setForm={setForm}
           onChanged={() => void queryClient.invalidateQueries({ queryKey: ["brand-profile"] })}
         />
-        <div className="space-y-2">
-          <Label htmlFor="description">Business description</Label>
-          <Textarea
-            id="description"
-            rows={4}
-            maxLength={2000}
-            value={form.description}
-            onChange={(e) => set("description", e.target.value)}
-          />
-        </div>
-        <div className="space-y-2">
-          <Label htmlFor="products_services">Products & services</Label>
-          <Textarea
-            id="products_services"
-            rows={4}
-            maxLength={3000}
-            placeholder="List each product/service and what it does."
-            value={form.products_services}
-            onChange={(e) => set("products_services", e.target.value)}
-          />
-        </div>
-      </section>
+      </ProfileSection>
 
-      <section className="surface space-y-4 p-6">
-        <h2 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">
-          Positioning
-        </h2>
-        <div className="space-y-2">
-          <Label htmlFor="icp">Ideal customer profile (ICP)</Label>
-          <Textarea
-            id="icp"
-            rows={3}
-            maxLength={2000}
-            value={form.icp}
-            onChange={(e) => set("icp", e.target.value)}
-          />
-        </div>
-        <div className="space-y-2">
-          <Label htmlFor="propositions">Value propositions</Label>
-          <Textarea
-            id="propositions"
-            rows={3}
-            maxLength={2000}
-            value={form.propositions}
-            onChange={(e) => set("propositions", e.target.value)}
-          />
-        </div>
-        <div className="grid gap-4 sm:grid-cols-2">
-          <div className="space-y-2">
-            <Label htmlFor="tone">Tone of voice</Label>
-            <Input
-              id="tone"
-              maxLength={200}
-              placeholder="Confident, warm, jargon-free"
-              value={form.tone}
-              onChange={(e) => set("tone", e.target.value)}
+      <div className="grid items-start gap-5 xl:grid-cols-2">
+        <ProfileSection title="What you sell" hint="Facts LOVIZA may use in your content.">
+          <Field id="description" label="Business description">
+            <Textarea
+              id="description"
+              rows={4}
+              maxLength={2000}
+              value={form.description}
+              onChange={(e) => set("description", e.target.value)}
             />
-          </div>
-          <div className="space-y-2">
-            <Label htmlFor="keywords">Focus keywords</Label>
-            <Input
-              id="keywords"
-              maxLength={300}
-              placeholder="crm for clinics, patient retention"
-              value={form.keywords}
-              onChange={(e) => set("keywords", e.target.value)}
+          </Field>
+          <Field id="products_services" label="Products & services">
+            <Textarea
+              id="products_services"
+              rows={4}
+              maxLength={3000}
+              placeholder="List each product/service and what it does."
+              value={form.products_services}
+              onChange={(e) => set("products_services", e.target.value)}
             />
+          </Field>
+          <div className="grid gap-4 sm:grid-cols-2">
+            <Field id="industry" label="Industry">
+              <Input
+                id="industry"
+                maxLength={120}
+                placeholder="Skincare, CA firm, restaurant, SaaS..."
+                value={form.industry}
+                onChange={(e) => set("industry", e.target.value)}
+              />
+            </Field>
+            <Field id="languages" label="Languages your audience speaks">
+              <Input
+                id="languages"
+                maxLength={120}
+                placeholder="English, Hindi, Marathi"
+                value={form.languages}
+                onChange={(e) => set("languages", e.target.value)}
+              />
+            </Field>
           </div>
-        </div>
-      </section>
+          <Field id="locations" label="Locations you serve">
+            <Textarea
+              id="locations"
+              rows={2}
+              maxLength={400}
+              placeholder="Bengaluru, Pune, pan-India online"
+              value={form.locations}
+              onChange={(e) => set("locations", e.target.value)}
+            />
+          </Field>
+        </ProfileSection>
 
-      <section className="surface space-y-4 p-6">
-        <div>
-          <h2 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">
-            More about your brand <span className="font-normal normal-case">(optional)</span>
-          </h2>
-          <p className="mt-1 text-sm text-muted-foreground">
-            The more you tell LOVIZA, the more specific and varied your content gets. Leave anything blank to skip it.
-          </p>
-        </div>
-        <div className="grid gap-4 sm:grid-cols-2">
-          <div className="space-y-2">
-            <Label htmlFor="industry">Industry</Label>
-            <Input
-              id="industry"
-              maxLength={120}
-              placeholder="Skincare, CA firm, restaurant, SaaS..."
-              value={form.industry}
-              onChange={(e) => set("industry", e.target.value)}
+        <ProfileSection title="Who you speak to" hint="Your audience and how you sound.">
+          <Field id="icp" label="Ideal customer profile (ICP)">
+            <Textarea
+              id="icp"
+              rows={3}
+              maxLength={2000}
+              value={form.icp}
+              onChange={(e) => set("icp", e.target.value)}
             />
-          </div>
-          <div className="space-y-2">
-            <Label htmlFor="languages">Languages your audience speaks</Label>
-            <Input
-              id="languages"
-              maxLength={120}
-              placeholder="English, Hindi, Marathi"
-              value={form.languages}
-              onChange={(e) => set("languages", e.target.value)}
+          </Field>
+          <Field id="propositions" label="Value propositions">
+            <Textarea
+              id="propositions"
+              rows={3}
+              maxLength={2000}
+              value={form.propositions}
+              onChange={(e) => set("propositions", e.target.value)}
             />
+          </Field>
+          <div className="grid gap-4 sm:grid-cols-2">
+            <Field id="tone" label="Tone of voice">
+              <Input
+                id="tone"
+                maxLength={200}
+                placeholder="Confident, warm, jargon-free"
+                value={form.tone}
+                onChange={(e) => set("tone", e.target.value)}
+              />
+            </Field>
+            <Field id="keywords" label="Focus keywords">
+              <Input
+                id="keywords"
+                maxLength={300}
+                placeholder="crm for clinics, patient retention"
+                value={form.keywords}
+                onChange={(e) => set("keywords", e.target.value)}
+              />
+            </Field>
           </div>
-        </div>
-        <div className="space-y-2">
-          <Label htmlFor="current_offers">Current offers</Label>
-          <Textarea
-            id="current_offers"
-            rows={3}
-            maxLength={1000}
-            placeholder="Free audit this month; 20% off annual plans until 31 Dec"
-            value={form.current_offers}
-            onChange={(e) => set("current_offers", e.target.value)}
-          />
-        </div>
-        <div className="space-y-2">
-          <Label htmlFor="testimonials">Real customer testimonials</Label>
-          <Textarea
-            id="testimonials"
-            rows={4}
-            maxLength={1500}
-            placeholder={'"Saved us 10 hours a week" - Priya, founder, Acme (only real quotes you have permission to use)'}
-            value={form.testimonials}
-            onChange={(e) => set("testimonials", e.target.value)}
-          />
-        </div>
-        <div className="grid gap-4 sm:grid-cols-2">
-          <div className="space-y-2">
-            <Label htmlFor="competitors">Competitors</Label>
+          <Field id="voice_dos_donts" label="Voice do's and don'ts">
+            <Textarea
+              id="voice_dos_donts"
+              rows={3}
+              maxLength={1000}
+              placeholder="Do: speak plainly, use real examples. Don't: use slang, emojis in headlines, or the word 'cheap'."
+              value={form.voice_dos_donts}
+              onChange={(e) => set("voice_dos_donts", e.target.value)}
+            />
+          </Field>
+        </ProfileSection>
+      </div>
+
+      <ProfileSection
+        title="Offers, proof and rules"
+        hint="Optional. The more you add, the more specific your content gets. Leave anything blank to skip it."
+      >
+        <div className="grid gap-4 lg:grid-cols-2">
+          <Field id="current_offers" label="Current offers">
+            <Textarea
+              id="current_offers"
+              rows={3}
+              maxLength={1000}
+              placeholder="Free audit this month; 20% off annual plans until 31 Dec"
+              value={form.current_offers}
+              onChange={(e) => set("current_offers", e.target.value)}
+            />
+          </Field>
+          <Field id="testimonials" label="Real customer testimonials">
+            <Textarea
+              id="testimonials"
+              rows={3}
+              maxLength={1500}
+              placeholder={'"Saved us 10 hours a week" - Priya, founder, Acme (only real quotes you have permission to use)'}
+              value={form.testimonials}
+              onChange={(e) => set("testimonials", e.target.value)}
+            />
+          </Field>
+          <Field id="competitors" label="Competitors">
             <Textarea
               id="competitors"
               rows={3}
@@ -869,47 +876,53 @@ function BrandProfilePage() {
               value={form.competitors}
               onChange={(e) => set("competitors", e.target.value)}
             />
-          </div>
-          <div className="space-y-2">
-            <Label htmlFor="locations">Locations you serve</Label>
+          </Field>
+          <Field id="compliance_notes" label="Compliance notes">
             <Textarea
-              id="locations"
+              id="compliance_notes"
               rows={3}
-              maxLength={400}
-              placeholder="Bengaluru, Pune, pan-India online"
-              value={form.locations}
-              onChange={(e) => set("locations", e.target.value)}
+              maxLength={1000}
+              placeholder="Claims or words that must or must not appear, e.g. 'Never promise results' or 'Always add: T&C apply'"
+              value={form.compliance_notes}
+              onChange={(e) => set("compliance_notes", e.target.value)}
             />
-          </div>
+          </Field>
         </div>
-        <div className="space-y-2">
-          <Label htmlFor="voice_dos_donts">Voice do's and don'ts</Label>
-          <Textarea
-            id="voice_dos_donts"
-            rows={3}
-            maxLength={1000}
-            placeholder="Do: speak plainly, use real examples. Don't: use slang, emojis in headlines, or the word 'cheap'."
-            value={form.voice_dos_donts}
-            onChange={(e) => set("voice_dos_donts", e.target.value)}
-          />
-        </div>
-        <div className="space-y-2">
-          <Label htmlFor="compliance_notes">Compliance notes</Label>
-          <Textarea
-            id="compliance_notes"
-            rows={3}
-            maxLength={1000}
-            placeholder="Claims or words that must or must not appear, e.g. 'Never promise results' or 'Always add: T&C apply'"
-            value={form.compliance_notes}
-            onChange={(e) => set("compliance_notes", e.target.value)}
-          />
-        </div>
-      </section>
+      </ProfileSection>
 
       <ChannelConnections
         brandId={isAgency ? (activeBrand?.id ?? null) : (data?.id ?? null)}
         onConnections={syncHandles}
       />
+    </div>
+  );
+}
+
+function ProfileSection({
+  title,
+  hint,
+  children,
+}: {
+  title: string;
+  hint?: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <section className="surface p-5">
+      <div className="mb-4">
+        <h2 className="text-base font-semibold">{title}</h2>
+        {hint && <p className="mt-0.5 text-sm text-muted-foreground">{hint}</p>}
+      </div>
+      <div className="space-y-4">{children}</div>
+    </section>
+  );
+}
+
+function Field({ id, label, children }: { id: string; label: string; children: React.ReactNode }) {
+  return (
+    <div className="space-y-1.5">
+      <Label htmlFor={id}>{label}</Label>
+      {children}
     </div>
   );
 }

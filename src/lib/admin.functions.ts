@@ -102,7 +102,25 @@ export const getAdminStats = createServerFn({ method: "POST" })
       if (!latestSubByUser.has(s.user_id)) latestSubByUser.set(s.user_id, s);
     }
 
-    const subscriberRows = profileRows.map((p) => {
+    // Anyone who signed up but has no profile row yet must still appear in the list.
+    const knownIds = new Set(profileRows.map((p) => p.id));
+    const extraUsers: Array<{ id: string; email: string; full_name: string | null; plan: string | null; created_at: string }> = [];
+    try {
+      for (let page = 1; page <= 20; page++) {
+        const { data: authPage } = await supabaseAdmin.auth.admin.listUsers({ page, perPage: 1000 });
+        const batch = authPage?.users ?? [];
+        for (const u of batch) {
+          if (!knownIds.has(u.id)) {
+            extraUsers.push({ id: u.id, email: u.email ?? "", full_name: null, plan: null, created_at: u.created_at });
+          }
+        }
+        if (batch.length < 1000) break;
+      }
+    } catch {
+      // The profile list is still shown if the auth listing is unavailable.
+    }
+
+    const subscriberRows = [...profileRows, ...extraUsers].map((p) => {
       const sub = latestSubByUser.get(p.id);
       return {
         id: p.id,
@@ -122,7 +140,7 @@ export const getAdminStats = createServerFn({ method: "POST" })
     return {
       isRoot: access.isRoot,
       primaryRootEmail: PRIMARY_ROOT_EMAIL,
-      subscribers: profileRows.length,
+      subscribers: profileRows.length + extraUsers.length,
       activeSubscriptions: active.length,
       expiredSubscriptions: expired.length,
       mrr: active.reduce((sum, s) => sum + (s.price_cents ?? 0), 0) / 100,
@@ -149,6 +167,61 @@ export const getAdminStats = createServerFn({ method: "POST" })
         })),
       roles: roleRows,
     };
+  });
+
+/** Month-by-month business growth for the last 12 months (admin only). */
+export const getGrowthSeries = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .handler(async ({ context }) => {
+    await assertAdmin(context);
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    const [profiles, subs] = await Promise.all([
+      supabaseAdmin.from("profiles").select("id, created_at"),
+      supabaseAdmin
+        .from("subscriptions")
+        .select("user_id, plan, price_cents, billing_period, status, created_at, cancelled_at, current_period_end"),
+    ]);
+    const now = new Date();
+    const months: Array<{ key: string; label: string; start: number; end: number }> = [];
+    for (let i = 11; i >= 0; i--) {
+      const start = Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - i, 1);
+      const end = Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - i + 1, 1) - 1;
+      const d = new Date(start);
+      months.push({
+        key: d.toISOString().slice(0, 7),
+        label: d.toLocaleString("en-US", { month: "short", year: "2-digit", timeZone: "UTC" }),
+        start,
+        end,
+      });
+    }
+    const paid = (subs.data ?? []).filter((s) => ["starter", "growth", "scale"].includes(s.plan));
+    const ts = (v: string | null) => (v ? new Date(v).getTime() : null);
+    const profileTimes = (profiles.data ?? []).map((p) => new Date(p.created_at).getTime());
+
+    return months.map((m) => {
+      // A subscription counts in a month if it had started by month end and had not ended before month start.
+      const live = paid.filter((s) => {
+        const started = ts(s.created_at) ?? 0;
+        const ended = ts(s.cancelled_at) ?? ts(s.current_period_end) ?? Number.POSITIVE_INFINITY;
+        return started <= m.end && ended >= m.start;
+      });
+      const byPlan = (plan: string) => live.filter((s) => s.plan === plan).length;
+      const yearly = live.filter((s) => s.billing_period !== "monthly");
+      const monthly = live.filter((s) => s.billing_period === "monthly");
+      const price = (s: (typeof live)[number]) => (s.price_cents ?? 0) / 100;
+      return {
+        month: m.label,
+        subscribers: profileTimes.filter((t) => t <= m.end).length,
+        newSignups: profileTimes.filter((t) => t >= m.start && t <= m.end).length,
+        paying: live.length,
+        starter: byPlan("starter"),
+        growth: byPlan("growth"),
+        scale: byPlan("scale"),
+        monthlyBilled: monthly.length,
+        annualBilled: yearly.length,
+        mrr: Math.round(monthly.reduce((a, s) => a + price(s), 0) + yearly.reduce((a, s) => a + price(s) / 12, 0)),
+      };
+    });
   });
 
 const editSubscriberInput = z.object({

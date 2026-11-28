@@ -81,7 +81,7 @@ export function OneTimeGenerate() {
 
   if (pass && !pass.used) {
     return (
-      <div className="mt-6 rounded-xl border border-border bg-muted/40 p-4 text-sm">
+      <div className="mt-4 rounded-xl border border-border bg-muted/40 p-3 text-sm">
         <p className="font-medium">Your one-time generation is ready.</p>
         <p className="mt-1 text-muted-foreground">
           Open the Content Calendar and press Generate Content. Valid until{" "}
@@ -95,7 +95,7 @@ export function OneTimeGenerate() {
   }
 
   return (
-    <div className="mt-6 rounded-xl border border-border bg-muted/40 p-4 text-sm">
+    <div className="mt-4 rounded-xl border border-border bg-muted/40 p-3 text-sm">
       <p className="font-medium">Just need this week's content?</p>
       <p className="mt-1 text-muted-foreground">
         Pay {formatINR(ONE_TIME_PRICE_INR)} once to generate the current week's content one time. No

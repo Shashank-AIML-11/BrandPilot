@@ -28,6 +28,7 @@ import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { AdminReferrals } from "@/components/admin-referrals";
 import { AdminAffiliates } from "@/components/admin-affiliates";
 import { AdminAutomation } from "@/components/admin-automation";
+import { AdminBrain } from "@/components/admin-brain";
 import {
   Table,
   TableHeader,
@@ -191,6 +192,7 @@ function AdminPage() {
           {data.isRoot && <TabsTrigger value="referrals">Referrals</TabsTrigger>}
           {data.isRoot && <TabsTrigger value="affiliates">Affiliates</TabsTrigger>}
           <TabsTrigger value="automation">Automation</TabsTrigger>
+          <TabsTrigger value="brain">Brain</TabsTrigger>
         </TabsList>
 
         {/* ===================== DASHBOARD ===================== */}
@@ -464,6 +466,10 @@ function AdminPage() {
             </TabsContent>
           </>
         )}
+
+        <TabsContent value="brain" className="pt-4">
+          <AdminBrain />
+        </TabsContent>
 
         <TabsContent value="automation" className="pt-4">
           <AdminAutomation />

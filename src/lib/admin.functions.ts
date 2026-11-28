@@ -324,3 +324,54 @@ export const deleteUser = createServerFn({ method: "POST" })
     if (error) throw new Error(error.message);
     return { ok: true };
   });
+
+/** Recent generated posts with the brain's decisions: pillar, hook, angle, reason, editor score, poster design status. */
+export const getGenerationDecisions = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .handler(async ({ context }) => {
+    await assertAdmin(context);
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    const { data } = await supabaseAdmin
+      .from("content_items")
+      .select("id, title, type, scheduled_date, created_at, brand_id, style_meta" as never)
+      .not("style_meta" as never, "is", null)
+      .order("created_at", { ascending: false })
+      .limit(80);
+    const rows = (data ?? []) as unknown as Array<{
+      id: string;
+      title: string | null;
+      type: string;
+      scheduled_date: string | null;
+      created_at: string;
+      brand_id: string | null;
+      style_meta: Record<string, unknown> | null;
+    }>;
+    const ids = [...new Set(rows.map((r) => r.brand_id).filter((x): x is string => !!x))];
+    const names = new Map<string, string>();
+    if (ids.length) {
+      const { data: brands } = await supabaseAdmin.from("brand_profiles").select("id, business_name").in("id", ids);
+      for (const b of (brands ?? []) as unknown as Array<{ id: string; business_name?: string | null }>) names.set(b.id, b.business_name ?? "");
+    }
+    return {
+      items: rows.map((r) => {
+        const m = (r.style_meta ?? {}) as { pillar?: string; hook?: string; angle?: string; why?: string; recipe?: string; template?: string; design?: string; q?: { score?: number; fixed?: boolean; note?: string } };
+        return {
+          id: r.id,
+          title: r.title ?? "",
+          type: r.type,
+          date: r.scheduled_date,
+          brand: r.brand_id ? names.get(r.brand_id) ?? "" : "",
+          pillar: m.pillar ?? "",
+          hook: m.hook ?? "",
+          angle: m.angle ?? "",
+          why: m.why ?? "",
+          recipe: m.recipe ?? "",
+          template: m.template ?? "",
+          design: m.design ?? "",
+          score: m.q?.score ?? null,
+          rewritten: !!m.q?.fixed,
+          note: m.q?.note ?? "",
+        };
+      }),
+    };
+  });

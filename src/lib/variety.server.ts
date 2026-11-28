@@ -354,6 +354,8 @@ export function varietyContext(
 Each piece below has its own content pillar, hook style and, for image posts, its own poster template. Write that piece on that pillar, in that hook style, telling that angle. Do NOT reuse the same opening, structure or angle across pieces. Write like a person who knows this business: concrete details, plain words, no stock phrases such as "unlock", "elevate", "game-changer" or "in today's fast-paced world".
 ${lines.join("\n")}${occasions}${photos}
 
+Poster text (image posts): the picture carries the message, so the image_prompt text must be scroll-stopping, not a label. The HEADLINE is built from that piece's hook style and angle: a specific number, a direct question, a bold claim or a "you" line, 4 to 7 words, using a real fact from the brand. The 3 points are concrete (a size, a price, a material, a time, a place), 2 to 5 words each. The CTA is one clear next step. Never write a headline that is only the brand name, a topic word or a generic benefit such as "Quality you can trust".
+
 Craft rules for video scripts and captions (from the pattern library):
 ${craftRules(SEED_PATTERNS, { india: true })}
 === END CONTENT PLAN ===`;

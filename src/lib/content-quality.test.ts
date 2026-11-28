@@ -214,8 +214,9 @@ describe("last-line clean-up", () => {
   const brand = "Smile Studio Dental. Fixed prices. Free first consultation.";
   it("flags placeholders and promises the brand never made, but not script markers", () => {
     expect(claimsOf({ title: "Root canal", caption: "Try the [thing] today", scheduled_date: "2026-12-08" }, brand).join(" ")).toMatch(/placeholder/);
-    expect(claimsOf({ title: "Painless root canal", caption: "ok", scheduled_date: "2026-12-08" }, brand).join(" ")).toMatch(/never made/);
-    expect(claimsOf({ title: "Painless root canal", caption: "ok", scheduled_date: "2026-12-08" }, `${brand} painless`).length).toBe(0);
+    expect(claimsOf({ title: "Guaranteed results", caption: "ok", scheduled_date: "2026-12-08" }, brand).join(" ")).toMatch(/never made/);
+    expect(claimsOf({ title: "Guaranteed results", caption: "ok", scheduled_date: "2026-12-08" }, `${brand} guaranteed`).length).toBe(0);
+    expect(claimsOf({ title: "Painless root canal", caption: "ok", scheduled_date: "2026-12-08" }, `${brand} painless`).join(" ")).toMatch(/cannot make/);
     expect(claimsOf({ title: "Demo", caption: "ok", video_script: "[HOOK] Hi. [BODY] Fixed prices. [CTA] Book.", scheduled_date: "2026-12-08" }, brand).length).toBe(0);
   });
   it("keeps X posts short, scripts finished and poster text free of made-up acronyms", () => {
@@ -228,5 +229,21 @@ describe("last-line clean-up", () => {
     expect(String(rows[0]!["caption"]).length).toBeLessThanOrEqual(280);
     expect(String(rows[1]!["video_script"])).toMatch(/plan\.$/);
     expect(String(rows[2]!["image_prompt"])).toMatch(/^Draft a GST invoice/);
+  });
+});
+
+describe("hard promises and poster numbers", () => {
+  it("flags painless and instant even when the brand text mentions the word", () => {
+    const r = { title: "Painless Root Canal Experience", caption: "Instant payment for you", image_prompt: "", scheduled_date: "2026-12-10" } as never;
+    const out = unsupportedClaims(r, "Compliance notes: never promise painless results");
+    expect(out.join(" ")).toMatch(/painless/i);
+  });
+  it("flags instant promises", () => {
+    const r = { title: "Get paid", caption: "Instant payment for you", image_prompt: "", scheduled_date: "2026-12-10" } as never;
+    expect(unsupportedClaims(r, "LedgerLoop invoices").join(" ")).toMatch(/instant/i);
+  });
+  it("checks numbers written only in the poster text", () => {
+    const r = { title: "Fixed prices", caption: "Clear prices", image_prompt: "Save up to 20% || x || y", scheduled_date: "2026-12-12" } as never;
+    expect(unsupportedClaims(r, "Smile Studio fixed prices").join(" ")).toMatch(/20/);
   });
 });

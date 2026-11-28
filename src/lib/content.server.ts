@@ -350,7 +350,7 @@ export const SAFETY_IMAGE_SUFFIX =
  * "700-1000" once ACTIVE_CONTENT_TYPES below is back to all 11 and
  * quotas are tuned.
  */
-export const BLOG_WORD_TARGET = "100-150";
+export const BLOG_WORD_TARGET = "300-400";
 
 export const SYSTEM_PROMPT = `LANGUAGE: Write EVERYTHING in clear, natural English only (titles, captions, hashtags, scripts, image prompts, blog text), even if the brand profile contains words from another language. Never output non-English text and never mix two languages inside one piece, not even a single Hindi word or sentence.
 
@@ -673,7 +673,7 @@ Rules:
 - hashtags: one space-separated string, 4-6 tags from the brand's keywords/niche/name.
 - caption: ready-to-post, platform-appropriate length and tone, in the brand's voice.
 - script (video types): spoken narration, [HOOK]/[BODY]/[CTA] markers, full sentences (no bullet fragments), names the business + product. Reels/Shorts/TikTok: 15-45s. product_service_video: 60-90s.
-- image_prompt: on-image text lines for single-image types (drawn from real brand products/propositions); for video types, describes the thumbnail with a short (max 5 words) headline.
+- image_prompt: on-image text lines for single-image types (drawn from real brand products/propositions). The FIRST line is the poster headline: a specific, concrete benefit or fact taken from the brand information, 3-8 words. Never a label or teaser such as "A day in...", "3 wins", "Our story", "Behind the scenes", "Meet...". Never a number, percentage or duration that is not in the brand information. for video types, describes the thumbnail with a short (max 5 words) headline.
 - slides (carousel only): 3-6 objects, each with headline + one-line subtext + its own image_prompt, forming one argument (hook → proof → CTA).
 - time: 24h "HH:MM", spread through the working day.
 - Vary angles, no repeated hooks/structure: education, product spotlight, pain point, myth-busting, proof, behind-the-scenes, industry insight, offer — always this brand specifically.

@@ -65,7 +65,7 @@ const hash = (s: string) => [...s].reduce((a, c) => (a * 31 + c.charCodeAt(0)) >
  *   HEADLINE || FEATURE 1 || FEATURE 2 || FEATURE 3 || CTA
  * Older items (without that format) fall back to the title and summary.
  */
-const WEAK_HEADLINE = /^(how it works|why choose us|our services|quality you can trust|about us|welcome|checklist|tips|guide|benefits|features|overview|our process|learn more)\b/i;
+const WEAK_HEADLINE = /^(a day in|day in the life|inside\b|behind the scenes|meet\b|\d+ (?:wins|ways|tips|things|reasons)\b|how to win|our (?:team|story|mission)|how it works|why choose us|our services|quality you can trust|about us|welcome|checklist|tips|guide|benefits|features|overview|our process|learn more)\b/i;
 
 export function posterCopyFor(
   item: { title?: string | null; summary?: string | null; image_prompt?: string | null },

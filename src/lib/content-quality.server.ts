@@ -122,12 +122,15 @@ export interface RuleFinding {
 
 const STORY = /\b([Mm]eet [A-Z][a-z]+|went from \d|real stories?|success stor(?:y|ies)|a customer (?:said|told)|one of our (?:customers|clients|students|patients|parents))\b/;
 const PLACEHOLDER_RE = /\[(?!(?:HOOK|BODY|CTA)\])[A-Za-z][^\]\n]{0,30}\]/i;
-const RISK_RE = /\b(guarantee[ds]?|risk[- ]free|pain[- ]?free|painless|no pain|cures?|100% (?:safe|natural|effective|secure))\b/i;
+const RISK_RE = /\b(guarantee[ds]?|risk[- ]free|100% (?:safe|natural|effective|secure))\b/i;
+// Health and speed promises are never allowed on the brand's say-so: a compliance note that says
+// "never promise pain-free" mentions the word too, so the brand text cannot clear them.
+const HARD_RISK_RE = /\b(pain[- ]?free|painless(?:ly)?|no pain|zero pain|cures?|instant(?:ly)?|same[- ]day (?:cash|payment|results?)|overnight results?)\b/i;
 const FESTIVAL_RE = /diwali|dhanteras|holi\b|christmas|new year|raksha bandhan|rakhi|eid\b|navratri|dussehra|ganesh chaturthi|valentine|black friday|pongal|sankranti|onam|janmashtami|karwa chauth/i;
 
 /** What a piece says that the brand information does not back up. Empty when the piece is clean. */
 export function unsupportedClaims(r: Row, brandText: string): string[] {
-  const t = `${text(r["title"])} ${text(r["caption"])} ${text(r["video_script"])} ${text(r["body"]).slice(0, 1500)}`;
+  const t = `${text(r["title"])} ${text(r["caption"])} ${text(r["video_script"])} ${text(r["body"]).slice(0, 1500)} ${text(r["image_prompt"]).replace(/\|\|?/g, " ")}`;
   const date = text(r["scheduled_date"]);
   const near = date ? occasionLine(date) : "";
   const allowed = `${brandText} ${near} ${date}`;
@@ -139,6 +142,8 @@ export function unsupportedClaims(r: Row, brandText: string): string[] {
   if (ph) out.push(`a leftover placeholder (${ph})`);
   const risk = t.match(RISK_RE)?.[1];
   if (risk && !brandText.toLowerCase().includes(risk.toLowerCase())) out.push(`a promise the brand never made (${risk})`);
+  const hard = t.match(HARD_RISK_RE)?.[1];
+  if (hard) out.push(`a promise the brand cannot make (${hard})`);
   const fest = t.match(FESTIVAL_RE)?.[0];
   if (fest && date && !near.toLowerCase().includes(fest.toLowerCase().split(/\s+/)[0]!)) out.push(`mentions "${fest}" but no such occasion is near ${date}`);
   return out;

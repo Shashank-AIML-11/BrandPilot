@@ -299,7 +299,7 @@ export function AppShell({ children }: { children: ReactNode }) {
           <Menu className="h-5 w-5" />
         </Button>
         <Link to="/calendar" className="font-display text-lg font-bold tracking-tight">
-          LOVIZA<span className="text-primary">.</span>
+          LOVIZA<span className="text-[1.2em] text-primary">AI</span>
         </Link>
       </header>
 
@@ -330,7 +330,7 @@ export function AppShell({ children }: { children: ReactNode }) {
         )}
       >
         <Link to="/calendar" className="flex h-10 flex-none items-center px-4 font-display text-lg font-bold tracking-tight">
-          LOVIZA<span className="text-primary">.</span>
+          LOVIZA<span className="text-[1.2em] text-primary">AI</span>
         </Link>
         <div className="min-h-0 flex-1 overflow-y-auto px-3 pb-2 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
           {agencyPlan ? (
@@ -382,12 +382,12 @@ export function AppShell({ children }: { children: ReactNode }) {
                   <p className="mt-1 font-display text-lg font-semibold capitalize">
                     {activePlan ? activePlan.name : "No Active Plan"}
                   </p>
-                  <Button size="sm" variant="outline" className="mt-3 w-full" asChild>
+                  <Button size="sm" variant="outline" className="mx-auto mt-3 flex w-36" asChild>
                     <Link to="/pricing">{activePlan ? "Upgrade" : "Choose a plan"}</Link>
                   </Button>
                   {!activePlan && <SidebarOneTimeButton />}
                 </div>
-                <Button size="sm" variant="outline" className="mt-3 w-full" asChild>
+                <Button size="sm" variant="outline" className="mx-auto mt-3 flex w-36" asChild>
                   <Link to="/referrals">Refer &amp; EARN 20%</Link>
                 </Button>
                 {sidebarFooter}

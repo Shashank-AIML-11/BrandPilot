@@ -93,7 +93,7 @@ function PricingPage() {
     <div className="flex h-screen flex-col overflow-hidden bg-background">
       <header className="mx-auto flex w-full max-w-6xl shrink-0 items-center justify-between px-6 py-4">
         <Link to="/" className="font-display text-lg font-bold">
-          LOVIZA<span className="text-primary">.</span>
+          LOVIZA<span className="text-[1.2em] text-primary">AI</span>
         </Link>
         <Button variant="outline" asChild>
           <Link to={session ? "/calendar" : "/auth"}>{session ? "Back to Main" : "Sign in"}</Link>

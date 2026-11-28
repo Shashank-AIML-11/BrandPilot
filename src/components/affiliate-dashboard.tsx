@@ -300,7 +300,7 @@ export function AffiliateDashboard() {
         <h2 className="flex items-center gap-2 font-semibold">
           <Wallet className="h-4 w-4" /> Your earnings
         </h2>
-        <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
+        <div className="grid grid-cols-2 gap-3">
           <Tile
             label="On hold"
             value={formatPaise(data.pendingPaise)}

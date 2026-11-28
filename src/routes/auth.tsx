@@ -173,7 +173,7 @@ function AuthPage() {
     <div className="grid min-h-screen lg:grid-cols-2">
       <div className="grid-noise hidden flex-col p-12 lg:flex">
         <Link to="/" className="font-display text-lg font-bold">
-          LOVIZA<span className="text-primary">.</span>
+          LOVIZA<span className="text-[1.2em] text-primary">AI</span>
         </Link>
         <div className="flex flex-1 items-center justify-center text-center">
           <div>
@@ -194,7 +194,7 @@ function AuthPage() {
       <div className="flex items-center justify-center px-6 py-16">
         <div className="w-full max-w-sm">
           <Link to="/" className="font-display text-lg font-bold lg:hidden">
-            LOVIZA<span className="text-primary">.</span>
+            LOVIZA<span className="text-[1.2em] text-primary">AI</span>
           </Link>
           <h1 className="mt-6 text-2xl font-bold">
             {mode === "signin" && "Sign in"}

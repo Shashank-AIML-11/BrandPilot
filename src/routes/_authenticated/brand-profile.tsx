@@ -737,7 +737,7 @@ function BrandProfilePage() {
         />
       </ProfileSection>
 
-      <div className="grid items-start gap-5 xl:grid-cols-2">
+      <div className="grid gap-5 xl:grid-cols-2">
         <ProfileSection title="What you sell" hint="Facts LOVIZA may use in your content.">
           <Field id="description" label="Business description">
             <Textarea

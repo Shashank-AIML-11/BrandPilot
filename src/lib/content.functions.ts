@@ -1243,7 +1243,7 @@ export const queueMonthGeneration = createServerFn({ method: "POST" })
       throw new Error("No upcoming days left to generate in this month.");
     }
 
-    const { weeklyContentPlan, renderingRowsForDay, activePlatforms, CONTENT_TYPES, carouselsEnabled } =
+    const { weeklyContentPlan, renderingRowsForDay, activePlatforms, CONTENT_TYPES, withoutCarousels } =
       await import("@/lib/content.server");
 
     /*
@@ -1263,12 +1263,7 @@ export const queueMonthGeneration = createServerFn({ method: "POST" })
      * They stay off until CAROUSEL_ENABLED=true is set (same switch as the
      * automatic weekly generation).
      */
-    if (!carouselsEnabled()) {
-      for (const date of dates) {
-        const quota = contentPlan[date];
-        if (quota) quota.carousel = 0;
-      }
-    }
+    withoutCarousels(contentPlan);
 
     const scheduledDates = dates.filter((date) => {
       const quota = contentPlan[date];

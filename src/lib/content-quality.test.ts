@@ -83,3 +83,30 @@ describe("pattern library", () => {
     expect(anglesFor(SEED_PATTERNS, "food").length).toBeGreaterThan(anglesFor(SEED_PATTERNS, null).length);
   });
 });
+
+import { brandContext, withoutCarousels, weeklyContentPlan } from "@/lib/content.server";
+
+describe("brand profile coverage", () => {
+  it("passes every filled profile field into the writer's brand context", () => {
+    const tokens = {
+      business_name: "zzName", website: "zzSite", description: "zzDesc", products_services: "zzProducts", icp: "zzIcp",
+      propositions: "zzProps", tone: "zzTone", keywords: "zzKeys", industry: "zzIndustry", current_offers: "zzOffers",
+      testimonials: "zzTesti", competitors: "zzComp", locations: "zzPlaces", languages: "zzLang",
+      voice_dos_donts: "zzVoice", compliance_notes: "zzRules",
+    };
+    const ctx = brandContext({ ...tokens, social_handles: { Instagram: "zzHandle" }, brand_colors: { primary: "#112233", secondary: "#445566", accent: "#778899" } } as never);
+    for (const t of Object.values(tokens)) expect(ctx, t).toContain(t);
+    expect(ctx).toContain("zzHandle");
+    expect(ctx).toContain("#112233");
+  });
+  it("uses Hinglish when the audience languages say so", () => {
+    expect(brandContext({ business_name: "x", languages: "Hindi, English", social_handles: null } as never)).toContain("Hinglish");
+  });
+  it("gives every day of the week content even with carousels off", () => {
+    delete process.env["CAROUSEL_ENABLED"];
+    const dates = ["2026-12-21", "2026-12-22", "2026-12-23", "2026-12-24", "2026-12-25", "2026-12-26", "2026-12-27"];
+    const plan = weeklyContentPlan(dates);
+    withoutCarousels(plan);
+    for (const d of dates) expect(Object.values(plan[d]!).some((n) => n > 0), d).toBe(true);
+  });
+});

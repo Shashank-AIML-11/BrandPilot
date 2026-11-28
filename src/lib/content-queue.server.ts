@@ -191,6 +191,7 @@ export async function processGenerationQueue(admin: AdminClient, userId?: string
     // Ask once more for just the missing pieces instead of leaving "Content generation failed" slots.
     // Fails soft: if the second call also fails, the usual failed-slot handling below applies.
     let askedAgain = false;
+    let retryNote = "";
     try {
       const missingQuotas: Record<string, DailyContentQuota> = {};
       const missingTypes = new Set<string>();
@@ -228,7 +229,45 @@ export async function processGenerationQueue(admin: AdminClient, userId?: string
         rows = [...rows, ...extra];
       }
     } catch (retryError) {
+      retryNote = retryError instanceof Error ? retryError.message.slice(0, 120) : "second pass failed";
       console.warn("[generate] second pass for missing pieces failed", retryError);
+    }
+
+    // Last resort: anything still missing is requested one piece at a time (a small call is far
+    // less likely to be cut short), at most 4 pieces so cost stays bounded.
+    try {
+      const stillMissing: Array<{ date: string; type: keyof DailyContentQuota }> = [];
+      for (const date of batchDates) {
+        for (const type of Object.keys(quotas[date] ?? {}) as Array<keyof DailyContentQuota>) {
+          const want = quotas[date]?.[type] ?? 0;
+          const got = rows.filter((r) => String(r.scheduled_date) === date && String(r.type) === type).length;
+          for (let k = got; k < want; k += 1) stillMissing.push({ date, type });
+        }
+      }
+      for (const m of stillMissing.slice(0, 4)) {
+        try {
+          const one: Record<string, DailyContentQuota> = { [m.date]: { ...emptyQuota(), [m.type]: 1 } as DailyContentQuota };
+          const single = await chatJSON<{ days?: Array<Record<string, unknown>> }>(
+            SYSTEM_PROMPT,
+            weekPrompt(brand as never, [m.date], strategy, one, [m.type] as never, brainContext),
+            buildWeekResponseSchema([m.type] as never),
+          );
+          const day = (single.days ?? [])[0] ?? {};
+          rows = [
+            ...rows,
+            ...rowsForDay(
+              day as never,
+              { userId: job.user_id, brandId: brand.id, date: m.date, platforms, autopost: entitlement.plan.autoPost, styles: brainPlan },
+              one[m.date]!,
+            ),
+          ];
+        } catch (singleError) {
+          retryNote = `${m.type}: ${singleError instanceof Error ? singleError.message.slice(0, 100) : "failed"}`;
+          console.warn(`[generate] single-piece retry failed for ${m.type} on ${m.date}`, singleError);
+        }
+      }
+    } catch {
+      /* fail soft */
     }
 
     if (!rows.length) {
@@ -364,7 +403,7 @@ export async function processGenerationQueue(admin: AdminClient, userId?: string
           .update({
             status: "failed",
             title: "Content generation failed",
-            summary: `The AI generator did not return content for this slot (${placeholder.type} on ${placeholder.scheduled_date}; asked again: ${askedAgain ? "yes" : "no"}; got ${generatedRows.filter((r) => String(r.scheduled_date) === placeholder.scheduled_date && String(r.type) === placeholder.type).length} of ${quotas[placeholder.scheduled_date]?.[placeholder.type as keyof DailyContentQuota] ?? 0}).`,
+            summary: `The AI generator did not return content for this slot (${placeholder.type} on ${placeholder.scheduled_date}; asked again: ${askedAgain ? "yes" : "no"}${retryNote ? `; last error: ${retryNote}` : ""}; got ${generatedRows.filter((r) => String(r.scheduled_date) === placeholder.scheduled_date && String(r.type) === placeholder.type).length} of ${quotas[placeholder.scheduled_date]?.[placeholder.type as keyof DailyContentQuota] ?? 0}).`,
           })
           .eq("id", placeholder.id)
           .eq("user_id", job.user_id);

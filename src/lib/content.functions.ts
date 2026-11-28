@@ -1243,7 +1243,7 @@ export const queueMonthGeneration = createServerFn({ method: "POST" })
       throw new Error("No upcoming days left to generate in this month.");
     }
 
-    const { weeklyContentPlan, renderingRowsForDay, activePlatforms, CONTENT_TYPES, withoutCarousels } =
+    const { weeklyContentPlan, renderingRowsForDay, activePlatforms, CONTENT_TYPES, withoutCarousels, withoutUnavailableChannels } =
       await import("@/lib/content.server");
 
     /*
@@ -1264,6 +1264,7 @@ export const queueMonthGeneration = createServerFn({ method: "POST" })
      * automatic weekly generation).
      */
     withoutCarousels(contentPlan);
+    withoutUnavailableChannels(contentPlan, brand as never);
 
     const scheduledDates = dates.filter((date) => {
       const quota = contentPlan[date];

@@ -28,6 +28,8 @@ function groqKey() {
 export interface ChatOptions {
   /** Groq model id. Default: the fast model used for all content writing. */
   model?: string;
+  /** Use exactly this model id on whichever provider is active (used by the scoring test's judge). */
+  modelOverride?: string;
   reasoningEffort?: "low" | "medium" | "high";
   /** Output cap (reasoning tokens count towards it). */
   maxTokens?: number;
@@ -128,7 +130,7 @@ async function chatJSONOnce<T>(
   const openrouter = (process.env["TEXT_PROVIDER"] ?? "").trim().toLowerCase() === "openrouter";
   const endpoint = openrouter ? "https://openrouter.ai/api/v1/chat/completions" : "https://api.groq.com/openai/v1/chat/completions";
   const apiKey = openrouter ? openrouterKey() : groqKey();
-  const modelName = openrouter ? (process.env["OPENROUTER_MODEL"]?.trim() || "openai/gpt-oss-20b") : (options.model ?? "openai/gpt-oss-20b");
+  const modelName = options.modelOverride || (openrouter ? (process.env["OPENROUTER_MODEL"]?.trim() || "openai/gpt-oss-20b") : (options.model ?? "openai/gpt-oss-20b"));
   const sendRequest = () => fetch(endpoint, {
     method: "POST",
     headers: {

@@ -251,7 +251,9 @@ async function runBrand(mock: Mock, dates: string[]): Promise<Judged[]> {
   const content = await import("@/lib/content.server");
   const { ensurePlaybook, playbookContext } = await import("@/lib/playbook.server");
   const { planVariety, varietyContext, slotsFromQuotas } = await import("@/lib/variety.server");
-  const { polishRows, clichesIn, numbersAllowed } = await import("@/lib/content-quality.server");
+  const { polishRows, clichesIn, numbersAllowed, withoutListCounts } = await import("@/lib/content-quality.server");
+  // the judge is a stronger model than the writer, so its marks are steady (set EVAL_JUDGE_MODEL to change)
+  const judgeModel = process.env["EVAL_JUDGE_MODEL"]?.trim() || "openai/gpt-oss-120b";
   const { chatJSON } = await import("@/lib/ai.server");
   const { occasionLine } = await import("@/lib/occasions");
   const { posterCopyFor } = await import("@/lib/poster.server");
@@ -263,6 +265,7 @@ async function runBrand(mock: Mock, dates: string[]): Promise<Judged[]> {
 
   const quotas = content.weeklyContentPlan(dates);
   content.withoutCarousels(quotas);
+  content.withoutUnavailableChannels(quotas, brand as never);
   const platforms = content.activePlatforms(brand as never);
   const rows: Array<Record<string, unknown>> = [];
   let remaining = Object.fromEntries(Object.entries(quotas).map(([d, q]) => [d, { ...q }])) as typeof quotas;
@@ -292,7 +295,8 @@ async function runBrand(mock: Mock, dates: string[]): Promise<Judged[]> {
       built.push(...content.rowsForDay(day as never, { userId: "eval-user", brandId: brand.id, date, platforms, autopost: false, styles: plan }, batch.quotas[date]!));
     });
     // the real queue asks once more for pieces the model left out; do the same here
-    const have = (d: string, t: string) => built.filter((r) => r["scheduled_date"] === d && r["type"] === t).length;
+    const have = (d: string, t: string) => built.filter((r) => r["scheduled_date"] === d && r["type"] === t && String(r["title"] ?? "").trim()).length;
+    for (let round = 1; round <= 2; round += 1) {
     const missingQuotas: typeof batch.quotas = {};
     const missingTypes = new Set<string>();
     for (const date of batch.dates) {
@@ -318,8 +322,9 @@ async function runBrand(mock: Mock, dates: string[]): Promise<Judged[]> {
           built.push(...content.rowsForDay(day as never, { userId: "eval-user", brandId: brand.id, date, platforms, autopost: false, styles: plan }, missingQuotas[date]!));
         });
       } catch (error) {
-        console.warn(`[eval] ${mock.key}: second ask for missing pieces failed: ${error instanceof Error ? error.message : error}`);
+        console.warn(`[eval] ${mock.key}: ask ${round} for missing pieces failed: ${error instanceof Error ? error.message : error}`);
       }
+    } else break;
     }
     rows.push(...built);
     remaining = Object.fromEntries(
@@ -356,7 +361,7 @@ async function runBrand(mock: Mock, dates: string[]): Promise<Judged[]> {
       JUDGE_SYSTEM,
       `BRAND INFORMATION AND PLAYBOOK:\n${brandText.slice(0, 6500)}\n\nPIECES:\n\n${chunkListing}\n\nReturn one item per piece with the same id.`,
       JUDGE_SCHEMA as never,
-      { reasoningEffort: "low", maxTokens: 3000 },
+      { reasoningEffort: "medium", maxTokens: 6000, modelOverride: judgeModel },
     );
     for (const it of res.items ?? []) judged.set(from + it.i, it);
   }
@@ -370,7 +375,7 @@ async function runBrand(mock: Mock, dates: string[]): Promise<Judged[]> {
         JUDGE_SYSTEM,
         `BRAND INFORMATION AND PLAYBOOK:\n${brandText.slice(0, 6500)}\n\nPIECES:\n\n${one}\n\nReturn one item per piece with the same id.`,
         JUDGE_SCHEMA as never,
-        { reasoningEffort: "low", maxTokens: 1500 },
+        { reasoningEffort: "medium", maxTokens: 4000, modelOverride: judgeModel },
       );
       if (res.items?.[0]) judged.set(i, res.items[0]);
     } catch {
@@ -388,13 +393,15 @@ async function runBrand(mock: Mock, dates: string[]): Promise<Judged[]> {
     if (/[ऀ-ॿ]/.test(text)) hard.push("contains non-English script");
     const cl = clichesIn(text);
     if (cl.length) hard.push(`stock phrases: ${cl.join(", ")}`);
-    if (!numbersAllowed(text, brandText)) hard.push("number not found in the brand information");
+    if (!numbersAllowed(withoutListCounts(text), `${brandText} ${p.date}`)) hard.push("number not found in the brand information");
     if (p.headline && /post|pinterest/.test(p.type)) {
       const words = p.headline.split(/\s+/).filter(Boolean).length;
       if (words < 2 || words > 10 || GENERIC_HEADLINE.test(p.headline) || p.headline.toLowerCase() === String(mock.brand["business_name"]).toLowerCase()) hard.push(`weak poster headline: "${p.headline}"`);
     }
     if (p.caption.length < 20 && !/blog/.test(p.type)) hard.push("caption too short");
-    return { ...p, usable: j.usable && hard.length === 0, score: j.score, issues: [...j.issues, ...hard], judge: j.usable ? "usable" : "not usable" };
+    // the judge's yes/no and its score must agree (7 means "post as it is")
+    const judgeOk = j.usable && j.score >= 7;
+    return { ...p, usable: judgeOk && hard.length === 0, score: j.score, issues: [...j.issues, ...(j.usable && !judgeOk ? [`judge said usable but scored ${j.score}/10`] : []), ...hard], judge: judgeOk ? "usable" : "not usable" };
   });
 }
 

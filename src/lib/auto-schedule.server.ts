@@ -19,6 +19,7 @@ import {
   renderingRowsForDay,
   activePlatforms,
   withoutCarousels,
+  withoutUnavailableChannels,
   CONTENT_TYPES,
 } from "@/lib/content.server";
 import { learnForBrand } from "@/lib/strategy-queue.server";
@@ -148,6 +149,7 @@ export async function runAutoGeneration(admin: Admin, now = new Date()) {
           );
           const contentPlan = weeklyContentPlan(weekDates);
           withoutCarousels(contentPlan);
+          withoutUnavailableChannels(contentPlan, b as never);
           const activeDates = weekDates.filter((d) => {
             const q = contentPlan[d];
             return !!q && CONTENT_TYPES.some((t) => q[t] > 0);

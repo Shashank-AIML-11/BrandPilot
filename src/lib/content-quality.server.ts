@@ -98,8 +98,15 @@ export const SIMILAR_AT = 0.45;
 
 /** Every number in `text` already appears in `allowed` (commas and spaces ignored). */
 export function numbersAllowed(text: string, allowed: string): boolean {
-  const facts = allowed.replace(/[,\s]/g, "").toLowerCase();
-  return (text.match(/\d+(?:\.\d+)?/g) ?? []).every((n) => facts.includes(n));
+  // whole numbers only: "7" is not allowed just because "2027" or "70" appears somewhere in the brand text
+  const norm = (s: string) => s.replace(/(\d),(?=\d{3}\b)/g, "$1");
+  const facts = new Set(norm(allowed).match(/\d+(?:\.\d+)?/g) ?? []);
+  return (norm(text).match(/\d+(?:\.\d+)?/g) ?? []).every((n) => facts.has(n));
+}
+
+/** "3 ways", "5 quick tips" count the items of the piece itself, they are not facts about the brand. */
+export function withoutListCounts(t: string): string {
+  return t.replace(/\b(?:[2-9]|10)\s+(?:(?:quick|simple|easy|key|common|real|big|small|smart|best)\s+)?(?:ways?|tips?|steps?|things?|mistakes?|reasons?|questions?|checks?|myths?|signs?|benefits?|rules?|ideas?|secrets?|habits?|hacks?|facts?|points?|types?)\b/gi, "");
 }
 
 const text = (v: unknown) => (typeof v === "string" ? v : "");
@@ -123,7 +130,7 @@ export function unsupportedClaims(r: Row, brandText: string): string[] {
   const near = date ? occasionLine(date) : "";
   const allowed = `${brandText} ${near} ${date}`;
   const out: string[] = [];
-  const nums = [...new Set((t.match(/\d+(?:\.\d+)?/g) ?? []).filter((n) => !numbersAllowed(n, allowed)))];
+  const nums = [...new Set((withoutListCounts(t).match(/\d+(?:\.\d+)?/g) ?? []).filter((n) => !numbersAllowed(n, allowed)))];
   if (nums.length) out.push(`numbers that are not in the brand information (${nums.join(", ")})`);
   if (!/real customer testimonials supplied/i.test(brandText) && STORY.test(t)) out.push("an invented customer story or result (the brand supplied no testimonials)");
   const fest = t.match(FESTIVAL_RE)?.[0];
@@ -317,7 +324,7 @@ export async function polishRows(
           (next.title || next.caption || next.script) &&
           (claimFlagged
             ? unsupportedClaims({ title: next.title || r["title"], caption: next.caption || r["caption"], video_script: next.script || r["video_script"], scheduled_date: r["scheduled_date"] }, opts.brandText).length === 0
-            : numbersAllowed(candidate, allowed)) &&
+            : numbersAllowed(withoutListCounts(candidate), allowed)) &&
           clichesIn(candidate).length === 0 &&
           (!next.caption || next.caption.length >= 20);
         if (usable) {
@@ -416,6 +423,11 @@ async function removeUnsupportedClaims(rows: Row[], brandText: string): Promise<
     const nums = (remaining.join(" ").match(/\(([^)]*)\)/)?.[1] ?? "").split(/,\s*/).filter(Boolean);
     const offenders = new RegExp([...nums.map((n) => n.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")), STORY.source, FESTIVAL_RE.source].filter(Boolean).join("|"), "i");
     for (const k of ["caption", "video_script"] as const) if (text(x.r[k])) x.r[k] = stripSentences(text(x.r[k]), offenders);
+    // a claim in the title: use the first clean sentence of the caption as the title instead
+    if (offenders.test(text(x.r["title"]))) {
+      const clean = text(x.r["caption"]).split(/(?<=[.!?])\s+/).map((s) => s.replace(/[#@]\S+/g, "").trim()).find((s) => s.length >= 12 && s.length <= 80 && !offenders.test(s));
+      if (clean) x.r["title"] = clean.replace(/[.!?]+$/, "");
+    }
     const meta = (x.r["style_meta"] && typeof x.r["style_meta"] === "object" ? x.r["style_meta"] : {}) as Record<string, unknown>;
     const left = unsupportedClaims(x.r, brandText);
     x.r["style_meta"] = { ...meta, claims_left: left.length ? left.join("; ").slice(0, 200) : null };

@@ -154,7 +154,6 @@ describe("occasion calendar", () => {
 });
 
 import { unsupportedClaims } from "@/lib/content-quality.server";
-import { posterCopyFor } from "@/lib/poster.server";
 
 describe("claims the brand never made", () => {
   const brand = "Brew Cafe. Offer: buy 2 weekday coffees get a pastry free before 11 AM. Beans roasted weekly.";
@@ -176,5 +175,35 @@ describe("poster copy separators", () => {
     const c = posterCopyFor({ image_prompt: "Weekly tests keep parents informed | Weekly test | Parent report | Free demo | Book a demo" }, { website: "" });
     expect(c.headline).toBe("Weekly tests keep parents informed");
     expect(c.points.length).toBe(3);
+  });
+});
+
+import { withoutListCounts } from "@/lib/content-quality.server";
+import { withoutUnavailableChannels } from "@/lib/content.server";
+import { posterCopyFor } from "@/lib/poster.server";
+
+describe("whole numbers, list counts, channels and weak headlines", () => {
+  it("does not accept a number just because it sits inside a longer one", () => {
+    expect(numbersAllowed("7 cups a week", "open 2027 and 70 seats")).toBe(false);
+    expect(numbersAllowed("From 55 to 70", "classes of 20 students")).toBe(false);
+    expect(numbersAllowed("only 20 students, Rs 1,499", "20 students at Rs 1499")).toBe(true);
+  });
+  it("lets a piece count its own list items", () => {
+    expect(numbersAllowed(withoutListCounts("5 quick tips and 3 ways"), "nothing")).toBe(true);
+    expect(numbersAllowed(withoutListCounts("7 cups a week"), "nothing")).toBe(false);
+  });
+  it("plans TikTok only when the brand has a TikTok handle", () => {
+    const dates = ["2026-12-07", "2026-12-08", "2026-12-09", "2026-12-10", "2026-12-11", "2026-12-12", "2026-12-13"];
+    const a = weeklyContentPlan(dates);
+    withoutUnavailableChannels(a, { social_handles: { instagram: "x" } } as never);
+    expect(Object.values(a).some((q) => q.tiktok_video > 0)).toBe(false);
+    expect(a["2026-12-12"]!.product_service_video).toBe(1);
+    const b = weeklyContentPlan(dates);
+    withoutUnavailableChannels(b, { social_handles: { TikTok: "x" } } as never);
+    expect(b["2026-12-12"]!.tiktok_video).toBe(1);
+  });
+  it("uses the title when the poster headline is only a label", () => {
+    const c = posterCopyFor({ title: "First-Time Gift Givers, Avoid the Common Mistake", summary: "", image_prompt: "Checklist || Pick a size || Check the finish || Add a note" }, { website: "" });
+    expect(c.headline).toMatch(/Gift Givers/);
   });
 });

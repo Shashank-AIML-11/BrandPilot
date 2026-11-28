@@ -65,6 +65,8 @@ const hash = (s: string) => [...s].reduce((a, c) => (a * 31 + c.charCodeAt(0)) >
  *   HEADLINE || FEATURE 1 || FEATURE 2 || FEATURE 3 || CTA
  * Older items (without that format) fall back to the title and summary.
  */
+const WEAK_HEADLINE = /^(how it works|why choose us|our services|quality you can trust|about us|welcome|checklist|tips|guide|benefits|features|overview|our process|learn more)\b/i;
+
 export function posterCopyFor(
   item: { title?: string | null; summary?: string | null; image_prompt?: string | null },
   brand: { website?: string | null },
@@ -80,8 +82,11 @@ export function posterCopyFor(
   if (parts.length >= 3) {
     const cta = parts.length >= 5 ? parts[parts.length - 1]! : "";
     const points = parts.slice(1, parts.length >= 5 ? -1 : undefined).slice(0, 3).map((f) => clip(f, 6));
+    // a label such as "Checklist" or "How it works" says nothing: the post's own title is the headline then
+    const first = clip(parts[0]!, 8);
+    const weak = first.split(/\s+/).filter(Boolean).length < 2 || WEAK_HEADLINE.test(first);
     return {
-      headline: clip(parts[0]!, 8),
+      headline: weak && String(item.title ?? "").trim() ? clip(String(item.title), 9) : first,
       points,
       subline: "",
       cta: clip(cta, 4) || (host ? `Visit ${host}` : "Learn more"),

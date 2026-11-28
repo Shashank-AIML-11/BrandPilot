@@ -733,6 +733,21 @@ export function withoutCarousels(plan: Record<string, DailyContentQuota>): void 
   }
 }
 
+/**
+ * TikTok is not available in India, so a TikTok piece is planned only for a brand that lists a TikTok
+ * handle (or when TIKTOK_ENABLED=true). Its video is shared with the product video, so dropping it costs
+ * nothing and no day is left empty.
+ */
+export function withoutUnavailableChannels(plan: Record<string, DailyContentQuota>, brand: BrandRow): void {
+  const handles = Object.entries(brand.social_handles ?? {}).filter(([, v]) => typeof v === "string" && v.trim().length > 0).map(([k]) => k.toLowerCase());
+  if ((process.env["TIKTOK_ENABLED"] ?? "").trim().toLowerCase() === "true" || handles.some((h) => h.includes("tiktok"))) return;
+  for (const quota of Object.values(plan)) {
+    if (!quota || !(quota.tiktok_video > 0)) continue;
+    quota.tiktok_video = 0;
+    if (!CONTENT_TYPES.some((t) => quota[t] > 0)) quota.product_service_video = 1;
+  }
+}
+
 export function carouselsEnabled(): boolean {
   return (process.env["CAROUSEL_ENABLED"] ?? "").trim().toLowerCase() === "true";
 }

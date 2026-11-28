@@ -783,7 +783,7 @@ export async function processVideoQueue(admin: AdminClient, userId?: string) {
     if (blogs?.length) {
       const { brandPhotoBytes } = await import("@/lib/stock-media.server");
       for (const blog of blogs) {
-        const bytes = await brandPhotoBytes(admin, { userId: blog.user_id, brandId: blog.brand_id, seed: blog.id, used: new Set() });
+        const bytes = await brandPhotoBytes(admin as never, { userId: blog.user_id, brandId: blog.brand_id, seed: blog.id, used: new Set() });
         if (!bytes) continue;
         const png = bytes[0] === 0x89 && bytes[1] === 0x50;
         const webp = bytes[8] === 0x57 && bytes[9] === 0x45;

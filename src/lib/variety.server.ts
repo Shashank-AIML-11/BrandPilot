@@ -28,6 +28,8 @@ export interface StyleMeta {
   /** Reel recipe id (video types only): the shape of the scene sequence. */
   recipe?: string;
   wildcard?: boolean;
+  /** Why the brain chose this combination for this piece (set by the director; absent on rotation picks). */
+  why?: string;
 }
 
 /**
@@ -174,9 +176,11 @@ export async function planVariety(
     const pillars = playbook.pillars.map((p) => p.name);
     const library = await loadLibrary(admin);
     let group: ReturnType<typeof industryGroupOf> = null;
+    let industryText = "";
     try {
       const { data: prof } = await admin.from("brand_profiles").select("industry").eq("id", opts.brandId).maybeSingle();
-      group = industryGroupOf((prof as { industry?: string } | null)?.industry);
+      industryText = String((prof as { industry?: string } | null)?.industry ?? "");
+      group = industryGroupOf(industryText);
     } catch {
       group = null;
     }
@@ -259,6 +263,57 @@ export async function planVariety(
         ...(wildcard ? { wildcard: true } : {}),
       });
     }
+    // The rotation plan above is the safe baseline. Now the brain director reads the brand and
+    // re-chooses pillar, hook, angle and reel recipe for each piece; invalid picks keep the baseline.
+    if (process.env["BRAIN_DIRECTOR"] !== "off") {
+      try {
+        const recentHooks = new Set(hist.hooks.slice(0, BLOCK_HOOK));
+        const recentAngles = new Set(hist.angles.slice(0, BLOCK_ANGLE));
+        const hookPool = hooksOf(library).filter((h) => !recentHooks.has(h.id));
+        const anglePool = angleBank.filter((a) => !recentAngles.has(a));
+        const { directPicks } = await import("@/lib/brain-director.server");
+        const picks = await directPicks({
+          industry: industryText,
+          playbook,
+          slots: opts.slots,
+          hooks: hookPool.length >= 12 ? hookPool : hooksOf(library),
+          angles: (anglePool.length >= 12 ? anglePool : angleBank).slice(0, 60),
+          recipes: REEL_RECIPES.map((r) => ({ id: r.id, note: r.note })),
+          isVideo: (t) => (VIDEO_TYPES as string[]).includes(t),
+          fallback: new Map(),
+          keyOf: (sl) => slotKey(sl.date, sl.type, sl.index),
+        });
+        const dayHooks = new Map<string, Set<string>>();
+        const dayAngles = new Map<string, Set<string>>();
+        let directed = 0;
+        for (const slot of opts.slots) {
+          const key = slotKey(slot.date, slot.type, slot.index);
+          const base = out.get(key);
+          const pick = picks.get(key);
+          if (!base || !pick) continue;
+          const hs = dayHooks.get(slot.date) ?? new Set<string>();
+          const as = dayAngles.get(slot.date) ?? new Set<string>();
+          dayHooks.set(slot.date, hs);
+          dayAngles.set(slot.date, as);
+          const hook = pick.hook && !hs.has(pick.hook) ? pick.hook : base.hook;
+          const angle = pick.angle && !as.has(pick.angle) ? pick.angle : base.angle;
+          hs.add(hook);
+          if (angle) as.add(angle);
+          out.set(key, {
+            ...base,
+            pillar: pick.pillar ?? base.pillar,
+            hook,
+            ...(angle ? { angle } : {}),
+            ...(base.recipe ? { recipe: pick.recipe ?? base.recipe } : {}),
+            ...(pick.why ? { why: pick.why } : {}),
+          });
+          directed += 1;
+        }
+        console.info(`[brain] director chose ${directed}/${opts.slots.length} pieces`);
+      } catch (error) {
+        console.error("[brain] director unavailable, using the rotation plan", error instanceof Error ? error.message : error);
+      }
+    }
     return out;
   } catch (error) {
     console.error("[brain] variety plan unavailable, continuing without it", error instanceof Error ? error.message : error);
@@ -280,7 +335,7 @@ export function varietyContext(
       const m = plan.get(slotKey(s.date, s.type, s.index));
       if (!m) return "";
       const tpl = m.template ? posterTemplate(m.template) : null;
-      return `- ${s.date} ${s.type} #${s.index + 1}: pillar "${m.pillar}" (${pillarAngle.get(m.pillar) ?? ""}); hook style "${m.hook}" (${hookHow.get(m.hook) ?? ""})${m.angle ? `; angle: ${m.angle}` : ""}${
+      return `- ${s.date} ${s.type} #${s.index + 1}: pillar "${m.pillar}" (${pillarAngle.get(m.pillar) ?? ""}); hook style "${m.hook}" (${hookHow.get(m.hook) ?? ""})${m.angle ? `; angle: ${m.angle}` : ""}${m.why ? `; business reason: ${m.why}` : ""}${
         tpl ? `; poster template "${tpl.label}": write image_prompt as HEADLINE || POINT 1 || POINT 2 || POINT 3 || CTA with ${tpl.copyHint}` : ""
       }`;
     })

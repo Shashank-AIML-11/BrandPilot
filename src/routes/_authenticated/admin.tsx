@@ -191,7 +191,7 @@ function AdminPage() {
 
         {/* ===================== DASHBOARD ===================== */}
         <TabsContent value="dashboard" className="space-y-6 pt-4">
-          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
             {kpis.map((k) => (
               <div key={k.label} className="surface p-5">
                 <div className="flex items-center gap-2 text-muted-foreground">
@@ -203,7 +203,7 @@ function AdminPage() {
             ))}
           </div>
 
-          <div className="grid gap-4 lg:grid-cols-2">
+          <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
             <div className="surface p-5">
               <h2 className="text-sm font-semibold">Plan distribution</h2>
               <div className="mt-4 space-y-3">

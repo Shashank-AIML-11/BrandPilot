@@ -44,7 +44,7 @@ export function AdminReadiness() {
             <p className="mb-2 text-sm font-semibold">This environment</p>
             <ul className="space-y-1.5">{data.services.map(row)}</ul>
           </div>
-          <div className="grid gap-4 lg:grid-cols-2">
+          <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
             {data.brands.map((b) => (
               <div key={b.id} className="surface p-4">
                 <p className="text-sm font-semibold">{b.name || "Unnamed"}</p>

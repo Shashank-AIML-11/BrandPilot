@@ -75,7 +75,7 @@ function PlanPage() {
     : null;
 
   return (
-    <div className="mx-auto grid max-w-6xl gap-4 lg:grid-cols-[minmax(0,3fr)_minmax(0,2fr)] lg:items-start">
+    <div className="mx-auto grid grid-cols-1 max-w-6xl gap-4 lg:grid-cols-[minmax(0,3fr)_minmax(0,2fr)] lg:items-start">
       <div className="lg:col-span-2">
         <h1 className="text-2xl font-bold">Your plan</h1>
         <p className="mt-1 text-sm text-muted-foreground">
@@ -101,7 +101,7 @@ function PlanPage() {
               </span>
             </p>
           </div>
-          <ul className="mt-3 grid gap-1.5 sm:grid-cols-2">
+          <ul className="mt-3 grid grid-cols-1 gap-1.5 sm:grid-cols-2">
             {current.features.map((f) => (
               <li key={f} className="flex gap-2 text-sm text-muted-foreground">
                 <Check className="mt-0.5 h-4 w-4 shrink-0 text-primary" />

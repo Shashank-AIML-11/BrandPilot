@@ -19,7 +19,7 @@ export function AdminBrain() {
 
   return (
     <div className="space-y-4">
-      <div className="grid gap-3 sm:grid-cols-4">
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-4">
         {[
           ["Posts shown", String(items.length)],
           ["Average editor score", avg],

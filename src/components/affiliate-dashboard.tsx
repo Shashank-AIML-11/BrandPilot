@@ -146,7 +146,7 @@ function PayoutDetailsForm({
           />
         </div>
       ) : (
-        <div className="grid gap-4 sm:grid-cols-2">
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
           <div className="space-y-1.5">
             <Label htmlFor="aff-acct">Account number</Label>
             <Input
@@ -240,7 +240,7 @@ export function AffiliateDashboard() {
       : `Request ${formatPaise(data.availablePaise)} to your ${data.payoutDetails.method === "upi" ? "UPI ID" : "bank account"}.`;
 
   return (
-    <div className="grid gap-4 md:grid-cols-2 md:items-stretch">
+    <div className="grid grid-cols-1 gap-4 md:grid-cols-2 md:items-stretch">
       {/* 1. The link */}
       {!data.code ? (
         <section className="surface p-6">

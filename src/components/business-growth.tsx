@@ -60,7 +60,7 @@ export function BusinessGrowth() {
 
   return (
     <section className="space-y-3">
-      <div className="grid gap-4 lg:grid-cols-2">
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
         <Card title="Subscribers" note="All sign-ups to date (area) and new sign-ups each month (bars).">
           <ComposedChart data={data} margin={margin}>
             <CartesianGrid stroke={C.grid} vertical={false} />

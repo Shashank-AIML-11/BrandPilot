@@ -354,7 +354,7 @@ function Analytics() {
 
           <section className="space-y-3">
             <h2 className="text-lg font-semibold">Performance at a glance</h2>
-            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
               <Kpi label="Impressions" value={fmt(total.impressions)} hint="Total content exposures">
                 <Delta cur={total.impressions} prev={before.impressions} />
               </Kpi>
@@ -372,7 +372,7 @@ function Analytics() {
             </div>
           </section>
 
-          <div className="grid gap-6 lg:grid-cols-[minmax(0,3fr)_minmax(0,2fr)]">
+          <div className="grid grid-cols-1 gap-6 lg:grid-cols-[minmax(0,3fr)_minmax(0,2fr)]">
             <section className="surface space-y-3 p-6">
               <div>
                 <h2 className="font-semibold">Performance trend</h2>
@@ -437,7 +437,7 @@ function Analytics() {
               <h2 className="text-lg font-semibold">Audience & intent intelligence</h2>
               <p className="text-sm text-muted-foreground">Who is responding and whether they fit the target customer.</p>
             </div>
-            <div className="grid gap-4 lg:grid-cols-3">
+            <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
               {[
                 ["Audience by age group", "Needs each platform's audience-insights permission (LinkedIn, Meta, YouTube)."],
                 ["Top audience regions", "Needs each platform's audience-insights permission."],
@@ -457,7 +457,7 @@ function Analytics() {
               <h2 className="text-lg font-semibold">Content intelligence signals</h2>
               <p className="text-sm text-muted-foreground">Reusable creative direction taken from your own results, best engagement rate first.</p>
             </div>
-            <div className="grid gap-4 lg:grid-cols-3">
+            <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
               <div className="surface space-y-3 p-5">
                 <h3 className="font-semibold">Topics attracting interest</h3>
                 {topics.length ? <Chips items={topics.slice(0, 8).map((g) => g.name)} /> : <p className="text-sm text-muted-foreground">Appears once posts planned by the Brand Brain have been measured.</p>}

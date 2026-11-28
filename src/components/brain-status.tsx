@@ -46,7 +46,7 @@ export function BrainStatus({ brandId }: { brandId?: string | undefined }) {
         <Brain className="h-4 w-4 text-primary" />
         <h2 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">Brand Brain</h2>
       </div>
-      <div className="grid gap-4 md:grid-cols-3">
+      <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
         <div className="space-y-1">
           <p className="text-xs font-medium">Playbook</p>
           <p className="text-sm text-muted-foreground">

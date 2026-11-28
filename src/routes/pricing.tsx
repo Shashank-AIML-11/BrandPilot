@@ -125,7 +125,7 @@ function PricingPage() {
           <BillingToggle value={cycle} onChange={setCycle} />
         </div>
 
-        <div className="mt-6 grid gap-5 lg:grid-cols-3">
+        <div className="mt-6 grid grid-cols-1 gap-5 lg:grid-cols-3">
           {PLANS.map((plan) => {
             const isCurrent = currentPlanId === plan.id;
             return (

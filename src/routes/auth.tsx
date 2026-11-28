@@ -170,7 +170,7 @@ function AuthPage() {
   }
 
   return (
-    <div className="grid min-h-screen lg:grid-cols-2">
+    <div className="grid grid-cols-1 min-h-screen lg:grid-cols-2">
       <div className="grid-noise hidden flex-col p-12 lg:flex">
         <Link to="/" className="font-display text-lg font-bold">
           LOVIZA<span className="text-[1.2em] text-primary">AI</span>
@@ -240,7 +240,7 @@ function AuthPage() {
                 </label>
               </div>
 
-              <div className="mt-4 grid gap-3 sm:grid-cols-2">
+              <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2">
                 <Button
                   type="button"
                   variant="outline"

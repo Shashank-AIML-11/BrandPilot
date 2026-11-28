@@ -124,7 +124,7 @@ export function ChannelConnections({
           <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
         </div>
       ) : (
-        <div className="grid gap-3 sm:grid-cols-2">
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
           {CHANNELS.filter((c) => c.kind === "oauth").map((channel) => {
             const conn = byChannel[channel.key];
             const needsReconnect = conn?.status === "needs_reconnect";
@@ -137,8 +137,8 @@ export function ChannelConnections({
                 key={channel.key}
                 className="flex items-start justify-between gap-3 rounded-lg border border-border p-4"
               >
-                <div className="min-w-0">
-                  <div className="flex items-center gap-2">
+                <div className="min-w-0 flex-1">
+                  <div className="flex flex-wrap items-center gap-2">
                     <span className="font-medium">{channel.label}</span>
                     {conn?.connected && (
                       <Badge variant="outline" className="gap-1 border-primary/40 text-primary">

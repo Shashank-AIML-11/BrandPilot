@@ -222,7 +222,7 @@ function BrandAssets({
 
   return (
     <div className="space-y-6">
-      <div className="grid gap-6 sm:grid-cols-[auto_minmax(0,1fr)]">
+      <div className="grid grid-cols-1 gap-6 sm:grid-cols-[auto_minmax(0,1fr)]">
       <div className="space-y-2">
         <Label>Brand logo</Label>
         <div className="flex flex-wrap items-start gap-6">
@@ -295,7 +295,7 @@ function BrandAssets({
           ))}
         </div>
       </div>
-      <div className="grid gap-6 lg:grid-cols-2">
+      <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
       <div className="min-w-0 space-y-2">
         <Label>Brand assets</Label>
             <input
@@ -700,7 +700,7 @@ function BrandProfilePage() {
         title="Your business"
         hint="Start with your website. LOVIZA reads it and fills in what it can."
       >
-        <div className="grid gap-4 md:grid-cols-2">
+        <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
           <Field id="business_name" label="Business name *">
             <Input
               id="business_name"
@@ -737,7 +737,7 @@ function BrandProfilePage() {
         />
       </ProfileSection>
 
-      <div className="grid gap-5 xl:grid-cols-2">
+      <div className="grid grid-cols-1 gap-5 xl:grid-cols-2">
         <ProfileSection title="What you sell" hint="Facts LOVIZA may use in your content.">
           <Field id="description" label="Business description">
             <Textarea
@@ -758,7 +758,7 @@ function BrandProfilePage() {
               onChange={(e) => set("products_services", e.target.value)}
             />
           </Field>
-          <div className="grid gap-4 sm:grid-cols-2">
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
             <Field id="industry" label="Industry">
               <Input
                 id="industry"
@@ -809,7 +809,7 @@ function BrandProfilePage() {
               onChange={(e) => set("propositions", e.target.value)}
             />
           </Field>
-          <div className="grid gap-4 sm:grid-cols-2">
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
             <Field id="tone" label="Tone of voice">
               <Input
                 id="tone"
@@ -846,7 +846,7 @@ function BrandProfilePage() {
         title="Offers, proof and rules"
         hint="Optional. The more you add, the more specific your content gets. Leave anything blank to skip it."
       >
-        <div className="grid gap-4 lg:grid-cols-2">
+        <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
           <Field id="current_offers" label="Current offers">
             <Textarea
               id="current_offers"

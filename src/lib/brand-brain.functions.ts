@@ -17,5 +17,10 @@ export const refreshBrandPlaybook = createServerFn({ method: "POST" })
     const brand = await loadBrand(supabaseAdmin, context.userId, data.brandId);
     if (!brand) return { ok: false as const };
     const playbook = await ensurePlaybook(supabaseAdmin, brand as never);
+    // Head start for the reels: fetch relevant stock clips for this brand's filmable subjects now.
+    if (playbook?.photo_subjects?.length) {
+      const { prefetchFootage } = await import("@/lib/stock-media.server");
+      await prefetchFootage(supabaseAdmin as never, { userId: context.userId, brandId: data.brandId, subjects: playbook.photo_subjects });
+    }
     return { ok: !!playbook };
   });

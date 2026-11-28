@@ -245,3 +245,67 @@ export async function stockPhotoBytes(idea: string): Promise<Uint8Array | null> 
     return null;
   }
 }
+
+const IMG_FILE = /\.(png|jpe?g|webp)$/i;
+const hashOf = (s: string) => [...s].reduce((a, c) => (a * 31 + c.charCodeAt(0)) >>> 0, 7);
+
+/**
+ * One of the brand's OWN uploaded images (hero product photos first, then Brand Assets images) for a
+ * photo scene, so reels and posters show the real product and place instead of stock. Photos rotate
+ * by seed and never repeat within one video (`used`). Returns null when the brand has none.
+ */
+export async function brandPhotoBytes(
+  admin: Admin,
+  ctx: { userId: string; brandId: string | null; seed: string; used: Set<string> },
+): Promise<Uint8Array | null> {
+  if (!ctx.brandId) return null;
+  try {
+    const bucket = admin.storage.from("content-media");
+    const root = `${ctx.userId}/brand/${ctx.brandId}`;
+    const names = async (folder: string) =>
+      ((await bucket.list(`${root}/${folder}`, { limit: 100 })).data ?? []).filter((f) => f.name && IMG_FILE.test(f.name)).map((f) => `${root}/${folder}/${f.name}`);
+    const all = [...(await names("products")), ...(await names("assets"))].filter((p) => !ctx.used.has(p));
+    if (!all.length) return null;
+    const pick = all[hashOf(ctx.seed) % all.length]!;
+    const file = await bucket.download(pick);
+    if (file.error || !file.data) return null;
+    ctx.used.add(pick);
+    return new Uint8Array(await file.data.arrayBuffer());
+  } catch (error) {
+    console.error("[stock] brand photo lookup failed", error);
+    return null;
+  }
+}
+
+/**
+ * Right after the Brand Profile or Brand Brain changes: fetch a small, relevant set of clips for the
+ * brand's own filmable subjects (from its playbook) into its library, so reels do not wait on a search
+ * and find a match ready. Deliberately modest (default 8 per run, none once the library holds 30) and
+ * reuses what is already stored. Returns how many new clips were saved.
+ */
+export async function prefetchFootage(
+  admin: Admin,
+  ctx: { userId: string; brandId: string; subjects: string[] },
+): Promise<number> {
+  if (!stockEnabled()) return 0;
+  const max = Math.max(0, Math.min(15, Number(process.env["FOOTAGE_PREFETCH_MAX"] ?? 8) || 8));
+  if (!max) return 0;
+  try {
+    const a = admin as unknown as SupabaseClient;
+    const { count } = await a.from("brand_media").select("id", { count: "exact", head: true }).eq("brand_id", ctx.brandId).eq("kind", "broll");
+    if ((count ?? 0) >= 30) return 0;
+    const started = Date.now();
+    const used = new Set<string>();
+    let saved = 0;
+    for (const subject of ctx.subjects.slice(0, max)) {
+      if (Date.now() - started > 40_000) break;
+      const clip = await stockVideo(admin, { userId: ctx.userId, brandId: ctx.brandId, idea: subject, exclude: used });
+      if (clip && !clip.reused) saved += 1;
+    }
+    console.log(`[stock] prefetched ${saved} clip(s) for brand ${ctx.brandId}`);
+    return saved;
+  } catch (error) {
+    console.error("[stock] footage prefetch failed", error);
+    return 0;
+  }
+}

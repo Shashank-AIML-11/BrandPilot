@@ -367,7 +367,9 @@ Return JSON: {"scenes":[...]}`,
   try {
     const { generateImageBytes } = await import("@/lib/ai.server");
     const { reuseOrGenerate } = await import("@/lib/media-library.server");
-    const { stockVideo, stockPhotoBytes } = await import("@/lib/stock-media.server");
+    const { stockVideo, stockPhotoBytes, brandPhotoBytes } = await import("@/lib/stock-media.server");
+    const ownUsed = new Set<string>();
+    const ownShare = Math.max(0, Math.min(100, Number(process.env["OWN_PHOTO_SHARE"] ?? 70) || 70));
     const withTimeout = <T,>(p: Promise<T>, ms: number) =>
       Promise.race([p, new Promise<T>((_, rej) => setTimeout(() => rej(new Error("image timeout")), ms))]);
 
@@ -381,11 +383,24 @@ Return JSON: {"scenes":[...]}`,
       }
     }
 
-    // 2) photos (free Pixabay photo first, fal only if none fits) and illustrations (fal)
+    // 2a) the brand's own uploaded photos come first for photo scenes: the real product and place beat stock
+    const ownMap = new Map<number, Uint8Array>();
+    if (input.userId && input.brandId && ownShare > 0) {
+      for (let idx = 0; idx < scenes.length; idx++) {
+        const sc = scenes[idx]!;
+        if (LAYOUT_BY_ID.get(sc.layout)?.image !== "photo" || !sc.img) continue;
+        if ((idx * 37 + sc.img.length * 11) % 100 >= ownShare) continue;
+        const own = await brandPhotoBytes(admin as never, { userId: input.userId, brandId: input.brandId, seed: `${input.item.id}|${idx}`, used: ownUsed });
+        if (own) ownMap.set(idx, own);
+      }
+    }
+
+    // 2b) photos (free Pixabay photo first, fal only if none fits) and illustrations (fal)
     const made = await Promise.allSettled(
-      scenes.map(async (sc) => {
+      scenes.map(async (sc, idx) => {
         const kind = LAYOUT_BY_ID.get(sc.layout)?.image;
         if (!kind || kind === "video" || !sc.img) return null;
+        if (ownMap.has(idx)) return { bytes: ownMap.get(idx)! };
         const aspect = kind === "photo" ? "9:16" : "1:1";
         const prompt =
           kind === "photo"

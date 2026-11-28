@@ -29,6 +29,7 @@ import { AdminReferrals } from "@/components/admin-referrals";
 import { AdminAffiliates } from "@/components/admin-affiliates";
 import { AdminAutomation } from "@/components/admin-automation";
 import { AdminBrain } from "@/components/admin-brain";
+import { AdminReadiness } from "@/components/admin-readiness";
 import {
   Table,
   TableHeader,
@@ -193,6 +194,7 @@ function AdminPage() {
           {data.isRoot && <TabsTrigger value="affiliates">Affiliates</TabsTrigger>}
           <TabsTrigger value="automation">Automation</TabsTrigger>
           <TabsTrigger value="brain">Brain</TabsTrigger>
+          <TabsTrigger value="readiness">Readiness</TabsTrigger>
         </TabsList>
 
         {/* ===================== DASHBOARD ===================== */}
@@ -469,6 +471,10 @@ function AdminPage() {
 
         <TabsContent value="brain" className="pt-4">
           <AdminBrain />
+        </TabsContent>
+
+        <TabsContent value="readiness" className="pt-4">
+          <AdminReadiness />
         </TabsContent>
 
         <TabsContent value="automation" className="pt-4">

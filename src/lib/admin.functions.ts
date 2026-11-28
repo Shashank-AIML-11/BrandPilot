@@ -375,3 +375,84 @@ export const getGenerationDecisions = createServerFn({ method: "POST" })
       }),
     };
   });
+
+type Check = { label: string; status: "ok" | "warn" | "bad"; detail: string };
+
+/** Pre-flight check before generating a week: is each brand's profile, photos, Brain and footage ready, and are the services switched on. */
+export const getBrandReadiness = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((input: unknown) => z.object({ search: z.string().max(80).optional() }).parse(input ?? {}))
+  .handler(async ({ data, context }) => {
+    await assertAdmin(context);
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    const { posterComposerEnabled } = await import("@/lib/content.server");
+
+    let q = supabaseAdmin.from("brand_profiles").select("*").order("updated_at", { ascending: false }).limit(12);
+    if (data.search?.trim()) q = q.ilike("business_name", `%${data.search.trim()}%`);
+    const { data: brands } = await q;
+
+    const set = (k: string) => Boolean(process.env[k]?.trim());
+    const services: Check[] = [
+      { label: "Text writer key (OpenRouter or Groq)", status: set("OPENROUTER_API_KEY") || set("GROQ_API_KEY") ? "ok" : "bad", detail: "" },
+      { label: "Image generator key (fal)", status: set("FAL_KEY") ? "ok" : "bad", detail: "needed when no stock or own photo fits" },
+      { label: "Video renderer key (Shotstack)", status: set("SHOTSTACK_API_KEY") ? "ok" : "bad", detail: "needed for reels" },
+      { label: "Pixabay key", status: set("PIXABAY_API_KEY") ? "ok" : "warn", detail: "stock clips and photos" },
+      { label: "Pexels key", status: set("PEXELS_API_KEY") ? "ok" : "warn", detail: "optional second clip source" },
+      { label: "Poster text design", status: posterComposerEnabled() ? "ok" : "bad", detail: posterComposerEnabled() ? "on" : "POSTER_COMPOSER is off, posters will have no text" },
+      { label: "Brain director", status: process.env["BRAIN_DIRECTOR"] === "off" ? "warn" : "ok", detail: process.env["BRAIN_DIRECTOR"] === "off" ? "off, rotation only" : "on" },
+    ];
+
+    const profileFields = [
+      "business_name", "website", "description", "products_services", "icp", "propositions", "tone", "keywords",
+      "industry", "current_offers", "testimonials", "competitors", "locations", "languages", "voice_dos_donts", "compliance_notes",
+    ];
+
+    const result = [];
+    for (const b of (brands ?? []) as unknown as Array<Record<string, unknown>>) {
+      const id = String(b["id"]);
+      const uid = String(b["user_id"]);
+      const filled = profileFields.filter((f) => String(b[f] ?? "").trim().length > 0);
+      const missing = profileFields.filter((f) => !filled.includes(f));
+      const bucket = supabaseAdmin.storage.from("content-media");
+      const count = async (folder: string) =>
+        ((await bucket.list(`${uid}/brand/${id}/${folder}`, { limit: 100 })).data ?? []).filter((f) => /\.(png|jpe?g|webp)$/i.test(f.name)).length;
+      const [hero, assets] = await Promise.all([count("products"), count("assets")]);
+      const [pb, know, broll, failed] = await Promise.all([
+        supabaseAdmin.from("brand_playbooks" as never).select("playbook, updated_at, source_updated_at").eq("brand_id", id).maybeSingle(),
+        supabaseAdmin.from("brand_knowledge" as never).select("id", { count: "exact", head: true }).eq("brand_id" as never, id as never),
+        supabaseAdmin.from("brand_media" as never).select("id", { count: "exact", head: true }).eq("brand_id", id).eq("kind", "broll"),
+        supabaseAdmin
+          .from("content_items")
+          .select("id", { count: "exact", head: true })
+          .eq("brand_id", id)
+          .eq("status", "failed")
+          .gte("created_at", new Date(Date.now() - 14 * 86_400_000).toISOString()),
+      ]);
+      const pbRow = pb.data as unknown as { playbook?: { pillars?: unknown[]; photo_subjects?: unknown[] }; source_updated_at?: string | null } | null;
+      const pillars = pbRow?.playbook?.pillars?.length ?? 0;
+      const stale = !!pbRow?.source_updated_at && new Date(pbRow.source_updated_at).getTime() < new Date(String(b["updated_at"])).getTime();
+      const brollCount = (broll as { count: number | null }).count ?? 0;
+      const knowCount = (know as { count: number | null }).count ?? 0;
+      const failedCount = (failed as { count: number | null }).count ?? 0;
+
+      const checks: Check[] = [
+        {
+          label: "Brand Profile",
+          status: filled.length >= 13 ? "ok" : filled.length >= 9 ? "warn" : "bad",
+          detail: `${filled.length} of ${profileFields.length} fields filled${missing.length ? `. Empty: ${missing.join(", ")}` : ""}`,
+        },
+        { label: "Hero product photos", status: hero >= 3 ? "ok" : hero >= 1 ? "warn" : "bad", detail: `${hero} uploaded (3 or more recommended)` },
+        { label: "Brand Assets images", status: assets > 0 ? "ok" : "warn", detail: `${assets} uploaded` },
+        { label: "Brand documents read by the Brain", status: knowCount > 0 ? "ok" : "warn", detail: `${knowCount} item(s)` },
+        {
+          label: "Playbook",
+          status: pillars >= 5 && !stale ? "ok" : pillars >= 5 ? "warn" : "bad",
+          detail: pillars ? `${pillars} pillars${stale ? ", older than the latest profile edit (rebuilds on the next generation)" : ", up to date"}` : "not built yet: save the Brand Profile",
+        },
+        { label: "Footage library", status: brollCount >= 8 ? "ok" : brollCount >= 1 ? "warn" : "warn", detail: `${brollCount} clip(s) ready (8 or more is good)` },
+        { label: "Failed pieces, last 14 days", status: failedCount === 0 ? "ok" : "warn", detail: String(failedCount) },
+      ];
+      result.push({ id, name: String(b["business_name"] ?? ""), industry: String(b["industry"] ?? ""), checks });
+    }
+    return { services, brands: result };
+  });

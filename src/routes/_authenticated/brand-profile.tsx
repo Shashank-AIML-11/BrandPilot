@@ -384,6 +384,65 @@ function BrandAssets({
   );
 }
 
+const COMPLETION_FIELDS: Array<{ key: keyof FormState; label: string }> = [
+  { key: "business_name", label: "Business name" },
+  { key: "website", label: "Website" },
+  { key: "description", label: "Business description" },
+  { key: "products_services", label: "Products & services" },
+  { key: "icp", label: "Ideal customer" },
+  { key: "propositions", label: "Value propositions" },
+  { key: "tone", label: "Tone of voice" },
+  { key: "keywords", label: "Focus keywords" },
+  { key: "industry", label: "Industry" },
+  { key: "current_offers", label: "Current offers" },
+  { key: "testimonials", label: "Testimonials" },
+  { key: "competitors", label: "Competitors" },
+  { key: "locations", label: "Locations" },
+  { key: "languages", label: "Languages" },
+  { key: "voice_dos_donts", label: "Voice do's and don'ts" },
+  { key: "compliance_notes", label: "Compliance notes" },
+];
+
+/** Live completion bar: counts what is typed in the form (saved or not) and lists what is still empty. */
+function ProfileCompletion({ form }: { form: FormState }) {
+  const missing = COMPLETION_FIELDS.filter((f) => !String(form[f.key] ?? "").trim());
+  const done = COMPLETION_FIELDS.length - missing.length;
+  const pct = Math.round((done / COMPLETION_FIELDS.length) * 100);
+  const tone = pct >= 100 ? "bg-emerald-500" : pct >= 70 ? "bg-amber-500" : "bg-rose-500";
+  return (
+    <div className="mt-3 rounded-lg border border-border/60 p-3" data-testid="profile-completion">
+      <div className="flex items-center justify-between text-sm">
+        <span className="font-medium">Profile {pct}% complete</span>
+        <span className="text-xs text-muted-foreground">
+          {pct >= 100 ? "Great: the Brain has everything it needs" : "More detail means sharper, more on-brand content"}
+        </span>
+      </div>
+      <div className="mt-2 h-2 w-full overflow-hidden rounded-full bg-muted">
+        <div className={`h-full transition-all ${tone}`} style={{ width: `${pct}%` }} />
+      </div>
+      {missing.length > 0 && (
+        <div className="mt-2 flex flex-wrap items-center gap-1.5 text-xs">
+          <span className="text-muted-foreground">Still empty:</span>
+          {missing.map((f) => (
+            <button
+              key={f.key}
+              type="button"
+              className="rounded-full border border-border px-2 py-0.5 hover:bg-muted"
+              onClick={() => {
+                const el = document.getElementById(String(f.key));
+                el?.scrollIntoView({ behavior: "smooth", block: "center" });
+                (el as HTMLElement | null)?.focus?.();
+              }}
+            >
+              {f.label}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function BrandProfilePage() {
   const queryClient = useQueryClient();
   const [form, setForm] = useState<FormState>(EMPTY);
@@ -669,6 +728,7 @@ function BrandProfilePage() {
         <p className="mt-1 text-sm text-muted-foreground">
           Everything here feeds the generator. The richer this page, the sharper the content. Only Business name is required; every other field is optional.
         </p>
+        <ProfileCompletion form={form} />
       </div>
 
       <section className="surface space-y-4 p-6">

@@ -99,8 +99,8 @@ describe("brand profile coverage", () => {
     expect(ctx).toContain("zzHandle");
     expect(ctx).toContain("#112233");
   });
-  it("uses Hinglish when the audience languages say so", () => {
-    expect(brandContext({ business_name: "x", languages: "Hindi, English", social_handles: null } as never)).toContain("Hinglish");
+  it("never mixes languages even when the audience speaks Hindi", () => {
+    expect(brandContext({ business_name: "x", languages: "Hindi, English", social_handles: null } as never)).not.toContain("Hinglish");
   });
   it("gives every day of the week content even with carousels off", () => {
     delete process.env["CAROUSEL_ENABLED"];

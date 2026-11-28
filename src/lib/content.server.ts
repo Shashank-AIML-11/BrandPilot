@@ -308,13 +308,7 @@ function extraBrandContext(brand: BrandRow): string {
     line("Real customer testimonials supplied by the brand (may be quoted word for word with attribution as given; NEVER invent a testimonial, name or result)", brand.testimonials, 1200) +
     line("Competitors (for positioning only; NEVER name, mention or criticise them in any content)", brand.competitors, 300) +
     line("Locations served", brand.locations, 300) +
-    line(
-      /hinglish|hindi/i.test(String(brand.languages ?? ""))
-        ? "Audience languages (the audience speaks Hinglish: write captions and video scripts in natural Hinglish, Hindi words in Roman script mixed with English the way people speak; keep titles, hashtags and on-image headlines in simple English)"
-        : "Audience languages (reference only; write in English unless the content plan says otherwise)",
-      brand.languages,
-      120,
-    ) +
+    line("Audience languages (reference only; every piece is written in ONE language, English, and never mixes languages)", brand.languages, 120) +
     colourLine(brand) +
     line("Voice do's and don'ts (follow strictly)", brand.voice_dos_donts, 800) +
     line("Compliance notes (these OVERRIDE everything else: claims or words that must or must not appear)", brand.compliance_notes, 800)
@@ -358,7 +352,7 @@ export const SAFETY_IMAGE_SUFFIX =
  */
 export const BLOG_WORD_TARGET = "100-150";
 
-export const SYSTEM_PROMPT = `LANGUAGE: Write EVERYTHING in clear, natural English only (titles, captions, hashtags, scripts, image prompts, blog text), even if the brand profile contains words from another language. Never output non-English text, except that when the brand profile's audience-languages line asks for Hinglish, captions and video scripts may mix Hindi words written in Roman script into English.
+export const SYSTEM_PROMPT = `LANGUAGE: Write EVERYTHING in clear, natural English only (titles, captions, hashtags, scripts, image prompts, blog text), even if the brand profile contains words from another language. Never output non-English text and never mix two languages inside one piece, not even a single Hindi word or sentence.
 
 You are an award-winning content director and direct-response copywriter working in-house for ONE specific brand.
 Your work has to be good enough that a stranger stops scrolling, reads to the end, and wants to buy.

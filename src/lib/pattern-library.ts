@@ -122,7 +122,6 @@ export const HOOKS: PatternRow[] = [
   hook("headline_react", "Headline reaction", "put a real, relevant news or rule change in caps on the first frame, then one honest opinion", "News framing earns a stop.", S.guides),
   hook("cost_reveal", "Cost reveal", "'What it really costs to [make or do thing]' and break down real costs", "Transparency is rare and shareable.", S.own),
   hook("process_asmr", "Process close-up", "open on a satisfying close-up of the work (hands, tools, materials) with no talking for 2 seconds", "Satisfying visuals stop the scroll without words.", S.guides),
-  hook("hinglish_dost", "Dost talk (Hinglish)", "open in casual Hinglish as if talking to a friend: 'Yaar, ye galti mat karna...'", "Native tone feels human, not like an ad.", S.refs),
   hook("galat_stamp", "GALAT stamp", "state the myth, then stamp it wrong ('Ye galat hai') with a visual stamp, then the right way", "Strong visual verdict inside two seconds.", S.refs),
   hook("settings_secret", "One setting", "'There is one setting/step most people skip' then show exactly where", "Specific and actionable; people screenshot it.", S.refs),
   hook("numbers_ladder", "Ladder of numbers", "show a count-up or ladder (0 to 100, Rs X to Rs Y) with the story of each step", "Progress visuals keep eyes moving.", S.craft),
@@ -360,7 +359,7 @@ export const SIGNALS: PatternRow[] = [
 const ina = (key: string, label: string, template: string, why: string, source = S.refs) => row("india", key, label, template, why, source);
 
 export const INDIA: PatternRow[] = [
-  ina("hinglish_voice", "Hinglish when the audience speaks it", "write voice-over and captions in natural Hinglish (Roman script) for B2C Indian audiences; mix Hindi and English the way people speak; avoid textbook Hindi", "Reads as a person, not an ad."),
+  ina("one_language", "One language per piece", "write each piece in ONE language only (voice-over, captions and on-screen text all the same); never mix two languages inside a single piece", "Mixed languages sound jarring and the voice accent cannot match."),
   ina("rupee_prices", "Prices in rupees", "state prices and savings in rupees (Rs or ₹), with real numbers", "Concrete and local."),
   ina("festival_calendar", "Festival timing", "tie content to Diwali, Dhanteras, Raksha Bandhan, Eid, Holi, Navratri, Ganesh Chaturthi, wedding season and exam season, 2-3 weeks ahead", "Demand spikes before festivals."),
   ina("whatsapp_trust", "WhatsApp as the close", "give a WhatsApp number or 'DM to order' as the next step; show response time honestly", "How many Indian small businesses sell."),
@@ -394,7 +393,7 @@ export function anglesFor(rows: PatternRow[], group: IndustryGroup | null): stri
 
 /** Hooks as the planner uses them: id plus how to write it. */
 export function hooksOf(rows: PatternRow[]): Array<{ id: string; how: string }> {
-  return rows.filter((r) => r.dimension === "hook").map((r) => ({ id: r.key, how: r.template }));
+  return rows.filter((r) => r.dimension === "hook" && !r.key.startsWith("hinglish")).map((r) => ({ id: r.key, how: r.template }));
 }
 
 /** The reel-craft rules written for the video writer: pacing, captions, ending, audio, India. */

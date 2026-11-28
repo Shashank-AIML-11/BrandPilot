@@ -765,7 +765,41 @@ export async function processVideoQueue(admin: AdminClient, userId?: string) {
   imageResults.forEach((result) => {
     if (result.status === "rejected") console.error(result.reason);
   });
-  const imagesStored = imageResults.filter((result) => result.status === "fulfilled").length;
+  let imagesStored = imageResults.filter((result) => result.status === "fulfilled").length;
+
+  // Blog posts get one of the brand's own photos (hero product first, then Brand Assets) as their
+  // header image. No generation and no cost: a blog with no uploaded photo simply stays without one.
+  try {
+    let blogQuery = admin
+      .from("content_items")
+      .select("id, user_id, brand_id, scheduled_date")
+      .eq("type", "blog")
+      .is("image_url", null)
+      .neq("status", "draft")
+      .neq("status", "failed")
+      .limit(8);
+    if (userId) blogQuery = blogQuery.eq("user_id", userId);
+    const { data: blogs } = await blogQuery;
+    if (blogs?.length) {
+      const { brandPhotoBytes } = await import("@/lib/stock-media.server");
+      for (const blog of blogs) {
+        const bytes = await brandPhotoBytes(admin, { userId: blog.user_id, brandId: blog.brand_id, seed: blog.id, used: new Set() });
+        if (!bytes) continue;
+        const png = bytes[0] === 0x89 && bytes[1] === 0x50;
+        const webp = bytes[8] === 0x57 && bytes[9] === 0x45;
+        const ext = png ? "png" : webp ? "webp" : "jpg";
+        const path = `${blog.user_id}/${blog.id}-blog.${ext}`;
+        const { error: upErr } = await admin.storage
+          .from("content-media")
+          .upload(path, bytes, { contentType: png ? "image/png" : webp ? "image/webp" : "image/jpeg", upsert: true });
+        if (upErr) continue;
+        const { error: updErr } = await admin.from("content_items").update({ image_url: path }).eq("id", blog.id).is("image_url", null);
+        if (!updErr) imagesStored += 1;
+      }
+    }
+  } catch (error) {
+    console.error("[blog] header image failed", error);
+  }
 
   // Carousels don't fit the single image_url path above — each one needs
   // multiple slide images. Same "keep working after the calendar closes"

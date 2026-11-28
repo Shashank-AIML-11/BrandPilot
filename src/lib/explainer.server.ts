@@ -51,6 +51,8 @@ export interface ExplainerInput {
   logoUrl?: string | null; // public/signed URL
   scenes?: ExplainerScene[]; // written + illustrated by prepareScenes()
   photoPrompt?: string | null;
+  /** Spoken language of the video. English unless set; picks SHOTSTACK_VOICE_<CODE> (e.g. _HI, _MR, _TA) when that env var exists. */
+  language?: string | null;
 }
 
 const H = (process.env["EXPLAINER_ASPECT"] ?? "9:16").trim() === "4:5" ? 900 : 1280;
@@ -317,7 +319,7 @@ export async function prepareScenes(
     const [{ chatJSON }, { brandContext }] = await Promise.all([import("@/lib/ai.server"), import("@/lib/content.server")]);
     const plan = explainerPlan(input);
     const out = await chatJSON<{ scenes?: Record<string, unknown>[] }>(
-      "You direct short vertical explainer videos that sell one specific brand, in the style of polished social-media motion graphics. Plain, human, specific. Never invent prices, numbers, awards, statistics, customers, testimonials or ratings that are not in the brand information. Write in the language and tone the brand itself uses (English by default; Hinglish if the brand writes that way).",
+      "You direct short vertical explainer videos that sell one specific brand, in the style of polished social-media motion graphics. Plain, human, specific. Never invent prices, numbers, awards, statistics, customers, testimonials or ratings that are not in the brand information. Write every word, spoken lines and on-screen text, in plain English only. Never mix in Hindi or any other language, not even one word.",
       `${brandContext(brand as never)}
 
 Topic of this video: ${input.item.title ?? ""}
@@ -470,7 +472,8 @@ export function buildTimeline(input: ExplainerInput, embedFont = true) {
   };
   const scenes = input.scenes && input.scenes.length >= 3 ? input.scenes : fallbackScenes(input);
   const last = scenes.length - 1;
-  const voice = process.env["SHOTSTACK_VOICE"]?.trim();
+  const langCode = String(input.language ?? "").trim().slice(0, 2).toUpperCase();
+  const voice = (langCode && langCode !== "EN" ? process.env[`SHOTSTACK_VOICE_${langCode}`]?.trim() : "") || process.env["SHOTSTACK_VOICE"]?.trim();
   const synced = Boolean(voice); // with a voice, every scene lasts exactly as long as its voice line
   const FIXED = Math.min(5, Math.floor((maxSeconds() / scenes.length) * 10) / 10); // silent mode: still within the limit
   const timing = (i: number) => (synced ? { start: `alias://v${i}`, length: `alias://v${i}` } : { start: i * FIXED, length: FIXED });

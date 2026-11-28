@@ -64,6 +64,19 @@ async function templateNeedsNoPhoto(admin: AdminClient, itemId: string): Promise
   }
 }
 
+/** Counts a failed image attempt and keeps the reason on the post (shown in Admin > Brain). Never throws. */
+async function noteImageFailure(admin: AdminClient, id: string, error: unknown): Promise<void> {
+  try {
+    const { data } = await admin.from("content_items").select("style_meta" as never).eq("id", id).maybeSingle();
+    const meta = ((data as unknown as { style_meta?: Record<string, unknown> | null } | null)?.style_meta ?? {}) as Record<string, unknown>;
+    const tries = (Number(meta["image_tries"]) || 0) + 1;
+    const why = (error instanceof Error ? error.message : String(error)).slice(0, 160);
+    await admin.from("content_items").update({ style_meta: { ...meta, image_tries: tries, design: `failed (try ${tries}): ${why}` } } as never).eq("id", id);
+  } catch {
+    /* best effort */
+  }
+}
+
 /** Records on the post whether its text design was applied, so a plain image is explained, not a mystery. Never throws. */
 async function noteDesign(admin: AdminClient, id: string, status: string): Promise<void> {
   try {
@@ -601,18 +614,27 @@ export async function processVideoQueue(admin: AdminClient, userId?: string) {
   // makes asset creation continue after the user closes the calendar.
   let pendingImagesQuery = admin
     .from("content_items")
-    .select("id, user_id, brand_id, type, scheduled_date, title, summary, image_prompt")
+    .select("id, user_id, brand_id, type, scheduled_date, title, summary, image_prompt, style_meta" as never)
     .in("type", SINGLE_IMAGE_TYPES)
     .is("image_url", null)
+    // a slot still being written, or one whose text failed, has nothing to illustrate
+    .neq("status", "draft")
+    .neq("status", "failed")
     .order("scheduled_date", { ascending: true })
     .order("scheduled_time", { ascending: true })
-    .limit(IMAGE_BATCH_LIMIT);
+    .limit(IMAGE_BATCH_LIMIT * 8);
   if (userId) pendingImagesQuery = pendingImagesQuery.eq("user_id", userId);
   const { data: pendingImages, error: pendingImagesError } = await pendingImagesQuery;
   if (pendingImagesError) throw new Error(pendingImagesError.message);
 
   const imageResults: PromiseSettledResult<string>[] = [];
-  for (const item of pendingImages ?? []) {
+  // One failing post must never block the rest of the queue: it is retried, then drawn without a
+  // photo (type-only design), and after 5 failed tries it is skipped and shown in Admin > Brain.
+  type ImgItem = { id: string; user_id: string; brand_id: string | null; type: string; scheduled_date: string; title: string | null; summary: string | null; image_prompt: string | null; style_meta?: { image_tries?: number } | null };
+  const triesOf = (it: ImgItem) => Number(it.style_meta?.image_tries ?? 0) || 0;
+  const imageQueue = ((pendingImages ?? []) as unknown as ImgItem[]).filter((it) => triesOf(it) < 5).slice(0, IMAGE_BATCH_LIMIT);
+  for (const item of imageQueue) {
+    const forcePlain = triesOf(item) >= 3;
     try {
       // Shared-image group (LinkedIn/Instagram/Facebook/Twitter): check
       // whether a sibling type on the same day already rendered the
@@ -646,7 +668,7 @@ export async function processVideoQueue(admin: AdminClient, userId?: string) {
         // First of the group to render today — generate once, upload to
         // the SHARED path (not a per-item path) so siblings can find it.
         const brand = await loadBrand(admin, item.user_id, item.brand_id);
-        const photo = (await templateNeedsNoPhoto(admin, item.id))
+        const photo = (forcePlain || (await templateNeedsNoPhoto(admin, item.id)))
           ? null
           : await photoFor(
               admin,
@@ -687,7 +709,7 @@ export async function processVideoQueue(admin: AdminClient, userId?: string) {
           .maybeSingle();
         if (!coverSibling) {
           const coverBrand = await loadBrand(admin, item.user_id, item.brand_id);
-          const coverPhoto = await photoFor(
+          const coverPhoto = forcePlain ? null : await photoFor(
             admin,
             item as never,
             imagePromptFor(item as never, coverBrand as never),
@@ -714,7 +736,7 @@ export async function processVideoQueue(admin: AdminClient, userId?: string) {
       // Not in the shared group (pinterest, video thumbnails) — generate
       // its own unique image as before.
       const brand = await loadBrand(admin, item.user_id, item.brand_id);
-      const photo = (await templateNeedsNoPhoto(admin, item.id))
+      const photo = (forcePlain || (await templateNeedsNoPhoto(admin, item.id)))
         ? null
         : await photoFor(
             admin,
@@ -736,6 +758,7 @@ export async function processVideoQueue(admin: AdminClient, userId?: string) {
       if (updateError) throw new Error(updateError.message);
       imageResults.push({ status: "fulfilled", value: item.id });
     } catch (error) {
+      await noteImageFailure(admin, item.id, error);
       imageResults.push({ status: "rejected", reason: error });
     }
   }

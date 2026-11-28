@@ -182,7 +182,7 @@ function normaliseScene(raw: Record<string, unknown>): ExplainerScene | null {
 
 /** When stock footage is configured, every video gets at least one real-footage scene. */
 function ensureBroll(list: ExplainerScene[], maxBroll: number, input?: ExplainerInput): ExplainerScene[] {
-  if (maxBroll < 1 || !process.env["PIXABAY_API_KEY"]?.trim() || (process.env["STOCK_MEDIA"] ?? "on").trim().toLowerCase() === "off") return list;
+  if (maxBroll < 1 || !(process.env["PIXABAY_API_KEY"]?.trim() || process.env["PEXELS_API_KEY"]?.trim()) || (process.env["STOCK_MEDIA"] ?? "on").trim().toLowerCase() === "off") return list;
   if (list.some((sc) => sc.layout === "broll")) return list;
   const out = [...list];
   // the first plain headline or statement scene after the opener

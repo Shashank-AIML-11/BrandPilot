@@ -6,7 +6,12 @@
  * brand media library (never shared across brands), search results are cached 24 h, safe-search is on,
  * calls are capped per day, and nothing systematic or bulk is done.
  *
- * Env:  PIXABAY_API_KEY   (required, server-side only)
+ * Sources: Pixabay and Pexels (both free, with API keys). Each is searched live for the scene; the best
+ * match across both is downloaded into the brand's own library and reused, so the library grows with use.
+ *
+ * Env:  PIXABAY_API_KEY   (server-side only)
+ *       PEXELS_API_KEY    (server-side only; adds Pexels as a second source)
+ *       PEXELS_DAILY_CALL_CAP    default 150
  *       STOCK_MEDIA       on (default) | off
  *       STOCK_PHOTOS      on (default) | off   — try a free Pixabay photo before paying for a fal image
  *       PIXABAY_DAILY_CALL_CAP   default 80
@@ -18,7 +23,8 @@ import { extractTags, findMatch } from "@/lib/media-library.server";
 type Admin = SupabaseClient<never, never, never>;
 
 const key = () => process.env["PIXABAY_API_KEY"]?.trim() || "";
-export const stockEnabled = () => Boolean(key()) && (process.env["STOCK_MEDIA"] ?? "on").trim().toLowerCase() !== "off";
+const pexelsKey = () => process.env["PEXELS_API_KEY"]?.trim() || "";
+export const stockEnabled = () => (Boolean(key()) || Boolean(pexelsKey())) && (process.env["STOCK_MEDIA"] ?? "on").trim().toLowerCase() !== "off";
 const photosEnabled = () => stockEnabled() && (process.env["STOCK_PHOTOS"] ?? "on").trim().toLowerCase() !== "off";
 
 const STOP = new Set("the and for with that this from your you are our into over under about a an of in on at to is it as by or be shot scene video clip footage showing shows show real natural people person someone ways way new old vs versus better best why need needs today journey start step steps make made get".split(" "));
@@ -61,6 +67,45 @@ async function pixabay(path: "" | "videos/", params: Record<string, string>): Pr
     return null;
   }
 }
+
+
+interface PexelsVideo {
+  id: number;
+  url?: string;
+  duration?: number;
+  user?: { name?: string };
+  video_files?: Array<{ quality?: string; file_type?: string; width?: number; height?: number; link?: string }>;
+}
+
+async function pexelsVideos(q: string): Promise<PexelsVideo[]> {
+  const k = pexelsKey();
+  if (!k) return [];
+  const url = new URL("https://api.pexels.com/videos/search");
+  url.search = new URLSearchParams({ query: q, orientation: "portrait", size: "medium", per_page: "20" }).toString();
+  const ck = url.toString();
+  const hit = cache.get(ck);
+  if (hit && Date.now() - hit.at < 24 * 3_600_000) return hit.data as PexelsVideo[];
+  try {
+    const { spendGuard, recordSpend } = await import("@/lib/spend-guard.server");
+    await spendGuard("pexels_call");
+    await recordSpend("pexels_call");
+    const res = await fetch(ck, { headers: { Authorization: k } });
+    if (!res.ok) {
+      console.error(`[stock] Pexels ${res.status}`);
+      return [];
+    }
+    const json = (await res.json()) as { videos?: PexelsVideo[] };
+    const list = json.videos ?? [];
+    cache.set(ck, { at: Date.now(), data: list });
+    return list;
+  } catch (error) {
+    console.error("[stock] Pexels request failed", error);
+    return [];
+  }
+}
+
+/** Words in a Pexels page URL slug ("man-typing-on-a-laptop-3129957"), the only text Pexels gives for a clip. */
+const slugWords = (u: string) => String(u).replace(/\/+$/, "").split("/").pop()?.replace(/-\d+$/, "").split("-").filter(Boolean) ?? [];
 
 const tagList = (h: Record<string, unknown>) =>
   String(h["tags"] ?? "")
@@ -108,35 +153,51 @@ export async function stockVideo(
 
     let q = queryFrom(ctx.idea, 4);
     if (!q) return null;
-    let data = await pixabay("videos/", { q: q.slice(0, 100), video_type: "film", safesearch: "true", per_page: "20", min_height: "720" });
-    if (!data?.hits?.length && q.split(" ").length > 2) {
-      q = q.split(" ").slice(0, 2).join(" ");
-      data = await pixabay("videos/", { q, video_type: "film", safesearch: "true", per_page: "20", min_height: "720" });
-    }
-    const candidates = (data?.hits ?? [])
-      .filter((h) => {
+    type Cand = { id: string; url: string; score: number; page: string; author: string; duration: number; tags: string };
+    const gather = async (query: string): Promise<Cand[]> => {
+      const out: Cand[] = [];
+      const need = Math.min(2, query.split(" ").filter(Boolean).length);
+      const data = await pixabay("videos/", { q: query.slice(0, 100), video_type: "film", safesearch: "true", per_page: "20", min_height: "720" });
+      for (const h of data?.hits ?? []) {
         const dur = Number(h["duration"]);
         const tg = tagList(h);
-        return dur >= 5 && dur <= 30 && !BAD_TAGS.some((b) => tg.includes(b));
-      })
-      .filter((h) => !ctx.exclude?.has(`library/${ctx.userId}/${ctx.brandId ?? "none"}/broll-${h["id"]}.mp4`))
-      .map((h) => {
+        if (!(dur >= 5 && dur <= 30) || BAD_TAGS.some((b) => tg.includes(b))) continue;
+        const id = `${h["id"]}`;
+        if (ctx.exclude?.has(`library/${ctx.userId}/${ctx.brandId ?? "none"}/broll-${id}.mp4`)) continue;
         const v = h["videos"] as Record<string, { url?: string; width?: number; height?: number; size?: number }> | undefined;
         const file = v?.["small"]?.url ? v["small"] : v?.["medium"]?.url ? v["medium"] : null;
-        const ov = overlap(h, q);
-        return { h, file, ov, score: ov * 2 + (file && (file.height ?? 0) > (file.width ?? 0) ? 3 : 0) };
-      })
-      // the clip must match the idea by its own tags; a vertical shape alone is never enough
-      .filter((c) => c.file?.url && c.ov >= Math.min(2, q.split(" ").filter(Boolean).length) && (c.file.size ?? 0) < 30_000_000)
-      .sort((x, y) => y.score - x.score);
-    const best = candidates[0];
-    if (!best?.file?.url) return null;
+        const ov = overlap(h, query);
+        if (!file?.url || ov < need || (file.size ?? 0) >= 30_000_000) continue;
+        out.push({ id, url: file.url, score: ov * 2 + ((file.height ?? 0) > (file.width ?? 0) ? 3 : 0), page: String(h["pageURL"] ?? ""), author: String(h["user"] ?? ""), duration: dur, tags: tg.join(" ") });
+      }
+      const words = query.split(" ").filter(Boolean);
+      (await pexelsVideos(query)).forEach((v, rank) => {
+        const dur = Number(v.duration);
+        const id = `pexels-${v.id}`;
+        if (!(dur >= 5 && dur <= 30) || ctx.exclude?.has(`library/${ctx.userId}/${ctx.brandId ?? "none"}/broll-${id}.mp4`)) return;
+        const slug = slugWords(v.url ?? "");
+        const ov = words.filter((w) => slug.some((sw) => sw.includes(w) || w.includes(sw))).length;
+        const files = (v.video_files ?? []).filter((f) => f.file_type === "video/mp4" && f.link && (f.height ?? 0) > (f.width ?? 0) && (f.width ?? 0) <= 1080);
+        const file = files.sort((x, y) => (y.height ?? 0) - (x.height ?? 0))[0];
+        if (!file?.link || ov < 1) return;
+        // Pexels ranks by relevance already; an earlier hit gets a small bonus
+        out.push({ id, url: file.link, score: ov * 2 + 3 + Math.max(0, 3 - rank * 0.3), page: v.url ?? "", author: v.user?.name ?? "", duration: dur, tags: slug.join(" ") });
+      });
+      return out.sort((x, y) => y.score - x.score);
+    };
+    let found = await gather(q);
+    if (!found.length && q.split(" ").length > 2) {
+      q = q.split(" ").slice(0, 2).join(" ");
+      found = await gather(q);
+    }
+    const best = found[0];
+    if (!best) return null;
 
-    const res = await fetch(best.file.url);
+    const res = await fetch(best.url);
     if (!res.ok) return null;
     const bytes = new Uint8Array(await res.arrayBuffer());
     if (bytes.length > 30_000_000) return null;
-    const path = `library/${ctx.userId}/${ctx.brandId ?? "none"}/broll-${best.h["id"]}.mp4`;
+    const path = `library/${ctx.userId}/${ctx.brandId ?? "none"}/broll-${best.id}.mp4`;
     const up = await bucket.upload(path, bytes, { contentType: "video/mp4", upsert: true });
     if (up.error) return null;
     await a.from("brand_media").upsert(
@@ -147,11 +208,11 @@ export async function stockVideo(
         aspect: "any",
         storage_path: path,
         prompt: ctx.idea.slice(0, 500),
-        tags: extractTags(`${ctx.idea} ${tagList(best.h).join(" ")}`),
-        source: "pixabay",
-        source_url: String(best.h["pageURL"] ?? ""),
-        author: String(best.h["user"] ?? ""),
-        duration_s: Number(best.h["duration"]) || null,
+        tags: extractTags(`${ctx.idea} ${best.tags}`),
+        source: best.id.startsWith("pexels-") ? "pexels" : "pixabay",
+        source_url: best.page,
+        author: best.author,
+        duration_s: best.duration || null,
       },
       { onConflict: "storage_path" },
     );

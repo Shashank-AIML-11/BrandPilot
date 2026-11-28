@@ -11,12 +11,13 @@
  * If the database cannot be read, the call is allowed (and the problem logged) so a missing table
  * never stops content generation.
  */
-export type SpendKind = "fal_image" | "shotstack_render" | "pixabay_call" | "brand_scan" | "brand_read";
+export type SpendKind = "fal_image" | "shotstack_render" | "pixabay_call" | "pexels_call" | "brand_scan" | "brand_read";
 
 const RULES: Record<SpendKind, { env: string; fallback: number; label: string }> = {
   fal_image: { env: "FAL_DAILY_IMAGE_CAP", fallback: 24, label: "image" },
   shotstack_render: { env: "SHOTSTACK_DAILY_RENDER_CAP", fallback: 6, label: "video render" },
   pixabay_call: { env: "PIXABAY_DAILY_CALL_CAP", fallback: 80, label: "stock search" },
+  pexels_call: { env: "PEXELS_DAILY_CALL_CAP", fallback: 150, label: "stock search" },
   // Brand Profile website scans, and Brand Brain reads of documents and photos (AI text calls).
   brand_scan: { env: "BRAND_SCAN_DAILY_CAP", fallback: 200, label: "website scan" },
   brand_read: { env: "BRAND_READ_DAILY_CAP", fallback: 600, label: "document or photo reading call" },

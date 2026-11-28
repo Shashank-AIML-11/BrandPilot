@@ -840,17 +840,17 @@ function CalendarPage() {
   }, [items, detail]);
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-3">
 
       {/* ====================================================== */}
       {/* HEADER */}
       {/* ====================================================== */}
 
       {/* Stays pinned under the top bar while the calendar scrolls. */}
-      <div className="sticky top-16 z-20 -mx-4 flex flex-wrap items-end justify-between gap-4 border-b border-border bg-background px-4 pb-3 pt-2 sm:-mx-8 sm:px-8">
+      <div className="sticky top-16 z-20 -mx-4 flex flex-wrap items-end justify-between gap-4 border-b border-border bg-background px-4 pb-2 pt-1 sm:-mx-8 sm:px-8">
 
         <div>
-          <h1 className="text-2xl font-bold">
+          <h1 className="text-xl font-bold">
             Content Calendar
           </h1>
         </div>
@@ -1124,8 +1124,8 @@ function CalendarPage() {
               const key = format(day, "yyyy-MM-dd");
               const list = (byDate.get(key) ?? []).filter((i) => tabOf(i) === reviewTab);
               return (
-                <div key={key} className="min-h-[34rem] min-w-0 border-b border-r border-border p-2">
-                  <div className="space-y-2">
+                <div key={key} className="min-h-[12rem] min-w-0 border-b border-r border-border p-1.5">
+                  <div className="space-y-1.5">
                     {list.length === 0 && (
                       <p className="pt-6 text-center text-[11px] text-muted-foreground">
                         {reviewTab === "generated" ? (autopostOn ? "Nothing scheduled" : "Nothing to review") : reviewTab === "reviewed" ? "None reviewed" : "Nothing posted"}
@@ -1144,9 +1144,9 @@ function CalendarPage() {
                           }`}
                         >
                           <button type="button" onClick={() => setDetail(item)} className="block w-full text-left">
-                            <div className="relative aspect-square w-full bg-muted/20">
+                            <div className="relative aspect-[4/3] w-full bg-muted/20">
                               {thumb ? (
-                                <img src={thumb} alt={item.title} className="h-full w-full object-cover" />
+                                <img src={thumb} alt={item.title} className="h-full w-full object-cover object-[50%_72%]" />
                               ) : (
                                 <div className="flex h-full w-full items-center justify-center text-muted-foreground/40">
                                   {rendering ? <Loader2 className="h-5 w-5 animate-spin" /> : <ImageOff className="h-5 w-5" />}
@@ -1156,14 +1156,14 @@ function CalendarPage() {
                                 {item.type}
                               </Badge>
                             </div>
-                            <div className="space-y-1 p-2 pb-1">
-                              <p className="line-clamp-2 text-xs font-medium leading-snug">{item.title}</p>
-                              <span className="text-[11px] text-muted-foreground">{item.scheduled_time?.slice(0, 5) ?? ""}</span>
+                            <div className="px-1.5 pb-0.5 pt-1">
+                              <p className="line-clamp-1 text-[11px] font-medium leading-snug" title={item.title}>{item.title}</p>
                             </div>
                           </button>
 
-                          {/* Bottom-right action */}
-                          <div className="flex justify-end px-2 pb-2">
+                          {/* Time on the left, action on the right */}
+                          <div className="flex items-center justify-between px-1.5 pb-1.5">
+                            <span className="text-[11px] text-muted-foreground">{item.scheduled_time?.slice(0, 5) ?? ""}</span>
                             {reviewTab === "generated" && autopostOn && item.status === "posted" && (
                               <Badge className="bg-success text-[10px] text-success-foreground">Posted</Badge>
                             )}
@@ -1171,7 +1171,7 @@ function CalendarPage() {
                               <Badge variant="destructive" className="text-[10px]">Failed</Badge>
                             )}
                             {reviewTab === "generated" && !autopostOn && !isFailedItem(item) && (
-                              <Button size="sm" className="h-7 px-2.5 text-xs" disabled={rendering} onClick={() => setDetail(item)}>
+                              <Button size="sm" className="h-6 px-2 text-[11px]" disabled={rendering} onClick={() => setDetail(item)}>
                                 {rendering ? "Generating…" : "Review"}
                               </Button>
                             )}

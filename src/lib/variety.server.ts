@@ -9,6 +9,7 @@
  * The choice is stored on each content item (style_meta) which is also what the next run
  * reads to know what was used lately. Fails soft: with no playbook it returns no plan.
  */
+import { occasionLine } from "@/lib/occasions";
 import { SEED_PATTERNS, anglesFor, craftRules, hooksOf, industryGroupOf, type PatternRow } from "@/lib/pattern-library";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Database } from "@/integrations/supabase/types";
@@ -275,7 +276,7 @@ export async function planVariety(
         const picks = await directPicks({
           industry: industryText,
           playbook,
-          slots: opts.slots,
+          slots: opts.slots.map((sl) => ({ ...sl, occasions: occasionLine(sl.date) })),
           hooks: hookPool.length >= 12 ? hookPool : hooksOf(library),
           angles: (anglePool.length >= 12 ? anglePool : angleBank).slice(0, 60),
           recipes: REEL_RECIPES.map((r) => ({ id: r.id, note: r.note })),
@@ -335,16 +336,13 @@ export function varietyContext(
       const m = plan.get(slotKey(s.date, s.type, s.index));
       if (!m) return "";
       const tpl = m.template ? posterTemplate(m.template) : null;
-      return `- ${s.date} ${s.type} #${s.index + 1}: pillar "${m.pillar}" (${pillarAngle.get(m.pillar) ?? ""}); hook style "${m.hook}" (${hookHow.get(m.hook) ?? ""})${m.angle ? `; angle: ${m.angle}` : ""}${m.why ? `; business reason: ${m.why}` : ""}${
+      return `- ${s.date} ${s.type} #${s.index + 1}: pillar "${m.pillar}" (${pillarAngle.get(m.pillar) ?? ""}); hook style "${m.hook}" (${hookHow.get(m.hook) ?? ""})${m.angle ? `; angle: ${m.angle}` : ""}${m.why ? `; business reason: ${m.why}` : ""}; occasions near ${s.date}: ${occasionLine(s.date)}${
         tpl ? `; poster template "${tpl.label}": write image_prompt as HEADLINE || POINT 1 || POINT 2 || POINT 3 || CTA with ${tpl.copyHint}` : ""
       }`;
     })
     .filter(Boolean);
-  const occasions = playbook.occasions.length
-    ? `\nOccasions this brand can use when a date is close (use only if it genuinely fits the date): ${playbook.occasions
-        .map((o) => `${o.name} (${o.when}): ${o.idea}`)
-        .join(" | ")}`
-    : "";
+  const dates = slots.map((x) => x.date).sort();
+  const occasions = `\nDate check: these pieces run ${dates[0]} to ${dates[dates.length - 1]}. A festival, season or event may be mentioned ONLY if it is listed in that piece's "occasions near" text above. Anything not listed (for example a festival that has already passed) must never appear in the title, caption, script or image text.`;
   const photos = playbook.photo_subjects.length
     ? `\nPhoto subjects that suit this brand (for image/thumbnail ideas): ${playbook.photo_subjects.join("; ")}. Avoid: ${playbook.visual_avoid.join("; ")}.`
     : "";

@@ -130,3 +130,25 @@ describe("spoken languages", () => {
     expect(HINDI_KEEP_ENGLISH).toEqual(expect.arrayContaining(["table", "chair", "phone"]));
   });
 });
+
+import { occasionLine, occasionsNear } from "@/lib/occasions";
+
+describe("occasion calendar", () => {
+  it("shows Christmas, not Diwali, for the 21-27 Dec 2026 week", () => {
+    for (const d of ["2026-12-21", "2026-12-23", "2026-12-27"]) {
+      const names = occasionsNear(d).map((o) => o.name);
+      expect(names).toContain("Christmas");
+      expect(names).not.toContain("Diwali");
+    }
+  });
+  it("lists Diwali for early November and says none when nothing is close", () => {
+    expect(occasionsNear("2026-10-25").map((o) => o.name)).toContain("Diwali");
+    expect(occasionLine("2026-08-05")).not.toContain("Diwali");
+    expect(occasionLine("2026-06-25")).toContain("do not mention any festival");
+  });
+  it("alternates the Hindi reel by day", () => {
+    const a = pickVideoLanguage("English, Hindi", "2026-12-23");
+    const b = pickVideoLanguage("English, Hindi", "2026-12-26");
+    expect(a).not.toBe(b);
+  });
+});

@@ -43,7 +43,9 @@ export function pickVideoLanguage(brandLanguages: string | null | undefined, see
   const langs = spokenLanguagesOf(brandLanguages);
   if (!langs.includes("hi")) return "en";
   if (!langs.includes("en")) return "hi"; // Hindi only
-  return hash(seed) % 2 === 0 ? "hi" : "en";
+  // a date seed alternates by day, so a week with two video days always has one of each
+  const day = /^\d{4}-\d{2}-\d{2}$/.test(seed) ? Math.floor(new Date(`${seed}T12:00:00Z`).getTime() / 86_400_000) : hash(seed);
+  return day % 2 === 0 ? "hi" : "en";
 }
 
 /** Model, voice and language code for the voice-over of a spoken language. */

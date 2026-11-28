@@ -12,6 +12,8 @@ export interface DirectSlot {
   date: string;
   type: string;
   index: number;
+  /** Occasions genuinely close to this piece's date (from the occasion calendar). */
+  occasions?: string;
 }
 
 export interface DirectPick {
@@ -61,7 +63,7 @@ const SCHEMA = {
 
 const SYSTEM = `You are the strategist inside a brand's content brain. For each planned piece you choose what it should be about and how it should open, so the week as a whole serves the business and never feels random.
 
-Choose using the brand's own context: its audience and their real worries, current priorities and offers, proof it can use, what worked before and what to avoid, upcoming occasions, and the platform behaviour of each content type. Reason like a good marketer: put the educational piece where trust is needed, an offer piece near an occasion or priority, a story where proof exists, a quick tip on busy weekdays, and keep the sequence balanced across the days. Never pick an option the brand's "avoid" list rules out.
+Choose using the brand's own context: its audience and their real worries, current priorities and offers, proof it can use, what worked before and what to avoid, the occasions listed for each piece, and the platform behaviour of each content type. Reason like a good marketer: put the educational piece where trust is needed, an offer piece near an occasion or priority, a story where proof exists, a quick tip on busy weekdays, and keep the sequence balanced across the days. Never pick an option the brand's "avoid" list rules out.
 
 Rules:
 - pillar must be one of the listed pillars, copied exactly.
@@ -69,7 +71,8 @@ Rules:
 - angle is the NUMBER of one listed angle.
 - recipe: for video pieces, one listed recipe id that suits the message; for all other pieces an empty string.
 - Within one day, no two pieces share a hook or an angle, and across the batch use no hook or angle more than twice.
-- why: at most 14 words, naming the business reason for the choice (for example "offer push ahead of Diwali; audience asked about price").
+- why: at most 14 words, naming the business reason for the choice (for example "gifting push before Christmas; audience asked about price").
+- Each piece lists the occasions genuinely close to its date. Use an occasion ONLY if it is listed for that piece; if none is listed, choose an evergreen angle and never assume a festival or season. Festivals that are not listed have passed or are far away.
 Return JSON only.`;
 
 const withTimeout = <T>(p: Promise<T>, ms: number): Promise<T> =>
@@ -105,7 +108,6 @@ export async function directPicks(input: Input): Promise<Map<string, DirectPick>
     lines("What to avoid", pb.what_to_avoid),
     pb.competitive_angle ? `Positioning: ${pb.competitive_angle}` : "",
     pb.cta_style ? `Usual call to action: ${pb.cta_style}` : "",
-    pb.occasions.length ? `Occasions: ${pb.occasions.map((o) => `${o.name} (${o.when})`).join("; ")}` : "",
   ]
     .filter(Boolean)
     .join("\n");
@@ -114,7 +116,7 @@ export async function directPicks(input: Input): Promise<Map<string, DirectPick>
   const hooks = input.hooks.map((h) => `- ${h.id}: ${h.how.slice(0, 90)}`).join("\n");
   const angles = input.angles.map((a, n) => `${n}: ${a}`).join("\n");
   const recipes = input.recipes.map((r) => `- ${r.id}: ${r.note.slice(0, 80)}`).join("\n");
-  const slots = input.slots.map((s, n) => `${n}: ${s.date} (${weekday(s.date)}) ${s.type}`).join("\n");
+  const slots = input.slots.map((s, n) => `${n}: ${s.date} (${weekday(s.date)}) ${s.type}${s.occasions ? ` [occasions near this date: ${s.occasions}]` : ""}`).join("\n");
 
   const prompt = `BRAND\n${brand}\n\nPILLARS\n${pillars}\n\nHOOKS\n${hooks}\n\nANGLES\n${angles}\n\nREEL RECIPES\n${recipes}\n\nPIECES TO PLAN\n${slots}`;
   const timeout = Number(process.env["BRAIN_DIRECTOR_TIMEOUT_MS"] ?? 20000) || 20000;

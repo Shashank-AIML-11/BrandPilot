@@ -23,7 +23,7 @@ import { posterComposerEnabled } from "@/lib/content.server";
 /** Brand text, colours and logo link for the branded explainer video (only used with VIDEO_PROVIDER=shotstack). */
 async function explainerInputFor(
   admin: AdminClient,
-  item: { id: string; type: string; title: string; summary: string | null; image_prompt: string | null; video_script?: string | null },
+  item: { id: string; type: string; title: string; summary: string | null; image_prompt: string | null; video_script?: string | null; scheduled_date?: string | null },
   brand: Record<string, unknown> | null,
   owner: { userId: string; brandId: string | null } = { userId: "", brandId: null },
 ) {
@@ -33,6 +33,12 @@ async function explainerInputFor(
     const { data } = await admin.storage.from("content-media").createSignedUrl(logoPath, 60 * 60 * 6);
     logoUrl = data?.signedUrl ?? null;
   }
+  const language = (await import("@/lib/languages")).pickVideoLanguage(String(brand?.["languages"] ?? ""), item.scheduled_date ?? item.id);
+  try {
+    const { data } = await admin.from("content_items").select("style_meta" as never).eq("id", item.id).maybeSingle();
+    const meta = ((data as unknown as { style_meta?: Record<string, unknown> | null } | null)?.style_meta ?? {}) as Record<string, unknown>;
+    await admin.from("content_items").update({ style_meta: { ...meta, voice_language: language } } as never).eq("id", item.id);
+  } catch { /* best effort */ }
   const input = {
     item,
     userId: owner.userId || undefined,
@@ -41,7 +47,7 @@ async function explainerInputFor(
     website: String(brand?.["website"] ?? ""),
     colors: (brand?.["brand_colors"] as Record<string, string> | null) ?? null,
     logoUrl,
-    language: (await import("@/lib/languages")).pickVideoLanguage(String(brand?.["languages"] ?? ""), item.id),
+    language,
     photoPrompt: imagePromptFor(
       { type: item.type, title: item.title, summary: item.summary ?? "", image_prompt: "" },
       brand as never,

@@ -223,6 +223,8 @@ const JUDGE_SYSTEM = `You are a tough, independent reviewer for a social media a
 
 A piece is NOT usable if any of these is true: it is generic and could belong to any brand; it states a fact, number, offer, award, customer or result that is not in the brand information; it mentions a festival or season that is not close to the scheduled date; it breaks the brand's do's, don'ts or compliance notes; it makes a medical, legal, financial, tax or guaranteed-result claim; it mixes languages inside one piece; the first line would not stop a scroll; the tone does not match the brand; it is wrong for the platform (length, format, hashtags); for image posts, the poster headline is a label or vague benefit instead of something specific; it sounds like an AI wrote it (stock phrases, filler openers, hollow superlatives).
 
+How to read the brand's rules: a "Do" in the voice notes describes the brand's overall content, so do NOT fail a piece only because it does not cover one of the "do" topics; fail it for breaking a "Don't", a compliance note, or a platform rule. The channel list is fixed by the product, so never judge the choice of channel. Judge what is on the page.
+
 Score each piece 1 to 10 (7 means "I would post this as it is"). Be strict and consistent. "issues" lists the specific problems in at most 12 words each (empty when none).`;
 
 const JUDGE_SCHEMA = {

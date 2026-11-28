@@ -207,3 +207,26 @@ describe("whole numbers, list counts, channels and weak headlines", () => {
     expect(c.headline).toMatch(/Gift Givers/);
   });
 });
+
+import { finalizeRows, unsupportedClaims as claimsOf } from "@/lib/content-quality.server";
+
+describe("last-line clean-up", () => {
+  const brand = "Smile Studio Dental. Fixed prices. Free first consultation.";
+  it("flags placeholders and promises the brand never made, but not script markers", () => {
+    expect(claimsOf({ title: "Root canal", caption: "Try the [thing] today", scheduled_date: "2026-12-08" }, brand).join(" ")).toMatch(/placeholder/);
+    expect(claimsOf({ title: "Painless root canal", caption: "ok", scheduled_date: "2026-12-08" }, brand).join(" ")).toMatch(/never made/);
+    expect(claimsOf({ title: "Painless root canal", caption: "ok", scheduled_date: "2026-12-08" }, `${brand} painless`).length).toBe(0);
+    expect(claimsOf({ title: "Demo", caption: "ok", video_script: "[HOOK] Hi. [BODY] Fixed prices. [CTA] Book.", scheduled_date: "2026-12-08" }, brand).length).toBe(0);
+  });
+  it("keeps X posts short, scripts finished and poster text free of made-up acronyms", () => {
+    const rows: Array<Record<string, unknown>> = [
+      { type: "twitter_post", caption: `${"Fixed prices for every visit. ".repeat(12)}` },
+      { type: "product_service_video", video_script: "[HOOK] Book today. [BODY] Our fixed prices help you plan. We also" },
+      { type: "instagram_post", title: "Draft a GST invoice", caption: "Fast invoices", image_prompt: "GPS invoice || a || b || c || d" },
+    ];
+    finalizeRows(rows, "LedgerLoop GST invoices");
+    expect(String(rows[0]!["caption"]).length).toBeLessThanOrEqual(280);
+    expect(String(rows[1]!["video_script"])).toMatch(/plan\.$/);
+    expect(String(rows[2]!["image_prompt"])).toMatch(/^Draft a GST invoice/);
+  });
+});

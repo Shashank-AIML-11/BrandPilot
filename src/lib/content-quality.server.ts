@@ -121,6 +121,8 @@ export interface RuleFinding {
 }
 
 const STORY = /\b([Mm]eet [A-Z][a-z]+|went from \d|real stories?|success stor(?:y|ies)|a customer (?:said|told)|one of our (?:customers|clients|students|patients|parents))\b/;
+const PLACEHOLDER_RE = /\[(?!(?:HOOK|BODY|CTA)\])[A-Za-z][^\]\n]{0,30}\]/i;
+const RISK_RE = /\b(guarantee[ds]?|risk[- ]free|pain[- ]?free|painless|no pain|cures?|100% (?:safe|natural|effective|secure))\b/i;
 const FESTIVAL_RE = /diwali|dhanteras|holi\b|christmas|new year|raksha bandhan|rakhi|eid\b|navratri|dussehra|ganesh chaturthi|valentine|black friday|pongal|sankranti|onam|janmashtami|karwa chauth/i;
 
 /** What a piece says that the brand information does not back up. Empty when the piece is clean. */
@@ -133,6 +135,10 @@ export function unsupportedClaims(r: Row, brandText: string): string[] {
   const nums = [...new Set((withoutListCounts(t).match(/\d+(?:\.\d+)?/g) ?? []).filter((n) => !numbersAllowed(n, allowed)))];
   if (nums.length) out.push(`numbers that are not in the brand information (${nums.join(", ")})`);
   if (!/real customer testimonials supplied/i.test(brandText) && STORY.test(t)) out.push("an invented customer story or result (the brand supplied no testimonials)");
+  const ph = t.match(PLACEHOLDER_RE)?.[0];
+  if (ph) out.push(`a leftover placeholder (${ph})`);
+  const risk = t.match(RISK_RE)?.[1];
+  if (risk && !brandText.toLowerCase().includes(risk.toLowerCase())) out.push(`a promise the brand never made (${risk})`);
   const fest = t.match(FESTIVAL_RE)?.[0];
   if (fest && date && !near.toLowerCase().includes(fest.toLowerCase().split(/\s+/)[0]!)) out.push(`mentions "${fest}" but no such occasion is near ${date}`);
   return out;
@@ -199,6 +205,7 @@ Score each piece from 1 to 10 on: sounds like this brand (voice, dos and don'ts,
 For every piece scoring below the pass mark, rewrite its title, caption and (video only) script to fix the issues you found. Rules for rewrites:
 - Keep the same idea and the same single language as the original. Never add words from another language.
 - Use only facts, offers and numbers that appear in the brand information or in the original piece. Never invent statistics, prices, awards, customers or quotes.
+- Say nothing about the business itself (what it sells, how it works, what it promises, results, history) unless the brand information says it. General helpful advice is fine; claims about THIS business are not.
 - Obey the brand's compliance notes and do's and don'ts exactly.
 - Open with a strong, specific first line. No filler openers, no phrases like "in today's fast-paced world", "unlock", "elevate", "game-changer".
 - Vary sentence length. Use plain words. At most one emoji per few lines, and only if the brand uses them.
@@ -206,6 +213,33 @@ For every piece scoring below the pass mark, rewrite its title, caption and (vid
 - Do not use long dashes (— or –) as punctuation.
 For pieces scoring at or above the pass mark, return empty strings for title, caption and script. Pieces you cannot improve: also empty strings.
 "issues" is one short sentence naming the main problem, or "ok".`;
+
+/** Mechanical clean-up that never needs the AI: platform length, finished sentences, poster typos. */
+export function finalizeRows(rows: Row[], brandText: string): void {
+  const known = new Set((brandText.match(/[A-Za-z]{2,}/g) ?? []).map((w) => w.toLowerCase()));
+  for (const r of rows) {
+    const type = text(r["type"]);
+    // X posts are at most 280 characters: cut at the last full sentence or word that fits
+    if (type === "twitter_post" && text(r["caption"]).length > 270) {
+      const cap = text(r["caption"]).slice(0, 270);
+      const sentenceEnd = Math.max(cap.lastIndexOf(". "), cap.lastIndexOf("! "), cap.lastIndexOf("? "));
+      r["caption"] = sentenceEnd > 80 ? cap.slice(0, sentenceEnd + 1).trim() : cap.replace(/\s+\S*$/, "").replace(/[,;:\-]$/, "") + ".";
+    }
+    // a video script must end on a finished sentence
+    const script = text(r["video_script"]);
+    if (script && !/[.!?।"')\]]\s*$/.test(script.trim())) {
+      const cut = Math.max(script.lastIndexOf("."), script.lastIndexOf("!"), script.lastIndexOf("?"), script.lastIndexOf("।"));
+      if (cut > script.length * 0.5) r["video_script"] = script.slice(0, cut + 1).trim();
+    }
+    // a poster headline with a made-up acronym or word (for example "GPS" for "GST") falls back to the title
+    if (/post|pinterest/.test(type) && text(r["image_prompt"]).includes("|")) {
+      const parts = text(r["image_prompt"]).split(/\|\|?/).map((x) => x.trim());
+      const own = new Set(`${text(r["title"])} ${text(r["caption"])}`.toLowerCase().match(/[a-z]{2,}/g) ?? []);
+      const unknown = (parts[0] ?? "").match(/\b[A-Z]{2,5}\b/g)?.some((w) => !known.has(w.toLowerCase()) && !own.has(w.toLowerCase()));
+      if (unknown && text(r["title"]).trim()) { parts[0] = text(r["title"]).trim(); r["image_prompt"] = parts.join(" || "); }
+    }
+  }
+}
 
 export interface QualityOutcome {
   rows: Row[];
@@ -264,6 +298,7 @@ export async function polishRows(
     for (const k of ["title", "caption", "video_script"] as const) if (typeof r[k] === "string") r[k] = plainDashes(r[k] as string);
   }
   if ((process.env["CONTENT_QUALITY_GATE"] ?? "on").trim().toLowerCase() === "off") {
+    finalizeRows(rows, opts.brandText);
     return { rows, note: "editor pass off" };
   }
   try {
@@ -340,9 +375,11 @@ export async function polishRows(
     }
     // Last line of defence: anything still claiming something the brand never said is fixed or cut.
     const fixedClaims = await removeUnsupportedClaims(rows, opts.brandText);
+    finalizeRows(rows, opts.brandText);
     const avg = scored ? (total / scored).toFixed(1) : "n/a";
     return { rows, note: `edited ${scored} piece(s), rewrote ${rewritten}, average score ${avg}, flagged by plain checks ${findings.length}, claims removed ${fixedClaims}` };
   } catch (error) {
+    finalizeRows(rows, opts.brandText);
     return { rows, note: `editor pass skipped: ${error instanceof Error ? error.message : String(error)}` };
   }
 }
@@ -420,8 +457,8 @@ async function removeUnsupportedClaims(rows: Row[], brandText: string): Promise<
   for (const x of bad) {
     const remaining = unsupportedClaims(x.r, brandText);
     if (!remaining.length) continue;
-    const nums = (remaining.join(" ").match(/\(([^)]*)\)/)?.[1] ?? "").split(/,\s*/).filter(Boolean);
-    const offenders = new RegExp([...nums.map((n) => n.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")), STORY.source, FESTIVAL_RE.source].filter(Boolean).join("|"), "i");
+    const nums = [...remaining.join(" ").matchAll(/\(([^)]*)\)/g)].flatMap((m) => (m[1] ?? "").split(/,\s*/)).filter(Boolean);
+    const offenders = new RegExp([...nums.map((n) => n.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")), STORY.source, FESTIVAL_RE.source, PLACEHOLDER_RE.source].filter(Boolean).join("|"), "i");
     for (const k of ["caption", "video_script"] as const) if (text(x.r[k])) x.r[k] = stripSentences(text(x.r[k]), offenders);
     // a claim in the title: use the first clean sentence of the caption as the title instead
     if (offenders.test(text(x.r["title"]))) {
